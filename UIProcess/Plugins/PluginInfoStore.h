@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,14 +26,28 @@
 #ifndef PluginInfoStore_h
 #define PluginInfoStore_h
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
+
 #include "PluginModuleInfo.h"
-#include <wtf/ThreadingPrimitives.h>
+
+#include <WebCore/PluginData.h>
 
 namespace WebCore {
     class KURL;
 }
 
 namespace WebKit {
+
+class PluginInfoStore;
+
+class PluginInfoStoreClient {
+    WTF_MAKE_NONCOPYABLE(PluginInfoStoreClient);
+public:
+    virtual ~PluginInfoStoreClient() { }
+    virtual void pluginInfoStoreDidLoadPlugins(PluginInfoStore*) = 0;
+protected:
+    PluginInfoStoreClient() { }
+};
 
 class PluginInfoStore {
     WTF_MAKE_NONCOPYABLE(PluginInfoStore);
@@ -49,18 +63,22 @@ public:
     // Returns the info for a plug-in that can handle the given MIME type.
     // If the MIME type is null, the file extension of the given url will be used to infer the
     // plug-in type. In that case, mimeType will be filled in with the right MIME type.
-    PluginModuleInfo findPlugin(String& mimeType, const WebCore::KURL&);
-    
+    PluginModuleInfo findPlugin(String& mimeType, const WebCore::KURL&, WebCore::PluginData::AllowedPluginTypes = WebCore::PluginData::AllPlugins);
+
+    // Returns the info for the plug-in with the given bundle identifier.
+    PluginModuleInfo findPluginWithBundleIdentifier(const String& bundleIdentifier);
+
     // Returns the info for the plug-in with the given path.
     PluginModuleInfo infoForPluginWithPath(const String& pluginPath) const;
 
-    // Return whether this plug-in should be blocked from being instantiated.
-    // Note that the plug-in will still be seen by e.g. navigator.plugins
-    bool shouldBlockPlugin(const PluginModuleInfo&) const;
+    static PluginModuleLoadPolicy defaultLoadPolicyForPlugin(const PluginModuleInfo&);
+
+    void setClient(PluginInfoStoreClient* client) { m_client = client; }
+    PluginInfoStoreClient* client() const { return m_client; }
 
 private:
-    PluginModuleInfo findPluginForMIMEType(const String& mimeType) const;
-    PluginModuleInfo findPluginForExtension(const String& extension, String& mimeType) const;
+    PluginModuleInfo findPluginForMIMEType(const String& mimeType, WebCore::PluginData::AllowedPluginTypes) const;
+    PluginModuleInfo findPluginForExtension(const String& extension, String& mimeType, WebCore::PluginData::AllowedPluginTypes) const;
 
     void loadPluginsIfNecessary();
     static void loadPlugin(Vector<PluginModuleInfo>& plugins, const String& pluginPath);
@@ -88,10 +106,11 @@ private:
     Vector<String> m_additionalPluginsDirectories;
     Vector<PluginModuleInfo> m_plugins;
     bool m_pluginListIsUpToDate;
-
-    mutable Mutex m_pluginsLock;
+    PluginInfoStoreClient* m_client;
 };
     
 } // namespace WebKit
+
+#endif // ENABLE(NETSCAPE_PLUGIN_API)
 
 #endif // PluginInfoStore_h

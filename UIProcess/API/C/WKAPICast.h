@@ -30,17 +30,21 @@
 #include "CacheModel.h"
 #include "FontSmoothingLevel.h"
 #include "HTTPCookieAcceptPolicy.h"
+#include "InjectedBundleHitTestResultMediaType.h"
+#include "PluginModuleInfo.h"
+#include "ProcessModel.h"
 #include "ResourceCachesToClear.h"
-#include "WebGrammarDetail.h"
+#include "WKBundleHitTestResult.h"
 #include "WKContext.h"
 #include "WKCookieManager.h"
 #include "WKCredentialTypes.h"
 #include "WKPage.h"
+#include "WKPreferences.h"
 #include "WKPreferencesPrivate.h"
 #include "WKProtectionSpaceTypes.h"
 #include "WKResourceCacheManager.h"
 #include "WKSharedAPICast.h"
-#include <WebCore/CookieJar.h>
+#include "WebGrammarDetail.h"
 #include <WebCore/Credential.h>
 #include <WebCore/FrameLoaderTypes.h>
 #include <WebCore/ProtectionSpace.h>
@@ -56,7 +60,10 @@ class NotificationPermissionRequest;
 class WebApplicationCacheManagerProxy;
 class WebBackForwardList;
 class WebBackForwardListItem;
+class WebBatteryManagerProxy;
+class WebBatteryStatus;
 class WebResourceCacheManagerProxy;
+class WebColorPickerResultListenerProxy;
 class WebContext;
 class WebCookieManagerProxy;
 class WebCredential;
@@ -70,9 +77,11 @@ class WebGrammarDetail;
 class WebHitTestResult;
 class WebIconDatabase;
 class WebInspectorProxy;
-class WebKeyValueStorageManagerProxy;
+class WebKeyValueStorageManager;
 class WebMediaCacheManagerProxy;
 class WebNavigationData;
+class WebNetworkInfoManagerProxy;
+class WebNetworkInfo;
 class WebNotification;
 class WebNotificationProvider;
 class WebNotificationManagerProxy;
@@ -86,13 +95,19 @@ class WebProtectionSpace;
 class WebRenderLayer;
 class WebRenderObject;
 class WebTextChecker;
+class WebVibrationProxy;
+class WebViewportAttributes;
 
 WK_ADD_API_MAPPING(WKApplicationCacheManagerRef, WebApplicationCacheManagerProxy)
 WK_ADD_API_MAPPING(WKAuthenticationChallengeRef, AuthenticationChallengeProxy)
 WK_ADD_API_MAPPING(WKAuthenticationDecisionListenerRef, AuthenticationDecisionListener)
 WK_ADD_API_MAPPING(WKBackForwardListItemRef, WebBackForwardListItem)
 WK_ADD_API_MAPPING(WKBackForwardListRef, WebBackForwardList)
+WK_ADD_API_MAPPING(WKBatteryManagerRef, WebBatteryManagerProxy)
+WK_ADD_API_MAPPING(WKBatteryStatusRef, WebBatteryStatus)
+WK_ADD_API_MAPPING(WKBundleHitTestResultMediaType, BundleHitTestResultMediaType)
 WK_ADD_API_MAPPING(WKResourceCacheManagerRef, WebResourceCacheManagerProxy)
+WK_ADD_API_MAPPING(WKColorPickerResultListenerRef, WebColorPickerResultListenerProxy)
 WK_ADD_API_MAPPING(WKContextRef, WebContext)
 WK_ADD_API_MAPPING(WKCookieManagerRef, WebCookieManagerProxy)
 WK_ADD_API_MAPPING(WKCredentialRef, WebCredential)
@@ -107,9 +122,11 @@ WK_ADD_API_MAPPING(WKGeolocationPositionRef, WebGeolocationPosition)
 WK_ADD_API_MAPPING(WKGrammarDetailRef, WebGrammarDetail)
 WK_ADD_API_MAPPING(WKHitTestResultRef, WebHitTestResult)
 WK_ADD_API_MAPPING(WKIconDatabaseRef, WebIconDatabase)
-WK_ADD_API_MAPPING(WKKeyValueStorageManagerRef, WebKeyValueStorageManagerProxy)
+WK_ADD_API_MAPPING(WKKeyValueStorageManagerRef, WebKeyValueStorageManager)
 WK_ADD_API_MAPPING(WKMediaCacheManagerRef, WebMediaCacheManagerProxy)
 WK_ADD_API_MAPPING(WKNavigationDataRef, WebNavigationData)
+WK_ADD_API_MAPPING(WKNetworkInfoManagerRef, WebNetworkInfoManagerProxy)
+WK_ADD_API_MAPPING(WKNetworkInfoRef, WebNetworkInfo)
 WK_ADD_API_MAPPING(WKNotificationManagerRef, WebNotificationManagerProxy)
 WK_ADD_API_MAPPING(WKNotificationPermissionRequestRef, NotificationPermissionRequest)
 WK_ADD_API_MAPPING(WKNotificationProviderRef, WebNotificationProvider)
@@ -124,12 +141,41 @@ WK_ADD_API_MAPPING(WKProtectionSpaceRef, WebProtectionSpace)
 WK_ADD_API_MAPPING(WKRenderLayerRef, WebRenderLayer)
 WK_ADD_API_MAPPING(WKRenderObjectRef, WebRenderObject)
 WK_ADD_API_MAPPING(WKTextCheckerRef, WebTextChecker)
-
-#if ENABLE(INSPECTOR)
+WK_ADD_API_MAPPING(WKVibrationRef, WebVibrationProxy)
+WK_ADD_API_MAPPING(WKViewportAttributesRef, WebViewportAttributes)
 WK_ADD_API_MAPPING(WKInspectorRef, WebInspectorProxy)
-#endif
 
 /* Enum conversions */
+
+inline BundleHitTestResultMediaType toBundleHitTestResultMediaType(WKBundleHitTestResultMediaType wkMediaType)
+{
+    switch (wkMediaType) {
+    case kWKBundleHitTestResultMediaTypeNone:
+        return BundleHitTestResultMediaTypeNone;
+    case kWKBundleHitTestResultMediaTypeAudio:
+        return BundleHitTestResultMediaTypeAudio;
+    case kWKBundleHitTestResultMediaTypeVideo:
+        return BundleHitTestResultMediaTypeVideo;
+    }
+    
+    ASSERT_NOT_REACHED();
+    return BundleHitTestResultMediaTypeNone;
+}
+    
+inline WKBundleHitTestResultMediaType toAPI(BundleHitTestResultMediaType mediaType)
+{
+    switch (mediaType) {
+    case BundleHitTestResultMediaTypeNone:
+        return kWKBundleHitTestResultMediaTypeNone;
+    case BundleHitTestResultMediaTypeAudio:
+        return kWKBundleHitTestResultMediaTypeAudio;
+    case BundleHitTestResultMediaTypeVideo:
+        return kWKBundleHitTestResultMediaTypeVideo;
+    }
+    
+    ASSERT_NOT_REACHED();
+    return kWKBundleHitTestResultMediaTypeNone;
+}
 
 inline CacheModel toCacheModel(WKCacheModel wkCacheModel)
 {
@@ -160,6 +206,31 @@ inline WKCacheModel toAPI(CacheModel cacheModel)
     return kWKCacheModelDocumentViewer;
 }
 
+inline ProcessModel toProcessModel(WKProcessModel wkProcessModel)
+{
+    switch (wkProcessModel) {
+    case kWKProcessModelSharedSecondaryProcess:
+        return ProcessModelSharedSecondaryProcess;
+    case kWKProcessModelMultipleSecondaryProcesses:
+        return ProcessModelMultipleSecondaryProcesses;
+    }
+
+    ASSERT_NOT_REACHED();
+    return ProcessModelSharedSecondaryProcess;
+}
+
+inline WKProcessModel toAPI(ProcessModel processModel)
+{
+    switch (processModel) {
+    case ProcessModelSharedSecondaryProcess:
+        return kWKProcessModelSharedSecondaryProcess;
+    case ProcessModelMultipleSecondaryProcesses:
+        return kWKProcessModelMultipleSecondaryProcesses;
+    }
+    
+    return kWKProcessModelSharedSecondaryProcess;
+}
+
 inline FontSmoothingLevel toFontSmoothingLevel(WKFontSmoothingLevel wkLevel)
 {
     switch (wkLevel) {
@@ -171,10 +242,6 @@ inline FontSmoothingLevel toFontSmoothingLevel(WKFontSmoothingLevel wkLevel)
         return FontSmoothingLevelMedium;
     case kWKFontSmoothingLevelStrong:
         return FontSmoothingLevelStrong;
-#if PLATFORM(WIN)
-    case kWKFontSmoothingLevelWindows:
-        return FontSmoothingLevelWindows;
-#endif
     }
 
     ASSERT_NOT_REACHED();
@@ -193,10 +260,6 @@ inline WKFontSmoothingLevel toAPI(FontSmoothingLevel level)
         return kWKFontSmoothingLevelMedium;
     case FontSmoothingLevelStrong:
         return kWKFontSmoothingLevelStrong;
-#if PLATFORM(WIN)
-    case FontSmoothingLevelWindows:
-        return kWKFontSmoothingLevelWindows;
-#endif
     }
 
     ASSERT_NOT_REACHED();
@@ -345,6 +408,66 @@ inline WKHTTPCookieAcceptPolicy toAPI(HTTPCookieAcceptPolicy policy)
     return kWKHTTPCookieAcceptPolicyAlways;
 }
 
+inline WebCore::SecurityOrigin::StorageBlockingPolicy toStorageBlockingPolicy(WKStorageBlockingPolicy policy)
+{
+    switch (policy) {
+    case kWKAllowAllStorage:
+        return WebCore::SecurityOrigin::AllowAllStorage;
+    case kWKBlockThirdPartyStorage:
+        return WebCore::SecurityOrigin::BlockThirdPartyStorage;
+    case kWKBlockAllStorage:
+        return WebCore::SecurityOrigin::BlockAllStorage;
+    }
+
+    ASSERT_NOT_REACHED();
+    return WebCore::SecurityOrigin::AllowAllStorage;
+}
+
+inline WKStorageBlockingPolicy toAPI(WebCore::SecurityOrigin::StorageBlockingPolicy policy)
+{
+    switch (policy) {
+    case WebCore::SecurityOrigin::AllowAllStorage:
+        return kWKAllowAllStorage;
+    case WebCore::SecurityOrigin::BlockThirdPartyStorage:
+        return kWKBlockThirdPartyStorage;
+    case WebCore::SecurityOrigin::BlockAllStorage:
+        return kWKBlockAllStorage;
+    }
+
+    ASSERT_NOT_REACHED();
+    return kWKAllowAllStorage;
+}
+
+inline WKPluginLoadPolicy toWKPluginLoadPolicy(PluginModuleLoadPolicy pluginModuleLoadPolicy)
+{
+    switch (pluginModuleLoadPolicy) {
+    case PluginModuleLoadNormally:
+        return kWKPluginLoadPolicyLoadNormally;
+    case PluginModuleLoadUnsandboxed:
+        return kWKPluginLoadPolicyLoadUnsandboxed;
+    case PluginModuleBlocked:
+        return kWKPluginLoadPolicyBlocked;
+    }
+    
+    ASSERT_NOT_REACHED();
+    return kWKPluginLoadPolicyBlocked;
+}
+
+inline PluginModuleLoadPolicy toPluginModuleLoadPolicy(WKPluginLoadPolicy pluginLoadPolicy)
+{
+    switch (pluginLoadPolicy) {
+    case kWKPluginLoadPolicyLoadNormally:
+        return PluginModuleLoadNormally;
+    case kWKPluginLoadPolicyBlocked:
+        return PluginModuleBlocked;
+    case kWKPluginLoadPolicyLoadUnsandboxed:
+        return PluginModuleLoadUnsandboxed;
+    }
+    
+    ASSERT_NOT_REACHED();
+    return PluginModuleBlocked;
+}
+
 inline ProxyingRefPtr<WebGrammarDetail> toAPI(const WebCore::GrammarDetail& grammarDetail)
 {
     return ProxyingRefPtr<WebGrammarDetail>(WebGrammarDetail::create(grammarDetail));
@@ -352,16 +475,16 @@ inline ProxyingRefPtr<WebGrammarDetail> toAPI(const WebCore::GrammarDetail& gram
 
 } // namespace WebKit
 
-#if defined(WIN32) || defined(_WIN32)
-#include "WKAPICastWin.h"
-#endif
-
 #if defined(BUILDING_GTK__)
 #include "WKAPICastGtk.h"
 #endif
 
 #if USE(SOUP)
 #include "WKAPICastSoup.h"
+#endif
+
+#if defined(BUILDING_EFL__)
+#include "WKAPICastEfl.h"
 #endif
 
 #endif // WKAPICast_h

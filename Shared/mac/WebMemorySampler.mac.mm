@@ -33,6 +33,7 @@
 #import <mach/task.h>
 #import <mach/mach_types.h>
 #import <malloc/malloc.h>
+#import <notify.h>
 #import <runtime/JSLock.h>
 #import <WebCore/JSDOMWindow.h>
 #import <wtf/CurrentTime.h>
@@ -115,9 +116,9 @@ WebMemoryStatistics WebMemorySampler::sampleWebKit() const
     totalBytesInUse += fastMallocBytesInUse;
     totalBytesCommitted += fastMallocBytesCommitted;
     
-    JSLock lock(SilenceAssertionsOnly);
-    size_t jscHeapBytesInUse = JSDOMWindow::commonJSGlobalData()->heap.size();
-    size_t jscHeapBytesCommitted = JSDOMWindow::commonJSGlobalData()->heap.capacity();
+    JSLockHolder lock(JSDOMWindow::commonVM());
+    size_t jscHeapBytesInUse = JSDOMWindow::commonVM()->heap.size();
+    size_t jscHeapBytesCommitted = JSDOMWindow::commonVM()->heap.capacity();
     totalBytesInUse += jscHeapBytesInUse;
     totalBytesCommitted += jscHeapBytesCommitted;
     
@@ -175,7 +176,14 @@ WebMemoryStatistics WebMemorySampler::sampleWebKit() const
     
     return webKitMemoryStats;
 }
-    
+ 
+void WebMemorySampler::sendMemoryPressureEvent()
+{
+    // Free memory that could be released if we needed more.
+    // We want to track memory that cannot.
+    notify_post("org.WebKit.lowMemory");
+}
+
 }
 
 #endif

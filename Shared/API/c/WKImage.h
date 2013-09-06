@@ -38,6 +38,14 @@ enum {
 };
 typedef uint32_t WKImageOptions;
 
+enum {
+    kWKSnapshotOptionsShareable = 1 << 0,
+    kWKSnapshotOptionsExcludeSelectionHighlighting = 1 << 1,
+    kWKSnapshotOptionsInViewCoordinates = 1 << 2,
+    kWKSnapshotOptionsPaintSelectionRectangle = 1 << 3
+};
+typedef uint32_t WKSnapshotOptions;
+
 WK_EXPORT WKTypeID WKImageGetTypeID();
 
 WK_EXPORT WKImageRef WKImageCreate(WKSize size, WKImageOptions options);

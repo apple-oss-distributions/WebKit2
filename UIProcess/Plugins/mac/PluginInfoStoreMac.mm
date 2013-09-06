@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2012 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,6 +26,8 @@
 #import "config.h"
 #import "PluginInfoStore.h"
 
+#if ENABLE(NETSCAPE_PLUGIN_API)
+
 #import "NetscapePluginModule.h"
 #import "WebKitSystemInterface.h"
 #import <WebCore/WebCoreNSStringExtras.h>
@@ -33,6 +35,8 @@
 #import <wtf/RetainPtr.h>
 
 using namespace WebCore;
+
+static const char* const oracleJavaAppletPluginBundleIdentifier =  "com.oracle.java.JavaAppletPlugin";
 
 namespace WebKit {
 
@@ -57,7 +61,7 @@ Vector<String> PluginInfoStore::pluginPathsInDirectory(const String& directory)
 {
     Vector<String> pluginPaths;
 
-    RetainPtr<CFStringRef> directoryCFString(AdoptCF, safeCreateCFString(directory));
+    RetainPtr<CFStringRef> directoryCFString = adoptCF(safeCreateCFString(directory));
     
     NSArray *filenames = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:(NSString *)directoryCFString.get() error:nil];
     for (NSString *filename in filenames)
@@ -76,22 +80,39 @@ bool PluginInfoStore::getPluginInfo(const String& pluginPath, PluginModuleInfo& 
     return NetscapePluginModule::getPluginInfo(pluginPath, plugin);
 }
 
+static bool shouldBlockPlugin(const PluginModuleInfo& plugin)
+{
+    return PluginInfoStore::defaultLoadPolicyForPlugin(plugin) == PluginModuleBlocked;
+}
+
 bool PluginInfoStore::shouldUsePlugin(Vector<PluginModuleInfo>& alreadyLoadedPlugins, const PluginModuleInfo& plugin)
 {
     for (size_t i = 0; i < alreadyLoadedPlugins.size(); ++i) {
         const PluginModuleInfo& loadedPlugin = alreadyLoadedPlugins[i];
 
         // If a plug-in with the same bundle identifier already exists, we don't want to load it.
-        if (loadedPlugin.bundleIdentifier == plugin.bundleIdentifier)
-            return false;
+        // However, if the already existing plug-in is blocked we want to replace it with the new plug-in.
+        if (loadedPlugin.bundleIdentifier == plugin.bundleIdentifier) {
+            if (!shouldBlockPlugin(loadedPlugin))
+                return false;
+
+            alreadyLoadedPlugins.remove(i);
+            break;
+        }
     }
+
+    if (plugin.bundleIdentifier == "com.apple.java.JavaAppletPlugin")
+        return false;
 
     return true;
 }
 
-bool PluginInfoStore::shouldBlockPlugin(const PluginModuleInfo& plugin) const
+PluginModuleLoadPolicy PluginInfoStore::defaultLoadPolicyForPlugin(const PluginModuleInfo& plugin)
 {
-    return WKShouldBlockPlugin(plugin.bundleIdentifier, plugin.versionString);
+    if (WKShouldBlockPlugin(plugin.bundleIdentifier, plugin.versionString))
+        return PluginModuleBlocked;
+
+    return PluginModuleLoadNormally;
 }
 
 String PluginInfoStore::getMIMETypeForExtension(const String& extension)
@@ -100,8 +121,22 @@ String PluginInfoStore::getMIMETypeForExtension(const String& extension)
     // strength reduced into the callsite once we can safely convert String
     // to CFStringRef off the main thread.
 
-    RetainPtr<CFStringRef> extensionCFString(AdoptCF, safeCreateCFString(extension));
+    RetainPtr<CFStringRef> extensionCFString = adoptCF(safeCreateCFString(extension));
     return WKGetMIMETypeForExtension((NSString *)extensionCFString.get());
 }
 
+PluginModuleInfo PluginInfoStore::findPluginWithBundleIdentifier(const String& bundleIdentifier)
+{
+    loadPluginsIfNecessary();
+
+    for (size_t i = 0; i < m_plugins.size(); ++i) {
+        if (m_plugins[i].bundleIdentifier == bundleIdentifier)
+            return m_plugins[i];
+    }
+    
+    return PluginModuleInfo();
+}
+
 } // namespace WebKit
+
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

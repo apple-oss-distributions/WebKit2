@@ -40,13 +40,13 @@ public:
         // Supports receiving a paint event, even when using CoreAnimation rendering.
         SupportsSnapshotting,
 
-        // Make the plug-in transparent if it has a "background" attribute set.
+        // Make the plug-in opaque unless it has a "background" attribute set to a transparent color
+        // according to http://msdn.microsoft.com/en-us/library/cc838148(VS.95).aspx
+        // A non-existent "background" attribute is interpreted as the named color White which is opaque.
         // Microsoft Silverlight doesn't opt into transparency using NPN_SetValue and
-        // NPPVpluginTransparentBool, so we'll always force if the plug-in has a "background"
-        // attribute specified, regardless of it's value.
-        // FIXME: We could get more fancy here and check for specific values that we know are
-        // transparent.
-        MakeTransparentIfBackgroundAttributeExists,
+        // NPPVpluginTransparentBool, so we'll always force it unless the plug-in has a "background"
+        // attribute that specifies a opaque color.
+        MakeOpaqueUnlessTransparentSilverlightBackgroundAttributeExists,
 
         // Whether calling NPP_GetValue with NPPVpluginCoreAnimationLayer returns a retained Core Animation
         // layer or not. According to the NPAPI specifications, plug-in shouldn't return a retained layer but
@@ -67,6 +67,10 @@ public:
         // This is necessary to disable Silverlight's workaround for a Safari 2 leak
         // which is enabled if it doesn't find Version/3 in the user-agent.
         AppendVersion3UserAgent,
+
+        // Whether all thrown NSExceptions should be leaked.
+        // <rdar://problem/13003470> Adobe Flash has a bug where exceptions are released too early.
+        LeakAllThrownNSExceptions,
 
 #ifndef NP_NO_QUICKDRAW
         // Allow the plug-in to use the QuickDraw drawing model, since we know that the plug-in

@@ -27,8 +27,11 @@
 #include "WebLoaderClient.h"
 
 #include "ImmutableArray.h"
-#include "WebBackForwardListItem.h"
+#include "ImmutableDictionary.h"
+#include "PluginInformation.h"
 #include "WKAPICast.h"
+#include "WebBackForwardListItem.h"
+#include "WebPageProxy.h"
 #include <string.h>
 
 using namespace WebCore;
@@ -129,6 +132,14 @@ void WebLoaderClient::didNewFirstVisuallyNonEmptyLayout(WebPageProxy* page, APIO
         return;
 
     m_client.didNewFirstVisuallyNonEmptyLayout(toAPI(page), toAPI(userData), m_client.clientInfo);
+}
+
+void WebLoaderClient::didLayout(WebPageProxy* page, LayoutMilestones milestones, APIObject* userData)
+{
+    if (!m_client.didLayout)
+        return;
+
+    m_client.didLayout(toAPI(page), toWKLayoutMilestones(milestones), toAPI(userData), m_client.clientInfo);
 }
 
 void WebLoaderClient::didRemoveFrameFromHierarchy(WebPageProxy* page, WebFrameProxy* frame, APIObject* userData)
@@ -235,7 +246,7 @@ void WebLoaderClient::processDidCrash(WebPageProxy* page)
     m_client.processDidCrash(toAPI(page), m_client.clientInfo);
 }
 
-void WebLoaderClient::didChangeBackForwardList(WebPageProxy* page, WebBackForwardListItem* addedItem, Vector<RefPtr<APIObject> >* removedItems)
+void WebLoaderClient::didChangeBackForwardList(WebPageProxy* page, WebBackForwardListItem* addedItem, Vector<RefPtr<APIObject>>* removedItems)
 {
     if (!m_client.didChangeBackForwardList)
         return;
@@ -264,23 +275,66 @@ void WebLoaderClient::willGoToBackForwardListItem(WebPageProxy* page, WebBackFor
         m_client.willGoToBackForwardListItem(toAPI(page), toAPI(item), toAPI(userData), m_client.clientInfo);
 }
 
-void WebLoaderClient::didFailToInitializePlugin(WebPageProxy* page, const String& mimeType)
+void WebLoaderClient::didFailToInitializePlugin(WebPageProxy* page, ImmutableDictionary* pluginInformation)
 {
     if (m_client.didFailToInitializePlugin_deprecatedForUseWithV0)
-        m_client.didFailToInitializePlugin_deprecatedForUseWithV0(toAPI(page), toAPI(mimeType.impl()), m_client.clientInfo);
+        m_client.didFailToInitializePlugin_deprecatedForUseWithV0(
+            toAPI(page),
+            toAPI(pluginInformation->get<WebString>(pluginInformationMIMETypeKey())),
+            m_client.clientInfo);
 
-    if (!m_client.pluginDidFail)
-        return;
+    if (m_client.pluginDidFail_deprecatedForUseWithV1)
+        m_client.pluginDidFail_deprecatedForUseWithV1(
+            toAPI(page),
+            kWKErrorCodeCannotLoadPlugIn,
+            toAPI(pluginInformation->get<WebString>(pluginInformationMIMETypeKey())),
+            0,
+            0,
+            m_client.clientInfo);
 
-    m_client.pluginDidFail(toAPI(page), kWKErrorCodeCannotLoadPlugIn, toAPI(mimeType.impl()), 0, 0, m_client.clientInfo);
+    if (m_client.pluginDidFail)
+        m_client.pluginDidFail(
+            toAPI(page),
+            kWKErrorCodeCannotLoadPlugIn,
+            toAPI(pluginInformation),
+            m_client.clientInfo);
 }
 
-void WebLoaderClient::didBlockInsecurePluginVersion(WebPageProxy* page, const String& mimeType, const String& pluginIdentifier, const String& pluginVersion)
+void WebLoaderClient::didBlockInsecurePluginVersion(WebPageProxy* page, ImmutableDictionary* pluginInformation)
 {
-    if (!m_client.pluginDidFail)
-        return;
+    if (m_client.pluginDidFail_deprecatedForUseWithV1)
+        m_client.pluginDidFail_deprecatedForUseWithV1(
+            toAPI(page),
+            kWKErrorCodeInsecurePlugInVersion,
+            toAPI(pluginInformation->get<WebString>(pluginInformationMIMETypeKey())),
+            toAPI(pluginInformation->get<WebString>(pluginInformationBundleIdentifierKey())),
+            toAPI(pluginInformation->get<WebString>(pluginInformationBundleVersionKey())),
+            m_client.clientInfo);
 
-    m_client.pluginDidFail(toAPI(page), kWKErrorCodeInsecurePlugInVersion, toAPI(mimeType.impl()), toAPI(pluginIdentifier.impl()), toAPI(pluginVersion.impl()), m_client.clientInfo);
+    if (m_client.pluginDidFail)
+        m_client.pluginDidFail(
+            toAPI(page),
+            kWKErrorCodeInsecurePlugInVersion,
+            toAPI(pluginInformation),
+            m_client.clientInfo);
+}
+
+PluginModuleLoadPolicy WebLoaderClient::pluginLoadPolicy(WebPageProxy* page, PluginModuleLoadPolicy currentPluginLoadPolicy, ImmutableDictionary* pluginInformation, String& unavailabilityDescription)
+{
+    WKStringRef unavailabilityDescriptionOut = 0;
+    PluginModuleLoadPolicy loadPolicy = currentPluginLoadPolicy;
+
+    if (m_client.pluginLoadPolicy_deprecatedForUseWithV2)
+        loadPolicy = toPluginModuleLoadPolicy(m_client.pluginLoadPolicy_deprecatedForUseWithV2(toAPI(page), toWKPluginLoadPolicy(currentPluginLoadPolicy), toAPI(pluginInformation), m_client.clientInfo));
+    else if (m_client.pluginLoadPolicy)
+        loadPolicy = toPluginModuleLoadPolicy(m_client.pluginLoadPolicy(toAPI(page), toWKPluginLoadPolicy(currentPluginLoadPolicy), toAPI(pluginInformation), &unavailabilityDescriptionOut, m_client.clientInfo));
+
+    if (unavailabilityDescriptionOut) {
+        RefPtr<WebString> webUnavailabilityDescription = adoptRef(toImpl(unavailabilityDescriptionOut));
+        unavailabilityDescription = webUnavailabilityDescription->string();
+    }
+    
+    return loadPolicy;
 }
 
 } // namespace WebKit
