@@ -27,7 +27,7 @@
 #import "config.h"
 #import "PluginProcess.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #import "ArgumentCoders.h"
 #import "NetscapePlugin.h"
@@ -36,6 +36,7 @@
 #import "PluginProcessShim.h"
 #import "PluginSandboxProfile.h"
 #import "SandboxInitializationParameters.h"
+#import "SandboxUtilities.h"
 #import <CoreAudio/AudioHardware.h>
 #import <WebCore/LocalizedStrings.h>
 #import <WebKitSystemInterface.h>
@@ -43,10 +44,15 @@
 #import <objc/runtime.h>
 #import <sysexits.h>
 #import <wtf/HashSet.h>
+#import <wtf/NeverDestroyed.h>
 
 using namespace WebCore;
 
 const CFStringRef kLSPlugInBundleIdentifierKey = CFSTR("LSPlugInBundleIdentifierKey");
+
+// These values were chosen to match default NSURLCache sizes at the time of this writing.
+const NSUInteger pluginMemoryCacheSize = 512000;
+const NSUInteger pluginDiskCacheSize = 20000000;
 
 namespace WebKit {
 
@@ -127,7 +133,7 @@ template<typename T> void FullscreenWindowTracker::windowHidden(T window)
 
 static FullscreenWindowTracker& fullscreenWindowTracker()
 {
-    DEFINE_STATIC_LOCAL(FullscreenWindowTracker, fullscreenWindowTracker, ());
+    static NeverDestroyed<FullscreenWindowTracker> fullscreenWindowTracker;
     return fullscreenWindowTracker;
 }
 
@@ -189,11 +195,11 @@ static void carbonWindowHidden(WindowRef window)
 static bool openCFURLRef(CFURLRef url, int32_t& status, CFURLRef* launchedURL)
 {
     String launchedURLString;
-    if (!PluginProcess::shared().openURL(KURL(url).string(), status, launchedURLString))
+    if (!PluginProcess::shared().openURL(URL(url).string(), status, launchedURLString))
         return false;
 
     if (!launchedURLString.isNull() && launchedURL)
-        *launchedURL = KURL(ParsedURLString, launchedURLString).createCFURL().leakRef();
+        *launchedURL = URL(ParsedURLString, launchedURLString).createCFURL().leakRef();
     return true;
 }
 
@@ -208,17 +214,13 @@ static unsigned modalCount = 0;
 
 static void beginModal()
 {
-#if COMPILER(CLANG)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
     // Make sure to make ourselves the front process
     ProcessSerialNumber psn;
     GetCurrentProcess(&psn);
     SetFrontProcess(&psn);
-#if COMPILER(CLANG)
 #pragma clang diagnostic pop
-#endif
 
     if (!modalCount++)
         setModal(true);
@@ -293,13 +295,23 @@ static NSRunningApplication *replacedNSWorkspace_launchApplicationAtURL_options_
         }
     }
 
-    if (PluginProcess::shared().launchApplicationAtURL(KURL(url).string(), arguments)) {
+    if (PluginProcess::shared().launchApplicationAtURL(URL(url).string(), arguments)) {
         if (error)
             *error = nil;
         return nil;
     }
 
     return NSWorkspace_launchApplicationAtURL_options_configuration_error(self, _cmd, url, options, configuration, error);
+}
+
+static BOOL (*NSWorkspace_openFile)(NSWorkspace *, SEL, NSString *);
+
+static BOOL replacedNSWorkspace_openFile(NSWorkspace *self, SEL _cmd, NSString *fullPath)
+{
+    if (PluginProcess::shared().openFile(fullPath))
+        return true;
+
+    return NSWorkspace_openFile(self, _cmd, fullPath);
 }
 
 static void initializeCocoaOverrides()
@@ -311,6 +323,10 @@ static void initializeCocoaOverrides()
     // Override -[NSWorkspace launchApplicationAtURL:options:configuration:error:]
     Method launchApplicationAtURLOptionsConfigurationErrorMethod = class_getInstanceMethod(objc_getClass("NSWorkspace"), @selector(launchApplicationAtURL:options:configuration:error:));
     NSWorkspace_launchApplicationAtURL_options_configuration_error = reinterpret_cast<NSRunningApplication *(*)(NSWorkspace *, SEL, NSURL *, NSWorkspaceLaunchOptions, NSDictionary *, NSError **)>(method_setImplementation(launchApplicationAtURLOptionsConfigurationErrorMethod, reinterpret_cast<IMP>(replacedNSWorkspace_launchApplicationAtURL_options_configuration_error)));
+
+    // Override -[NSWorkspace openFile:]
+    Method openFileMethod = class_getInstanceMethod(objc_getClass("NSWorkspace"), @selector(openFile:));
+    NSWorkspace_openFile = reinterpret_cast<BOOL (*)(NSWorkspace *, SEL, NSString *)>(method_setImplementation(openFileMethod, reinterpret_cast<IMP>(replacedNSWorkspace_openFile)));
 
     // Override -[NSApplication runModalForWindow:]
     Method runModalForWindowMethod = class_getInstanceMethod(objc_getClass("NSApplication"), @selector(runModalForWindow:));
@@ -371,6 +387,15 @@ bool PluginProcess::openURL(const String& urlString, int32_t& status, String& la
     return result;
 }
 
+bool PluginProcess::openFile(const String& fullPath)
+{
+    bool result;
+    if (!parentProcessConnection()->sendSync(Messages::PluginProcessProxy::OpenFile(fullPath), Messages::PluginProcessProxy::OpenFile::Reply(result), 0))
+        return false;
+
+    return result;
+}
+
 static void muteAudio(void)
 {
     AudioObjectPropertyAddress propertyAddress = { kAudioHardwarePropertyProcessIsAudible, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster };
@@ -384,6 +409,11 @@ void PluginProcess::platformInitializePluginProcess(const PluginProcessCreationP
     m_compositingRenderServerPort = parameters.acceleratedCompositingPort.port();
     if (parameters.processType == PluginProcessTypeSnapshot)
         muteAudio();
+
+    [NSURLCache setSharedURLCache:adoptNS([[NSURLCache alloc]
+        initWithMemoryCapacity:pluginMemoryCacheSize
+        diskCapacity:pluginDiskCacheSize
+        diskPath:m_nsurlCacheDirectory]).get()];
 }
 
 void PluginProcess::platformInitializeProcess(const ChildProcessInitializationParameters& parameters)
@@ -400,12 +430,6 @@ void PluginProcess::platformInitializeProcess(const ChildProcessInitializationPa
     // allowing plug-ins to change the mouse cursor at any time.
     WKEnableSettingCursorWhenInBackground();
 
-#if defined(__i386__)
-    NSDictionary *defaults = [[NSDictionary alloc] initWithObjectsAndKeys:[NSNumber numberWithBool:YES], @"AppleMagnifiedMode", nil];
-    [[NSUserDefaults standardUserDefaults] registerDefaults:defaults];
-    [defaults release];
-#endif
-
     RetainPtr<CFURLRef> pluginURL = adoptCF(CFURLCreateWithFileSystemPath(0, m_pluginPath.createCFString().get(), kCFURLPOSIXPathStyle, false));
     if (!pluginURL)
         return;
@@ -418,7 +442,7 @@ void PluginProcess::platformInitializeProcess(const ChildProcessInitializationPa
 
     // FIXME: Workaround for Java not liking its plugin process to be supressed - <rdar://problem/14267843>
     if (m_pluginBundleIdentifier == "com.oracle.java.JavaAppletPlugin")
-        incrementActiveTaskCount();
+        (new UserActivity("com.oracle.java.JavaAppletPlugin"))->start();
 }
 
 void PluginProcess::initializeProcessName(const ChildProcessInitializationParameters& parameters)
@@ -433,20 +457,50 @@ void PluginProcess::initializeProcessName(const ChildProcessInitializationParame
 
 void PluginProcess::initializeSandbox(const ChildProcessInitializationParameters& parameters, SandboxInitializationParameters& sandboxParameters)
 {
-    if (parameters.extraInitializationData.get("disable-sandbox") == "1")
+    // PluginProcess may already be sandboxed if its parent process was sandboxed, and launched a child process instead of an XPC service.
+    // This is generally not expected, however we currently always spawn a child process to create a MIME type preferences file.
+    if (processIsSandboxed(getpid())) {
+        RELEASE_ASSERT(!parameters.connectionIdentifier.xpcConnection);
+        RELEASE_ASSERT(processIsSandboxed(getppid()));
         return;
+    }
+
+    bool parentIsSandboxed = parameters.connectionIdentifier.xpcConnection && processIsSandboxed(xpc_connection_get_pid(parameters.connectionIdentifier.xpcConnection.get()));
+
+    if (parameters.extraInitializationData.get("disable-sandbox") == "1") {
+        if (parentIsSandboxed) {
+            WTFLogAlways("Sandboxed processes may not disable plug-in sandbox, terminating %s.", parameters.clientIdentifier.utf8().data());
+            exit(EX_OSERR);
+        }
+        return;
+    }
 
     String sandboxProfile = pluginSandboxProfile(m_pluginBundleIdentifier);
-    if (sandboxProfile.isEmpty())
+    if (sandboxProfile.isEmpty()) {
+        if (parentIsSandboxed) {
+            WTFLogAlways("Sandboxed processes may only use sandboxed plug-ins, terminating %s.", parameters.clientIdentifier.utf8().data());
+            exit(EX_OSERR);
+        }
         return;
+    }
 
     sandboxParameters.setSandboxProfile(sandboxProfile);
 
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
-    // Use private temporary and cache directories.
     char temporaryDirectory[PATH_MAX];
     if (!confstr(_CS_DARWIN_USER_TEMP_DIR, temporaryDirectory, sizeof(temporaryDirectory))) {
         WTFLogAlways("PluginProcess: couldn't retrieve system temporary directory path: %d\n", errno);
+        exit(EX_OSERR);
+    }
+
+    char cacheDirectory[PATH_MAX];
+    if (!confstr(_CS_DARWIN_USER_CACHE_DIR, cacheDirectory, sizeof(cacheDirectory))) {
+        WTFLogAlways("PluginProcess: couldn't retrieve system cache directory path: %d\n", errno);
+        exit(EX_OSERR);
+    }
+
+    m_nsurlCacheDirectory = [[[NSFileManager defaultManager] stringWithFileSystemRepresentation:cacheDirectory length:strlen(temporaryDirectory)] stringByAppendingPathComponent:[[NSBundle mainBundle] bundleIdentifier]];
+    if (![[NSFileManager defaultManager] createDirectoryAtURL:[NSURL fileURLWithPath:m_nsurlCacheDirectory isDirectory:YES] withIntermediateDirectories:YES attributes:nil error:nil]) {
+        WTFLogAlways("PluginProcess: couldn't create NSURL cache directory '%s'\n", temporaryDirectory);
         exit(EX_OSERR);
     }
 
@@ -457,19 +511,21 @@ void PluginProcess::initializeSandbox(const ChildProcessInitializationParameters
     }
 
     sandboxParameters.setSystemDirectorySuffix([[[[NSFileManager defaultManager] stringWithFileSystemRepresentation:temporaryDirectory length:strlen(temporaryDirectory)] lastPathComponent] fileSystemRepresentation]);
-#endif
 
     sandboxParameters.addPathParameter("PLUGIN_PATH", m_pluginPath);
+    sandboxParameters.addPathParameter("NSURL_CACHE_DIR", m_nsurlCacheDirectory);
 
-    RetainPtr<CFStringRef> cachePath = adoptCF(WKCopyFoundationCacheDirectory());
-    sandboxParameters.addPathParameter("NSURL_CACHE_DIR", (NSString *)cachePath.get());
-
-    RetainPtr<NSDictionary> defaults = adoptNS([[NSDictionary alloc] initWithObjectsAndKeys:[NSNumber numberWithBool:YES], @"NSUseRemoteSavePanel", nil]);
-    [[NSUserDefaults standardUserDefaults] registerDefaults:defaults.get()];
+    [[NSUserDefaults standardUserDefaults] registerDefaults:@{ @"NSUseRemoteSavePanel" : @YES }];
 
     ChildProcess::initializeSandbox(parameters, sandboxParameters);
 }
 
+
+void PluginProcess::stopRunLoop()
+{
+    ChildProcess::stopNSAppRunLoop();
+}
+
 } // namespace WebKit
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

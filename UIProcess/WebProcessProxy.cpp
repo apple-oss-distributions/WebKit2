@@ -26,39 +26,38 @@
 #include "config.h"
 #include "WebProcessProxy.h"
 
+#include "APIFrameHandle.h"
+#include "APIHistoryClient.h"
+#include "CustomProtocolManagerProxyMessages.h"
 #include "DataReference.h"
 #include "DownloadProxyMap.h"
 #include "PluginInfoStore.h"
 #include "PluginProcessManager.h"
 #include "TextChecker.h"
 #include "TextCheckerState.h"
+#include "UserData.h"
 #include "WebBackForwardListItem.h"
 #include "WebContext.h"
 #include "WebNavigationDataStore.h"
 #include "WebNotificationManagerProxy.h"
+#include "WebPageGroup.h"
 #include "WebPageProxy.h"
 #include "WebPluginSiteDataManager.h"
 #include "WebProcessMessages.h"
 #include "WebProcessProxyMessages.h"
-#include <WebCore/KURL.h>
 #include <WebCore/SuddenTermination.h>
+#include <WebCore/URL.h>
 #include <stdio.h>
-#include <wtf/MainThread.h>
+#include <wtf/NeverDestroyed.h>
+#include <wtf/RunLoop.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
 
-#if PLATFORM(MAC)
-#include "SimplePDFPlugin.h"
-#if ENABLE(PDFKIT_PLUGIN)
+#if PLATFORM(COCOA)
 #include "PDFPlugin.h"
 #endif
-#endif
 
-#if ENABLE(CUSTOM_PROTOCOLS)
-#include "CustomProtocolManagerProxyMessages.h"
-#endif
-
-#if USE(SECURITY_FRAMEWORK)
+#if ENABLE(SEC_ITEM_SHIM)
 #include "SecItemShimProxy.h"
 #endif
 
@@ -77,26 +76,28 @@ static uint64_t generatePageID()
 
 static WebProcessProxy::WebPageProxyMap& globalPageMap()
 {
-    ASSERT(isMainThread());
-    DEFINE_STATIC_LOCAL(WebProcessProxy::WebPageProxyMap, pageMap, ());
+    ASSERT(RunLoop::isMain());
+    static NeverDestroyed<WebProcessProxy::WebPageProxyMap> pageMap;
     return pageMap;
 }
 
-PassRefPtr<WebProcessProxy> WebProcessProxy::create(PassRefPtr<WebContext> context)
+PassRefPtr<WebProcessProxy> WebProcessProxy::create(WebContext& context)
 {
     return adoptRef(new WebProcessProxy(context));
 }
 
-WebProcessProxy::WebProcessProxy(PassRefPtr<WebContext> context)
+WebProcessProxy::WebProcessProxy(WebContext& context)
     : m_responsivenessTimer(this)
     , m_context(context)
     , m_mayHaveUniversalFileReadSandboxExtension(false)
 #if ENABLE(CUSTOM_PROTOCOLS)
-    , m_customProtocolManagerProxy(this)
+    , m_customProtocolManagerProxy(this, context)
 #endif
-#if PLATFORM(MAC)
+#if PLATFORM(COCOA)
     , m_processSuppressionEnabled(false)
 #endif
+    , m_numberOfTimesSuddenTerminationWasDisabled(0)
+    , m_throttler(std::make_unique<ProcessThrottler>(this))
 {
     connect();
 }
@@ -105,6 +106,9 @@ WebProcessProxy::~WebProcessProxy()
 {
     if (m_webConnection)
         m_webConnection->invalidate();
+
+    while (m_numberOfTimesSuddenTerminationWasDisabled-- > 0)
+        WebCore::enableSuddenTermination();
 }
 
 void WebProcessProxy::getLaunchOptions(ProcessLauncher::LaunchOptions& launchOptions)
@@ -113,11 +117,11 @@ void WebProcessProxy::getLaunchOptions(ProcessLauncher::LaunchOptions& launchOpt
     platformGetLaunchOptions(launchOptions);
 }
 
-void WebProcessProxy::connectionWillOpen(CoreIPC::Connection* connection)
+void WebProcessProxy::connectionWillOpen(IPC::Connection* connection)
 {
     ASSERT(this->connection() == connection);
 
-#if USE(SECURITY_FRAMEWORK)
+#if ENABLE(SEC_ITEM_SHIM)
     SecItemShimProxy::shared().initializeConnection(connection);
 #endif
 
@@ -127,7 +131,7 @@ void WebProcessProxy::connectionWillOpen(CoreIPC::Connection* connection)
     m_context->processWillOpenConnection(this);
 }
 
-void WebProcessProxy::connectionWillClose(CoreIPC::Connection* connection)
+void WebProcessProxy::connectionWillClose(IPC::Connection* connection)
 {
     ASSERT(this->connection() == connection);
 
@@ -146,7 +150,7 @@ void WebProcessProxy::disconnect()
         m_webConnection = nullptr;
     }
 
-    m_responsivenessTimer.stop();
+    m_responsivenessTimer.invalidate();
 
     Vector<RefPtr<WebFrameProxy>> frames;
     copyValuesToVector(m_frameMap, frames);
@@ -166,14 +170,14 @@ WebPageProxy* WebProcessProxy::webPage(uint64_t pageID)
     return globalPageMap().get(pageID);
 }
 
-PassRefPtr<WebPageProxy> WebProcessProxy::createWebPage(PageClient* pageClient, WebContext*, WebPageGroup* pageGroup)
+PassRefPtr<WebPageProxy> WebProcessProxy::createWebPage(PageClient& pageClient, const WebPageConfiguration& configuration)
 {
     uint64_t pageID = generatePageID();
-    RefPtr<WebPageProxy> webPage = WebPageProxy::create(pageClient, this, pageGroup, pageID);
+    RefPtr<WebPageProxy> webPage = WebPageProxy::create(pageClient, *this, pageID, configuration);
     m_pageMap.set(pageID, webPage.get());
     globalPageMap().set(pageID, webPage.get());
-#if PLATFORM(MAC)
-    if (pageIsProcessSuppressible(webPage.get()))
+#if PLATFORM(COCOA)
+    if (webPage->isProcessSuppressible())
         m_processSuppressiblePages.add(pageID);
     updateProcessSuppressionState();
 #endif
@@ -184,8 +188,8 @@ void WebProcessProxy::addExistingWebPage(WebPageProxy* webPage, uint64_t pageID)
 {
     m_pageMap.set(pageID, webPage);
     globalPageMap().set(pageID, webPage);
-#if PLATFORM(MAC)
-    if (pageIsProcessSuppressible(webPage))
+#if PLATFORM(COCOA)
+    if (webPage->isProcessSuppressible())
         m_processSuppressiblePages.add(pageID);
     updateProcessSuppressionState();
 #endif
@@ -195,24 +199,36 @@ void WebProcessProxy::removeWebPage(uint64_t pageID)
 {
     m_pageMap.remove(pageID);
     globalPageMap().remove(pageID);
-#if PLATFORM(MAC)
+    
+    Vector<uint64_t> itemIDsToRemove;
+    for (auto& idAndItem : m_backForwardListItemMap) {
+        if (idAndItem.value->pageID() == pageID)
+            itemIDsToRemove.append(idAndItem.key);
+    }
+    for (auto itemID : itemIDsToRemove)
+        m_backForwardListItemMap.remove(itemID);
+
+#if PLATFORM(COCOA)
     m_processSuppressiblePages.remove(pageID);
     updateProcessSuppressionState();
 #endif
 
     // If this was the last WebPage open in that web process, and we have no other reason to keep it alive, let it go.
     // We only allow this when using a network process, as otherwise the WebProcess needs to preserve its session state.
-    if (m_context->usesNetworkProcess() && canTerminateChildProcess()) {
-        abortProcessLaunchIfNeeded();
-        disconnect();
-    }
-}
+    if (!m_context->usesNetworkProcess() || !canTerminateChildProcess())
+        return;
 
-Vector<WebPageProxy*> WebProcessProxy::pages() const
-{
-    Vector<WebPageProxy*> result;
-    copyValuesToVector(m_pageMap, result);
-    return result;
+    abortProcessLaunchIfNeeded();
+
+#if PLATFORM(IOS)
+    if (state() == State::Running) {
+        // On iOS deploy a watchdog in the UI process, since the content may be suspended.
+        // 30s should be sufficient for any outstanding activity to complete cleanly.
+        connection()->terminateSoon(30);
+    }
+#endif
+
+    disconnect();
 }
 
 WebBackForwardListItem* WebProcessProxy::webBackForwardItem(uint64_t itemID) const
@@ -231,25 +247,40 @@ void WebProcessProxy::registerNewWebBackForwardListItem(WebBackForwardListItem* 
 
 void WebProcessProxy::assumeReadAccessToBaseURL(const String& urlString)
 {
-    KURL url(KURL(), urlString);
+    URL url(URL(), urlString);
     if (!url.isLocalFile())
         return;
 
     // There's a chance that urlString does not point to a directory.
     // Get url's base URL to add to m_localPathsWithAssumedReadAccess.
-    KURL baseURL(KURL(), url.baseAsString());
+    URL baseURL(URL(), url.baseAsString());
     
     // Client loads an alternate string. This doesn't grant universal file read, but the web process is assumed
     // to have read access to this directory already.
     m_localPathsWithAssumedReadAccess.add(baseURL.fileSystemPath());
 }
 
-bool WebProcessProxy::checkURLReceivedFromWebProcess(const String& urlString)
+bool WebProcessProxy::hasAssumedReadAccessToURL(const URL& url) const
 {
-    return checkURLReceivedFromWebProcess(KURL(KURL(), urlString));
+    if (!url.isLocalFile())
+        return false;
+
+    String path = url.fileSystemPath();
+    for (const String& assumedAccessPath : m_localPathsWithAssumedReadAccess) {
+        // There are no ".." components, because URL removes those.
+        if (path.startsWith(assumedAccessPath))
+            return true;
+    }
+
+    return false;
 }
 
-bool WebProcessProxy::checkURLReceivedFromWebProcess(const KURL& url)
+bool WebProcessProxy::checkURLReceivedFromWebProcess(const String& urlString)
+{
+    return checkURLReceivedFromWebProcess(URL(URL(), urlString));
+}
+
+bool WebProcessProxy::checkURLReceivedFromWebProcess(const URL& url)
 {
     // FIXME: Consider checking that the URL is valid. Currently, WebProcess sends invalid URLs in many cases, but it probably doesn't have good reasons to do that.
 
@@ -262,19 +293,16 @@ bool WebProcessProxy::checkURLReceivedFromWebProcess(const KURL& url)
         return true;
 
     // If we loaded a string with a file base URL before, loading resources from that subdirectory is fine.
-    // There are no ".." components, because all URLs received from WebProcess are parsed with KURL, which removes those.
-    String path = url.fileSystemPath();
-    for (HashSet<String>::const_iterator iter = m_localPathsWithAssumedReadAccess.begin(); iter != m_localPathsWithAssumedReadAccess.end(); ++iter) {
-        if (path.startsWith(*iter))
-            return true;
-    }
+    if (hasAssumedReadAccessToURL(url))
+        return true;
 
     // Items in back/forward list have been already checked.
     // One case where we don't have sandbox extensions for file URLs in b/f list is if the list has been reinstated after a crash or a browser restart.
+    String path = url.fileSystemPath();
     for (WebBackForwardListItemMap::iterator iter = m_backForwardListItemMap.begin(), end = m_backForwardListItemMap.end(); iter != end; ++iter) {
-        if (KURL(KURL(), iter->value->url()).fileSystemPath() == path)
+        if (URL(URL(), iter->value->url()).fileSystemPath() == path)
             return true;
-        if (KURL(KURL(), iter->value->originalURL()).fileSystemPath() == path)
+        if (URL(URL(), iter->value->originalURL()).fileSystemPath() == path)
             return true;
     }
 
@@ -283,33 +311,33 @@ bool WebProcessProxy::checkURLReceivedFromWebProcess(const KURL& url)
     return false;
 }
 
-#if !PLATFORM(MAC)
+#if !PLATFORM(COCOA)
 bool WebProcessProxy::fullKeyboardAccessEnabled()
 {
     return false;
 }
 #endif
 
-void WebProcessProxy::addBackForwardItem(uint64_t itemID, const String& originalURL, const String& url, const String& title, const CoreIPC::DataReference& backForwardData)
+void WebProcessProxy::addBackForwardItem(uint64_t itemID, uint64_t pageID, const PageState& pageState)
 {
-    MESSAGE_CHECK_URL(originalURL);
-    MESSAGE_CHECK_URL(url);
+    MESSAGE_CHECK_URL(pageState.mainFrameState.originalURLString);
+    MESSAGE_CHECK_URL(pageState.mainFrameState.urlString);
 
-    WebBackForwardListItemMap::AddResult result = m_backForwardListItemMap.add(itemID, 0);
-    if (result.isNewEntry) {
-        result.iterator->value = WebBackForwardListItem::create(originalURL, url, title, backForwardData.data(), backForwardData.size(), itemID);
+    auto& backForwardListItem = m_backForwardListItemMap.add(itemID, nullptr).iterator->value;
+    if (!backForwardListItem) {
+        BackForwardListItemState backForwardListItemState;
+        backForwardListItemState.identifier = itemID;
+        backForwardListItemState.pageState = pageState;
+        backForwardListItem = WebBackForwardListItem::create(WTF::move(backForwardListItemState), pageID);
         return;
     }
 
     // Update existing item.
-    result.iterator->value->setOriginalURL(originalURL);
-    result.iterator->value->setURL(url);
-    result.iterator->value->setTitle(title);
-    result.iterator->value->setBackForwardData(backForwardData.data(), backForwardData.size());
+    backForwardListItem->setPageState(pageState);
 }
 
 #if ENABLE(NETSCAPE_PLUGIN_API)
-void WebProcessProxy::getPlugins(bool refresh, Vector<PluginInfo>& plugins)
+void WebProcessProxy::getPlugins(bool refresh, Vector<PluginInfo>& plugins, Vector<PluginInfo>& applicationPlugins)
 {
     if (refresh)
         m_context->pluginInfoStore().refresh();
@@ -318,44 +346,24 @@ void WebProcessProxy::getPlugins(bool refresh, Vector<PluginInfo>& plugins)
     for (size_t i = 0; i < pluginModules.size(); ++i)
         plugins.append(pluginModules[i].info);
 
-#if PLATFORM(MAC)
+#if ENABLE(PDFKIT_PLUGIN)
     // Add built-in PDF last, so that it's not used when a real plug-in is installed.
     if (!m_context->omitPDFSupport()) {
-#if ENABLE(PDFKIT_PLUGIN)
         plugins.append(PDFPlugin::pluginInfo());
-#endif
-        plugins.append(SimplePDFPlugin::pluginInfo());
+        applicationPlugins.append(PDFPlugin::pluginInfo());
     }
+#else
+    UNUSED_PARAM(applicationPlugins);
 #endif
 }
 #endif // ENABLE(NETSCAPE_PLUGIN_API)
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 void WebProcessProxy::getPluginProcessConnection(uint64_t pluginProcessToken, PassRefPtr<Messages::WebProcessProxy::GetPluginProcessConnection::DelayedReply> reply)
 {
     PluginProcessManager::shared().getPluginProcessConnection(pluginProcessToken, reply);
 }
-
-#elif ENABLE(NETSCAPE_PLUGIN_API)
-
-void WebProcessProxy::didGetSitesWithPluginData(const Vector<String>& sites, uint64_t callbackID)
-{
-    m_context->pluginSiteDataManager()->didGetSitesWithData(sites, callbackID);
-}
-
-void WebProcessProxy::didClearPluginSiteData(uint64_t callbackID)
-{
-    m_context->pluginSiteDataManager()->didClearSiteData(callbackID);
-}
-
 #endif
-
-#if ENABLE(SHARED_WORKER_PROCESS)
-void WebProcessProxy::getSharedWorkerProcessConnection(const String& /* url */, const String& /* name */, PassRefPtr<Messages::WebProcessProxy::GetSharedWorkerProcessConnection::DelayedReply>)
-{
-    // FIXME: Implement
-}
-#endif // ENABLE(SHARED_WORKER_PROCESS)
 
 #if ENABLE(NETWORK_PROCESS)
 void WebProcessProxy::getNetworkProcessConnection(PassRefPtr<Messages::WebProcessProxy::GetNetworkProcessConnection::DelayedReply> reply)
@@ -364,7 +372,14 @@ void WebProcessProxy::getNetworkProcessConnection(PassRefPtr<Messages::WebProces
 }
 #endif // ENABLE(NETWORK_PROCESS)
 
-void WebProcessProxy::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder)
+#if ENABLE(DATABASE_PROCESS)
+void WebProcessProxy::getDatabaseProcessConnection(PassRefPtr<Messages::WebProcessProxy::GetDatabaseProcessConnection::DelayedReply> reply)
+{
+    m_context->getDatabaseProcessConnection(reply);
+}
+#endif // ENABLE(DATABASE_PROCESS)
+
+void WebProcessProxy::didReceiveMessage(IPC::Connection* connection, IPC::MessageDecoder& decoder)
 {
     if (dispatchMessage(connection, decoder))
         return;
@@ -380,7 +395,7 @@ void WebProcessProxy::didReceiveMessage(CoreIPC::Connection* connection, CoreIPC
     // FIXME: Add unhandled message logging.
 }
 
-void WebProcessProxy::didReceiveSyncMessage(CoreIPC::Connection* connection, CoreIPC::MessageDecoder& decoder, OwnPtr<CoreIPC::MessageEncoder>& replyEncoder)
+void WebProcessProxy::didReceiveSyncMessage(IPC::Connection* connection, IPC::MessageDecoder& decoder, std::unique_ptr<IPC::MessageEncoder>& replyEncoder)
 {
     if (dispatchSyncMessage(connection, decoder, replyEncoder))
         return;
@@ -396,11 +411,11 @@ void WebProcessProxy::didReceiveSyncMessage(CoreIPC::Connection* connection, Cor
     // FIXME: Add unhandled message logging.
 }
 
-void WebProcessProxy::didClose(CoreIPC::Connection*)
+void WebProcessProxy::didClose(IPC::Connection*)
 {
     // Protect ourselves, as the call to disconnect() below may otherwise cause us
     // to be deleted before we can finish our work.
-    RefPtr<WebProcessProxy> protect(this);
+    Ref<WebProcessProxy> protect(*this);
 
     webConnection()->didClose();
 
@@ -414,7 +429,7 @@ void WebProcessProxy::didClose(CoreIPC::Connection*)
 
 }
 
-void WebProcessProxy::didReceiveInvalidMessage(CoreIPC::Connection* connection, CoreIPC::StringReference messageReceiverName, CoreIPC::StringReference messageName)
+void WebProcessProxy::didReceiveInvalidMessage(IPC::Connection* connection, IPC::StringReference messageReceiverName, IPC::StringReference messageName)
 {
     WTFLogAlways("Received an invalid message \"%s.%s\" from the web process.\n", messageReceiverName.toString().data(), messageName.toString().data());
 
@@ -423,7 +438,7 @@ void WebProcessProxy::didReceiveInvalidMessage(CoreIPC::Connection* connection, 
     // Terminate the WebProcess.
     terminate();
 
-    // Since we've invalidated the connection we'll never get a CoreIPC::Connection::Client::didClose
+    // Since we've invalidated the connection we'll never get a IPC::Connection::Client::didClose
     // callback so we'll explicitly call it here instead.
     didClose(connection);
 }
@@ -452,16 +467,25 @@ void WebProcessProxy::didBecomeResponsive(ResponsivenessTimer*)
         pages[i]->processDidBecomeResponsive();
 }
 
-void WebProcessProxy::didFinishLaunching(ProcessLauncher* launcher, CoreIPC::Connection::Identifier connectionIdentifier)
+void WebProcessProxy::didFinishLaunching(ProcessLauncher* launcher, IPC::Connection::Identifier connectionIdentifier)
 {
     ChildProcessProxy::didFinishLaunching(launcher, connectionIdentifier);
+
+    for (auto& page : m_pageMap.values())
+        page->processDidFinishLaunching();
 
     m_webConnection = WebConnectionToWebProcess::create(this);
 
     m_context->processDidFinishLaunching(this);
 
-#if PLATFORM(MAC)
+#if PLATFORM(COCOA)
     updateProcessSuppressionState();
+#endif
+    
+#if PLATFORM(IOS) && USE(XPC_SERVICES)
+    xpc_connection_t xpcConnection = connection()->xpcConnection();
+    ASSERT(xpcConnection);
+    m_throttler->didConnnectToProcess(xpc_connection_get_pid(xpcConnection));
 #endif
 }
 
@@ -549,7 +573,7 @@ DownloadProxy* WebProcessProxy::createDownloadProxy()
 #endif
 
     if (!m_downloadProxyMap)
-        m_downloadProxyMap = adoptPtr(new DownloadProxyMap(this));
+        m_downloadProxyMap = std::make_unique<DownloadProxyMap>(this);
 
     return m_downloadProxyMap->createDownloadProxy(m_context.get());
 }
@@ -564,7 +588,7 @@ void WebProcessProxy::didNavigateWithNavigationData(uint64_t pageID, const WebNa
     MESSAGE_CHECK(frame);
     MESSAGE_CHECK(frame->page() == page);
     
-    m_context->historyClient().didNavigateWithNavigationData(m_context.get(), page, store, frame);
+    m_context->historyClient().didNavigateWithNavigationData(&m_context.get(), page, store, frame);
 }
 
 void WebProcessProxy::didPerformClientRedirect(uint64_t pageID, const String& sourceURLString, const String& destinationURLString, uint64_t frameID)
@@ -582,7 +606,7 @@ void WebProcessProxy::didPerformClientRedirect(uint64_t pageID, const String& so
     MESSAGE_CHECK_URL(sourceURLString);
     MESSAGE_CHECK_URL(destinationURLString);
 
-    m_context->historyClient().didPerformClientRedirect(m_context.get(), page, sourceURLString, destinationURLString, frame);
+    m_context->historyClient().didPerformClientRedirect(&m_context.get(), page, sourceURLString, destinationURLString, frame);
 }
 
 void WebProcessProxy::didPerformServerRedirect(uint64_t pageID, const String& sourceURLString, const String& destinationURLString, uint64_t frameID)
@@ -600,7 +624,7 @@ void WebProcessProxy::didPerformServerRedirect(uint64_t pageID, const String& so
     MESSAGE_CHECK_URL(sourceURLString);
     MESSAGE_CHECK_URL(destinationURLString);
 
-    m_context->historyClient().didPerformServerRedirect(m_context.get(), page, sourceURLString, destinationURLString, frame);
+    m_context->historyClient().didPerformServerRedirect(&m_context.get(), page, sourceURLString, destinationURLString, frame);
 }
 
 void WebProcessProxy::didUpdateHistoryTitle(uint64_t pageID, const String& title, const String& url, uint64_t frameID)
@@ -614,13 +638,13 @@ void WebProcessProxy::didUpdateHistoryTitle(uint64_t pageID, const String& title
     MESSAGE_CHECK(frame->page() == page);
     MESSAGE_CHECK_URL(url);
 
-    m_context->historyClient().didUpdateHistoryTitle(m_context.get(), page, title, url, frame);
+    m_context->historyClient().didUpdateHistoryTitle(&m_context.get(), page, title, url, frame);
 }
 
-void WebProcessProxy::pageVisibilityChanged(WebKit::WebPageProxy *page)
+void WebProcessProxy::pageSuppressibilityChanged(WebKit::WebPageProxy *page)
 {
-#if PLATFORM(MAC)
-    if (pageIsProcessSuppressible(page))
+#if PLATFORM(COCOA)
+    if (page->isProcessSuppressible())
         m_processSuppressiblePages.add(page->pageID());
     else
         m_processSuppressiblePages.remove(page->pageID());
@@ -632,8 +656,8 @@ void WebProcessProxy::pageVisibilityChanged(WebKit::WebPageProxy *page)
 
 void WebProcessProxy::pagePreferencesChanged(WebKit::WebPageProxy *page)
 {
-#if PLATFORM(MAC)
-    if (pageIsProcessSuppressible(page))
+#if PLATFORM(COCOA)
+    if (page->isProcessSuppressible())
         m_processSuppressiblePages.add(page->pageID());
     else
         m_processSuppressiblePages.remove(page->pageID());
@@ -654,10 +678,15 @@ void WebProcessProxy::releasePageCache()
         send(Messages::WebProcess::ReleasePageCache(), 0);
 }
 
+void WebProcessProxy::windowServerConnectionStateChanged()
+{
+    for (const auto& page : m_pageMap.values())
+        page->viewStateDidChange(ViewState::IsVisuallyIdle);
+}
 
 void WebProcessProxy::requestTermination()
 {
-    if (!isValid())
+    if (state() != State::Running)
         return;
 
     ChildProcessProxy::terminate();
@@ -668,21 +697,60 @@ void WebProcessProxy::requestTermination()
     disconnect();
 }
 
-
 void WebProcessProxy::enableSuddenTermination()
 {
-    if (!isValid())
+    if (state() != State::Running)
         return;
 
+    ASSERT(m_numberOfTimesSuddenTerminationWasDisabled);
     WebCore::enableSuddenTermination();
+    --m_numberOfTimesSuddenTerminationWasDisabled;
 }
 
 void WebProcessProxy::disableSuddenTermination()
 {
-    if (!isValid())
+    if (state() != State::Running)
         return;
 
     WebCore::disableSuddenTermination();
+    ++m_numberOfTimesSuddenTerminationWasDisabled;
+}
+
+RefPtr<API::Object> WebProcessProxy::apiObjectByConvertingToHandles(API::Object* object)
+{
+    return UserData::transform(object, [](const API::Object& object) -> RefPtr<API::Object> {
+        switch (object.type()) {
+        case API::Object::Type::Frame: {
+            auto& frame = static_cast<const WebFrameProxy&>(object);
+            return API::FrameHandle::create(frame.frameID());
+        }
+
+        default:
+            return nullptr;
+        }
+    });
+}
+
+void WebProcessProxy::sendProcessWillSuspend()
+{
+    if (canSendMessage())
+        send(Messages::WebProcess::ProcessWillSuspend(), 0);
+}
+
+void WebProcessProxy::sendCancelProcessWillSuspend()
+{
+    if (canSendMessage())
+        send(Messages::WebProcess::CancelProcessWillSuspend(), 0);
+}
+    
+void WebProcessProxy::processReadyToSuspend()
+{
+    m_throttler->processReadyToSuspend();
+}
+
+void WebProcessProxy::didCancelProcessSuspension()
+{
+    m_throttler->didCancelProcessSuspension();
 }
 
 } // namespace WebKit

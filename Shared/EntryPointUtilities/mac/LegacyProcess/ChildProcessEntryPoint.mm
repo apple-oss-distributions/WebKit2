@@ -55,7 +55,7 @@ void ChildProcessMainDelegate::doPreInitializationWork()
 {
 }
 
-bool ChildProcessMainDelegate::getConnectionIdentifier(CoreIPC::Connection::Identifier& identifier)
+bool ChildProcessMainDelegate::getConnectionIdentifier(IPC::Connection::Identifier& identifier)
 {
     String serviceName = m_commandLine["servicename"];
     if (serviceName.isEmpty())
@@ -91,6 +91,11 @@ bool ChildProcessMainDelegate::getClientProcessName(String& clientProcessName)
 bool ChildProcessMainDelegate::getExtraInitializationData(HashMap<String, String>&)
 {
     return true;
+}
+
+void ChildProcessMainDelegate::startRunLoop()
+{
+    RunLoop::run();
 }
 
 void ChildProcessMainDelegate::doPostRunWork()

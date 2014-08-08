@@ -6,7 +6,6 @@
 #include "NetworkProcess.h"
 #include "NetworkResourceLoadParameters.h"
 #include "NetworkResourceLoader.h"
-#include "SyncNetworkResourceLoader.h"
 #include <wtf/MainThread.h>
 #include <wtf/text/CString.h>
 
@@ -37,7 +36,7 @@ void NetworkResourceLoadScheduler::requestTimerFired(WebCore::Timer<NetworkResou
     servePendingRequests();
 }
 
-void NetworkResourceLoadScheduler::scheduleLoader(PassRefPtr<SchedulableLoader> loader)
+void NetworkResourceLoadScheduler::scheduleLoader(PassRefPtr<NetworkResourceLoader> loader)
 {
     ResourceLoadPriority priority = loader->priority();
     const ResourceRequest& resourceRequest = loader->request();
@@ -58,7 +57,7 @@ void NetworkResourceLoadScheduler::scheduleLoader(PassRefPtr<SchedulableLoader> 
     scheduleServePendingRequests();
 }
 
-HostRecord* NetworkResourceLoadScheduler::hostForURL(const WebCore::KURL& url, CreateHostPolicy createHostPolicy)
+HostRecord* NetworkResourceLoadScheduler::hostForURL(const WebCore::URL& url, CreateHostPolicy createHostPolicy)
 {
     if (!url.protocolIsInHTTPFamily())
         return m_nonHTTPProtocolHost.get();
@@ -75,9 +74,9 @@ HostRecord* NetworkResourceLoadScheduler::hostForURL(const WebCore::KURL& url, C
     return host;
 }
 
-void NetworkResourceLoadScheduler::removeLoader(SchedulableLoader* loader)
+void NetworkResourceLoadScheduler::removeLoader(NetworkResourceLoader* loader)
 {
-    ASSERT(isMainThread());
+    ASSERT(RunLoop::isMain());
     ASSERT(loader);
 
     LOG(NetworkScheduling, "(NetworkProcess) NetworkResourceLoadScheduler::removeLoadIdentifier removing loader %s", loader->request().url().string().utf8().data());
@@ -93,9 +92,9 @@ void NetworkResourceLoadScheduler::removeLoader(SchedulableLoader* loader)
     scheduleServePendingRequests();
 }
 
-void NetworkResourceLoadScheduler::receivedRedirect(SchedulableLoader* loader, const WebCore::KURL& redirectURL)
+void NetworkResourceLoadScheduler::receivedRedirect(NetworkResourceLoader* loader, const WebCore::URL& redirectURL)
 {
-    ASSERT(isMainThread());
+    ASSERT(RunLoop::isMain());
     LOG(NetworkScheduling, "(NetworkProcess) NetworkResourceLoadScheduler::receivedRedirect loader originally for '%s' redirected to '%s'", loader->request().url().string().utf8().data(), redirectURL.string().utf8().data());
 
     HostRecord* oldHost = loader->hostRecord();
@@ -139,7 +138,7 @@ static bool removeScheduledLoadersCalled = false;
 
 void NetworkResourceLoadScheduler::removeScheduledLoaders(void* context)
 {
-    ASSERT(isMainThread());
+    ASSERT(RunLoop::isMain());
     ASSERT(removeScheduledLoadersCalled);
 
     NetworkResourceLoadScheduler* scheduler = static_cast<NetworkResourceLoadScheduler*>(context);
@@ -148,7 +147,7 @@ void NetworkResourceLoadScheduler::removeScheduledLoaders(void* context)
 
 void NetworkResourceLoadScheduler::removeScheduledLoaders()
 {
-    Vector<RefPtr<SchedulableLoader>> loadersToRemove;
+    Vector<RefPtr<NetworkResourceLoader>> loadersToRemove;
     {
         MutexLocker locker(m_loadersToRemoveMutex);
         loadersToRemove = m_loadersToRemove;
@@ -160,7 +159,7 @@ void NetworkResourceLoadScheduler::removeScheduledLoaders()
         removeLoader(loadersToRemove[i].get());
 }
 
-void NetworkResourceLoadScheduler::scheduleRemoveLoader(SchedulableLoader* loader)
+void NetworkResourceLoadScheduler::scheduleRemoveLoader(NetworkResourceLoader* loader)
 {
     MutexLocker locker(m_loadersToRemoveMutex);
     

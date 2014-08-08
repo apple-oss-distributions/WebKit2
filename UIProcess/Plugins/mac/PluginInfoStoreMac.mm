@@ -26,17 +26,18 @@
 #import "config.h"
 #import "PluginInfoStore.h"
 
-#if ENABLE(NETSCAPE_PLUGIN_API)
+#if PLATFORM(MAC) && ENABLE(NETSCAPE_PLUGIN_API)
 
+#import "Logging.h"
 #import "NetscapePluginModule.h"
+#import "SandboxUtilities.h"
 #import "WebKitSystemInterface.h"
 #import <WebCore/WebCoreNSStringExtras.h>
 #import <wtf/HashSet.h>
 #import <wtf/RetainPtr.h>
+#import <wtf/text/CString.h>
 
 using namespace WebCore;
-
-static const char* const oracleJavaAppletPluginBundleIdentifier =  "com.oracle.java.JavaAppletPlugin";
 
 namespace WebKit {
 
@@ -49,20 +50,12 @@ Vector<String> PluginInfoStore::pluginsDirectories()
     
     return pluginsDirectories;
 }
-
-// FIXME: Once the UI process knows the difference between the main thread and the web thread we can drop this and just use
-// String::createCFString.
-static CFStringRef safeCreateCFString(const String& string)
-{
-    return CFStringCreateWithCharacters(0, reinterpret_cast<const UniChar*>(string.characters()), string.length());
-}
     
 Vector<String> PluginInfoStore::pluginPathsInDirectory(const String& directory)
 {
     Vector<String> pluginPaths;
 
-    RetainPtr<CFStringRef> directoryCFString = adoptCF(safeCreateCFString(directory));
-    
+    RetainPtr<CFStringRef> directoryCFString = directory.createCFString();
     NSArray *filenames = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:(NSString *)directoryCFString.get() error:nil];
     for (NSString *filename in filenames)
         pluginPaths.append([(NSString *)directoryCFString.get() stringByAppendingPathComponent:filename]);
@@ -101,8 +94,15 @@ bool PluginInfoStore::shouldUsePlugin(Vector<PluginModuleInfo>& alreadyLoadedPlu
         }
     }
 
-    if (plugin.bundleIdentifier == "com.apple.java.JavaAppletPlugin")
+    if (plugin.bundleIdentifier == "com.apple.java.JavaAppletPlugin") {
+        LOG(Plugins, "Ignoring com.apple.java.JavaAppletPlugin");
         return false;
+    }
+
+    if (processIsSandboxed(getpid()) && !plugin.hasSandboxProfile) {
+        LOG(Plugins, "Ignoring unsandboxed plug-in %s", plugin.bundleIdentifier.utf8().data());
+        return false;
+    }
 
     return true;
 }
@@ -113,16 +113,6 @@ PluginModuleLoadPolicy PluginInfoStore::defaultLoadPolicyForPlugin(const PluginM
         return PluginModuleBlocked;
 
     return PluginModuleLoadNormally;
-}
-
-String PluginInfoStore::getMIMETypeForExtension(const String& extension)
-{
-    // FIXME: This should just call MIMETypeRegistry::getMIMETypeForExtension and be
-    // strength reduced into the callsite once we can safely convert String
-    // to CFStringRef off the main thread.
-
-    RetainPtr<CFStringRef> extensionCFString = adoptCF(safeCreateCFString(extension));
-    return WKGetMIMETypeForExtension((NSString *)extensionCFString.get());
 }
 
 PluginModuleInfo PluginInfoStore::findPluginWithBundleIdentifier(const String& bundleIdentifier)
@@ -139,4 +129,4 @@ PluginModuleInfo PluginInfoStore::findPluginWithBundleIdentifier(const String& b
 
 } // namespace WebKit
 
-#endif // ENABLE(NETSCAPE_PLUGIN_API)
+#endif // PLATFORM(MAC) && ENABLE(NETSCAPE_PLUGIN_API)

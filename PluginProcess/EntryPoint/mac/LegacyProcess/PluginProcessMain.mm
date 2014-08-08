@@ -25,14 +25,14 @@
 
 #import "config.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#if ENABLE(NETSCAPE_PLUGIN_API)
 
 #import "ChildProcessEntryPoint.h"
 #import "EnvironmentUtilities.h"
 #import "NetscapePluginModule.h"
 #import "PluginProcess.h"
 #import "WKBase.h"
-#import <WebCore/RunLoop.h>
+#import <wtf/RunLoop.h>
 
 #if USE(APPKIT)
 @interface NSApplication (WebNSApplicationDetails)
@@ -58,7 +58,13 @@ public:
         EnvironmentUtilities::stripValuesEndingWithString("DYLD_INSERT_LIBRARIES", "/PluginProcessShim.dylib");
 
 #if USE(APPKIT)
-        RunLoop::setUseApplicationRunLoopOnMainRunLoop();
+#if defined(__i386__)
+        // We must set the state of AppleMagnifiedMode before NSApplication initialization so that the value will be in
+        // place before Cocoa startup logic runs and caches the value.
+        NSDictionary *defaults = [[NSDictionary alloc] initWithObjectsAndKeys:[NSNumber numberWithBool:YES], @"AppleMagnifiedMode", nil];
+        [[NSUserDefaults standardUserDefaults] registerDefaults:defaults];
+        [defaults release];
+#endif
 
         // Initialize AppKit.
         [NSApplication sharedApplication];
@@ -94,6 +100,12 @@ public:
         return true;
     }
 
+    virtual void startRunLoop() override
+    {
+        ASSERT(NSApp);
+        [NSApp run];
+    }
+
     virtual void doPostRunWork()
     {
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 1080
@@ -120,4 +132,4 @@ int PluginProcessMain(int argc, char** argv)
     return ChildProcessMain<PluginProcess, PluginProcessMainDelegate>(argc, argv);
 }
 
-#endif // ENABLE(PLUGIN_PROCESS)
+#endif // ENABLE(NETSCAPE_PLUGIN_API)

@@ -25,6 +25,7 @@
 
 #if ENABLE(FULLSCREEN_API)
 
+#import "GenericCallback.h"
 #import <wtf/OwnPtr.h>
 #import <wtf/RetainPtr.h>
 
@@ -46,7 +47,7 @@ typedef enum FullScreenState : NSInteger FullScreenState;
 
 @interface WKFullScreenWindowController : NSWindowController<NSWindowDelegate> {
 @private
-    WKView *_webView;
+    WKView *_webView; // Cannot be retained, see <rdar://problem/14884666>.
     RetainPtr<WebCoreFullScreenPlaceholderView> _webViewPlaceholder;
     RetainPtr<WebWindowScaleAnimation> _scaleAnimation;
     RetainPtr<WebWindowFadeAnimation> _fadeAnimation;
@@ -58,10 +59,10 @@ typedef enum FullScreenState : NSInteger FullScreenState;
     FullScreenState _fullScreenState;
 
     double _savedScale;
+    RefPtr<WebKit::VoidCallback> _repaintCallback;
 }
 
-- (WKView*)webView;
-- (void)setWebView:(WKView*)webView;
+- (id)initWithWindow:(NSWindow *)window webView:(WKView *)webView;
 
 - (WebCoreFullScreenPlaceholderView*)webViewPlaceholder;
 

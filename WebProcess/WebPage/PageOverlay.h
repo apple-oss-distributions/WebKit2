@@ -28,13 +28,13 @@
 
 #include "APIObject.h"
 #include "WKBase.h"
-#include <WebCore/RunLoop.h>
+#include <WebCore/Color.h>
+#include <WebCore/IntRect.h>
 #include <wtf/PassRefPtr.h>
+#include <wtf/RunLoop.h>
 
 namespace WebCore {
-    class GraphicsContext;
-    class IntPoint;
-    class IntRect;
+class GraphicsContext;
 }
 
 namespace WebKit {
@@ -42,7 +42,7 @@ namespace WebKit {
 class WebMouseEvent;
 class WebPage;
 
-class PageOverlay : public TypedAPIObject<APIObject::TypeBundlePageOverlay> {
+class PageOverlay : public API::ObjectImpl<API::Object::Type::BundlePageOverlay> {
 public:
     class Client {
     protected:
@@ -55,11 +55,16 @@ public:
         virtual void drawRect(PageOverlay*, WebCore::GraphicsContext&, const WebCore::IntRect& dirtyRect) = 0;
         virtual bool mouseEvent(PageOverlay*, const WebMouseEvent&) = 0;
 
-        virtual WKTypeRef copyAccessibilityAttributeValue(PageOverlay*, WKStringRef attribute, WKTypeRef parameter) { return 0; }
-        virtual WKArrayRef copyAccessibilityAttributeNames(PageOverlay*, bool parameterizedNames) { return 0; }
+        virtual WKTypeRef copyAccessibilityAttributeValue(PageOverlay*, WKStringRef /* attribute */, WKTypeRef /* parameter */) { return 0; }
+        virtual WKArrayRef copyAccessibilityAttributeNames(PageOverlay*, bool /* parameterizedNames */) { return 0; }
     };
 
-    static PassRefPtr<PageOverlay> create(Client*);
+    enum class OverlayType {
+        View, // Fixed to the view size; does not scale or scroll with the document, repaints on scroll.
+        Document, // Scales and scrolls with the document.
+    };
+
+    static PassRefPtr<PageOverlay> create(Client*, OverlayType = OverlayType::View);
     virtual ~PageOverlay();
 
     void setPage(WebPage*);
@@ -76,22 +81,32 @@ public:
     void startFadeOutAnimation();
     void stopFadeOutAnimation();
 
-    float fractionFadedIn() const { return m_fractionFadedIn; }
+    void clear();
+
     Client* client() const { return m_client; }
+
+    enum class FadeMode { DoNotFade, Fade };
+
+    OverlayType overlayType() { return m_overlayType; }
+
+    WebCore::IntRect bounds() const;
+    WebCore::IntRect frame() const;
+    void setFrame(WebCore::IntRect);
+
+    WebCore::RGBA32 backgroundColor() const { return m_backgroundColor; }
+    void setBackgroundColor(WebCore::RGBA32);
     
 protected:
-    explicit PageOverlay(Client*);
+    explicit PageOverlay(Client*, OverlayType);
 
 private:
-    WebCore::IntRect bounds() const;
-
     void startFadeAnimation();
     void fadeAnimationTimerFired();
 
     Client* m_client;
     WebPage* m_webPage;
 
-    WebCore::RunLoop::Timer<PageOverlay> m_fadeAnimationTimer;
+    RunLoop::Timer<PageOverlay> m_fadeAnimationTimer;
     double m_fadeAnimationStartTime;
     double m_fadeAnimationDuration;
 
@@ -103,7 +118,11 @@ private:
 
     FadeAnimationType m_fadeAnimationType;
     float m_fractionFadedIn;
-    bool m_pageOverlayShouldApplyFadeWhenPainting;
+
+    OverlayType m_overlayType;
+    WebCore::IntRect m_overrideFrame;
+
+    WebCore::RGBA32 m_backgroundColor;
 };
 
 } // namespace WebKit

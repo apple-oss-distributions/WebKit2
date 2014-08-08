@@ -1,3 +1,26 @@
+; Copyright (C) 2013, 2014 Apple Inc. All rights reserved.
+;
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions
+; are met:
+; 1. Redistributions of source code must retain the above copyright
+;    notice, this list of conditions and the following disclaimer.
+; 2. Redistributions in binary form must reproduce the above copyright
+;    notice, this list of conditions and the following disclaimer in the
+;    documentation and/or other materials provided with the distribution.
+;
+; THIS SOFTWARE IS PROVIDED BY APPLE INC. AND ITS CONTRIBUTORS ``AS IS''
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+; THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+; PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL APPLE INC. OR ITS CONTRIBUTORS
+; BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+; CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+; SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+; INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+; CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+; ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+; THE POSSIBILITY OF SUCH DAMAGE.
+
 (version 1)
 (deny default)
 (allow system-audit file-read-metadata)
@@ -228,6 +251,9 @@
 (allow file* (subpath (param "DARWIN_USER_CACHE_DIR")))
 (allow file* (subpath (param "NSURL_CACHE_DIR")))
 
+;; Allow the OpenGL Profiler to attach.
+(if (defined? 'mach-register)
+    (allow mach-register (global-name-regex #"^_oglprof_attach_<[0-9]+>$")))
 
 ;; Networking
 (if (defined? 'system-network)
@@ -256,6 +282,7 @@
 
 ;; Open and Save panels
 (define (webkit-powerbox)
+    (allow file-read* (literal "/Library/Preferences/com.apple.ViewBridge.plist"))
     (allow file-read* file-write* (extension "com.apple.app-sandbox.read-write"))
     (allow file-issue-extension
         (require-all
@@ -288,7 +315,7 @@
         (literal "/private/etc/cups/client.conf")
         (literal "/private/etc/cups/lpoptions")
         (subpath "/private/etc/cups/ppd")
-        (subpath "/private/var/run/cupsd"))
+        (literal "/private/var/run/cupsd"))
     (shared-preferences-read "org.cups.PrintingPrefs"))
 
 ;; Text Services Manager
@@ -300,6 +327,7 @@
 
 ;; Camera
 (define (webkit-camera)
+    (shared-preferences-read "com.apple.coremedia")
     (allow mach-lookup (extension "com.apple.app-sandbox.mach"))
     (allow mach-lookup
         (global-name "com.apple.cmio.AppleCameraAssistant")
@@ -361,9 +389,8 @@
     (global-name "com.apple.dock.server")
     (global-name-regex #"^com\.apple\.distributed_notifications"))
 
-;; This inserts deny rules for creating symbolic links. The rules are inserted
-;; at the end of sandbox profile compilation by overriding the finalizer. The
-;; initial value of %finalize must be the last function called.
+;; The below rules are inserted at the end of sandbox profile compilation by overriding the finalizer.
+;; The initial value of %finalize must be the last function called.
 (letrec
    ((original-%finalize %finalize)
     (webkit-%finalize
@@ -371,5 +398,11 @@
             (if (defined? 'vnode-type)
                 (deny file-write-create
                       (vnode-type SYMLINK)))
+            ;; Reserve a namespace for additional protected extended attributes.
+            (deny file-read-xattr file-write-xattr (xattr #"^com\.apple\.security\.private\."))
+            ;; FIXME: Should be removed once <rdar://problem/16329087> is fixed.
+            (if (defined? 'xattr-regex)
+                (deny file-read-xattr file-write-xattr (xattr-regex #"^com\.apple\.security\.private\."))
+                (deny file-read-xattr file-write-xattr (xattr #"^com\.apple\.security\.private\.")))
             (original-%finalize))))
    (set! %finalize webkit-%finalize))

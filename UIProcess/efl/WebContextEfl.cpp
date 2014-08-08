@@ -100,9 +100,15 @@ void WebContext::platformInvalidateContext()
     notImplemented();
 }
 
-String WebContext::platformDefaultDatabaseDirectory() const
+String WebContext::platformDefaultWebSQLDatabaseDirectory()
 {
     return String::fromUTF8(efreet_data_home_get()) + "/WebKitEfl/Databases";
+}
+
+String WebContext::platformDefaultIndexedDBDatabaseDirectory()
+{
+    notImplemented();
+    return String();
 }
 
 String WebContext::platformDefaultIconDatabasePath() const
@@ -110,7 +116,7 @@ String WebContext::platformDefaultIconDatabasePath() const
     return String::fromUTF8(efreet_data_home_get()) + "/WebKitEfl/IconDatabase/" + WebCore::IconDatabase::defaultDatabaseFilename();
 }
 
-String WebContext::platformDefaultLocalStorageDirectory() const
+String WebContext::platformDefaultLocalStorageDirectory()
 {
     return String::fromUTF8(efreet_data_home_get()) + "/WebKitEfl/LocalStorage";
 }
@@ -121,6 +127,24 @@ String WebContext::platformDefaultDiskCacheDirectory() const
 }
 
 String WebContext::platformDefaultCookieStorageDirectory() const
+{
+    notImplemented();
+    return String();
+}
+
+String WebContext::platformDefaultOpenGLCacheDirectory() const
+{
+    notImplemented();
+    return String();
+}
+
+String WebContext::containerTemporaryDirectory() const
+{
+    notImplemented();
+    return String();
+}
+
+String WebContext::platformDefaultNetworkingHSTSDatabasePath() const
 {
     notImplemented();
     return String();
