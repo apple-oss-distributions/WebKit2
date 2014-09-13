@@ -2506,6 +2506,9 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 
         [self _updateWindowAndViewFrames];
 
+        // FIXME(135509) This call becomes unnecessary once 135509 is fixed; remove.
+        _data->_page->layerHostingModeDidChange();
+
         if (!_data->_flagsChangedEventMonitor) {
             _data->_flagsChangedEventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSFlagsChangedMask handler:^(NSEvent *flagsChangedEvent) {
                 [self _postFakeMouseMovedEventForFlagsChangedEvent:flagsChangedEvent];
@@ -3544,9 +3547,6 @@ static NSString *pathWithUniqueFilenameForPath(NSString *path)
         [self _updateThumbnailViewLayer];
     else
         [self _setAcceleratedCompositingModeRootLayer:_data->_rootLayer.get()];
-
-    if (!thumbnailView.usesSnapshot)
-        _data->_page->viewStateDidChange(ViewState::WindowIsActive | ViewState::IsInWindow | ViewState::IsVisible);
 }
 
 - (_WKThumbnailView *)_thumbnailView
@@ -3559,7 +3559,7 @@ static NSString *pathWithUniqueFilenameForPath(NSString *path)
     _WKThumbnailView *thumbnailView = _data->_thumbnailView;
     ASSERT(thumbnailView);
 
-    if (!thumbnailView.usesSnapshot || (thumbnailView._waitingForSnapshot && self.window))
+    if (thumbnailView._waitingForSnapshot && self.window)
         [self _reparentLayerTreeInThumbnailView];
 }
 
@@ -3598,10 +3598,28 @@ static NSString *pathWithUniqueFilenameForPath(NSString *path)
 
 #endif
 
+- (void)_didFirstVisuallyNonEmptyLayoutForMainFrame
+{
+    if (_data->_gestureController)
+        _data->_gestureController->didFirstVisuallyNonEmptyLayoutForMainFrame();
+}
+
+- (void)_didFinishLoadForMainFrame
+{
+    if (_data->_gestureController)
+        _data->_gestureController->didFinishLoadForMainFrame();
+}
+
 - (void)_didSameDocumentNavigationForMainFrame:(SameDocumentNavigationType)type
 {
     if (_data->_gestureController)
         _data->_gestureController->didSameDocumentNavigationForMainFrame(type);
+}
+
+- (void)_removeNavigationGestureSnapshot
+{
+    if (_data->_gestureController)
+        _data->_gestureController->removeSwipeSnapshot();
 }
 
 @end
@@ -4060,6 +4078,15 @@ static NSString *pathWithUniqueFilenameForPath(NSString *path)
     _data->_gestureController->setShouldIgnorePinnedState(wasIgnoringPinnedState);
 
     return handledEvent;
+}
+
+- (void)_setDidMoveSwipeSnapshotCallback:(void(^)(CGRect))callback
+{
+    if (!_data->_allowsBackForwardNavigationGestures)
+        return;
+
+    [self _ensureGestureController];
+    _data->_gestureController->setDidMoveSwipeSnapshotCallback(callback);
 }
 
 #if __MAC_OS_X_VERSION_MIN_REQUIRED >= 101000

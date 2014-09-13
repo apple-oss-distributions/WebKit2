@@ -25,7 +25,6 @@
 #include <WebCore/Frame.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/HitTestResult.h>
-#include <WebCore/RenderObject.h>
 #include <WebCore/URL.h>
 #include <WebCore/Node.h>
 #include <wtf/text/WTFString.h>
@@ -103,11 +102,7 @@ IntRect WebHitTestResult::Data::elementBoundingBoxInWindowCoordinates(const HitT
     if (!view)
         return IntRect();
 
-    RenderObject* renderer = node->renderer();
-    if (!renderer)
-        return IntRect();
-
-    return view->contentsToWindow(renderer->absoluteBoundingBoxRect());
+    return view->contentsToWindow(node->pixelSnappedBoundingBox());
 }
 
 } // WebKit

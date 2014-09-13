@@ -22,7 +22,6 @@
 
 #if PLATFORM(IOS)
 messages -> WebVideoFullscreenManagerProxy {
-    ResetMediaState()
     SetCurrentTime(double currentTime, double hostTime)
     SetVideoDimensions(bool hasVideo, unsigned width, unsigned height)
     SetSeekableRangesVector(Vector<std::pair<double, double>> ranges);
@@ -32,7 +31,7 @@ messages -> WebVideoFullscreenManagerProxy {
     SetExternalPlaybackProperties(bool enabled, uint32_t targetType, String localizedDeviceName);
     SetDuration(double duration)
     SetRate(bool isPlaying, double rate)
-    SetupFullscreenWithID(uint32_t videoLayerID, WebCore::IntRect initialRect, float hostingScaleFactor)
+    SetupFullscreenWithID(uint32_t videoLayerID, WebCore::IntRect initialRect)
     EnterFullscreen()
     ExitFullscreen(WebCore::IntRect finalRect)
     CleanupFullscreen()

@@ -149,11 +149,6 @@ public:
     RetainPtr<CFDataRef> webArchiveData(FrameFilterFunction, void* context);
 #endif
 
-#if PLATFORM(IOS)
-    uint64_t firstLayerTreeTransactionIDAfterDidCommitLoad() const { return m_firstLayerTreeTransactionIDAfterDidCommitLoad; }
-    void setFirstLayerTreeTransactionIDAfterDidCommitLoad(uint64_t transactionID) { m_firstLayerTreeTransactionIDAfterDidCommitLoad = transactionID; }
-#endif
-
 private:
     static PassRefPtr<WebFrame> create(std::unique_ptr<WebFrameLoaderClient>);
     WebFrame(std::unique_ptr<WebFrameLoaderClient>);
@@ -168,10 +163,6 @@ private:
     LoadListener* m_loadListener;
     
     uint64_t m_frameID;
-
-#if PLATFORM(IOS)
-    uint64_t m_firstLayerTreeTransactionIDAfterDidCommitLoad;
-#endif
 };
 
 } // namespace WebKit

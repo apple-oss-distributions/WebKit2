@@ -35,10 +35,6 @@ ProcessAssertion::ProcessAssertion(pid_t, AssertionState assertionState)
 {
 }
 
-ProcessAssertion::~ProcessAssertion()
-{
-}
-
 void ProcessAssertion::setState(AssertionState assertionState)
 {
     if (m_assertionState == assertionState)

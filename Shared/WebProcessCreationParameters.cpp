@@ -51,6 +51,7 @@ WebProcessCreationParameters::WebProcessCreationParameters()
 #if ENABLE(SERVICE_CONTROLS)
     , hasImageServices(false)
     , hasSelectionServices(false)
+    , hasRichContentServices(false)
 #endif
 {
 }
@@ -66,13 +67,10 @@ void WebProcessCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
     encoder << diskCacheDirectory;
     encoder << diskCacheDirectoryExtensionHandle;
     encoder << cookieStorageDirectory;
-    encoder << cookieStorageDirectoryExtensionHandle;
-    encoder << openGLCacheDirectory;
-    encoder << openGLCacheDirectoryExtensionHandle;
-    encoder << containerTemporaryDirectory;
-    encoder << containerTemporaryDirectoryExtensionHandle;
 #if PLATFORM(IOS)
-    encoder << hstsDatabasePath;
+    encoder << cookieStorageDirectoryExtensionHandle;
+    encoder << openGLCacheDirectoryExtensionHandle;
+    encoder << containerTemporaryDirectoryExtensionHandle;
     encoder << hstsDatabasePathExtensionHandle;
 #endif
     encoder << shouldUseTestingNetworkSession;
@@ -143,6 +141,7 @@ void WebProcessCreationParameters::encode(IPC::ArgumentEncoder& encoder) const
 #if ENABLE(SERVICE_CONTROLS)
     encoder << hasImageServices;
     encoder << hasSelectionServices;
+    encoder << hasRichContentServices;
 #endif
 }
 
@@ -166,18 +165,12 @@ bool WebProcessCreationParameters::decode(IPC::ArgumentDecoder& decoder, WebProc
         return false;
     if (!decoder.decode(parameters.cookieStorageDirectory))
         return false;
+#if PLATFORM(IOS)
     if (!decoder.decode(parameters.cookieStorageDirectoryExtensionHandle))
-        return false;
-    if (!decoder.decode(parameters.openGLCacheDirectory))
         return false;
     if (!decoder.decode(parameters.openGLCacheDirectoryExtensionHandle))
         return false;
-    if (!decoder.decode(parameters.containerTemporaryDirectory))
-        return false;
     if (!decoder.decode(parameters.containerTemporaryDirectoryExtensionHandle))
-        return false;
-#if PLATFORM(IOS)
-    if (!decoder.decode(parameters.hstsDatabasePath))
         return false;
     if (!decoder.decode(parameters.hstsDatabasePathExtensionHandle))
         return false;
@@ -303,6 +296,8 @@ bool WebProcessCreationParameters::decode(IPC::ArgumentDecoder& decoder, WebProc
     if (!decoder.decode(parameters.hasImageServices))
         return false;
     if (!decoder.decode(parameters.hasSelectionServices))
+        return false;
+    if (!decoder.decode(parameters.hasRichContentServices))
         return false;
 #endif
 

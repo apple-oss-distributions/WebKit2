@@ -54,9 +54,6 @@ RemoteLayerTreeHost::RemoteLayerTreeHost(RemoteLayerTreeDrawingAreaProxy& drawin
 
 RemoteLayerTreeHost::~RemoteLayerTreeHost()
 {
-    for (auto& delegate : m_animationDelegates.values())
-        [delegate.get() invalidate];
-
     clearLayers();
 }
 

@@ -28,19 +28,13 @@
 
 #if PLATFORM(IOS)
 
-#import "APIUIClient.h"
-#import "SessionState.h"
 #import "WKPDFPageNumberIndicator.h"
 #import "WKWebViewInternal.h"
-#import "WebPageProxy.h"
 #import <CorePDF/UIPDFDocument.h>
-#import <CorePDF/UIPDFLinkAnnotation.h>
 #import <CorePDF/UIPDFPage.h>
 #import <CorePDF/UIPDFPageView.h>
-#import <MobileCoreServices/UTCoreTypes.h>
 #import <UIKit/UIScrollView_Private.h>
 #import <WebCore/FloatRect.h>
-#import <WebCore/_UIHighlightViewSPI.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/Vector.h>
 
@@ -60,10 +54,6 @@ typedef struct {
     RetainPtr<UIPDFPage> page;
 } PDFPageInfo;
 
-@interface WKPDFView ()
-- (void)_resetZoomAnimated:(BOOL)animated;
-@end
-
 @implementation WKPDFView {
     RetainPtr<UIPDFDocument> _pdfDocument;
     RetainPtr<NSString> _suggestedFilename;
@@ -79,10 +69,6 @@ typedef struct {
     UIView *_fixedOverlayView;
 
     BOOL _isStartingZoom;
-    BOOL _isPerformingSameDocumentNavigation;
-
-    RetainPtr<WKActionSheetAssistant> _actionSheetAssistant;
-    WebKit::InteractionInformationAtPosition _positionInformation;
 }
 
 - (instancetype)web_initWithFrame:(CGRect)frame webView:(WKWebView *)webView
@@ -98,9 +84,6 @@ typedef struct {
     [_scrollView setMinimumZoomScale:pdfMinimumZoomScale];
     [_scrollView setMaximumZoomScale:pdfMaximumZoomScale];
     [_scrollView setBackgroundColor:[UIColor grayColor]];
-
-    _actionSheetAssistant = adoptNS([[WKActionSheetAssistant alloc] initWithView:self]);
-    [_actionSheetAssistant setDelegate:self];
 
     return self;
 }
@@ -127,7 +110,6 @@ typedef struct {
     for (auto& page : _pages) {
         [page.view removeFromSuperview];
         [page.view setDelegate:nil];
-        [[page.view annotationController] setDelegate:nil];
     }
     
     _pages.clear();
@@ -143,11 +125,8 @@ typedef struct {
     RetainPtr<CGPDFDocumentRef> cgPDFDocument = adoptCF(CGPDFDocumentCreateWithProvider(dataProvider.get()));
     _pdfDocument = adoptNS([[UIPDFDocument alloc] initWithCGPDFDocument:cgPDFDocument.get()]);
 
-    // FIXME: restore the scroll position and page scale if navigating from the back/forward list.
-
     [self _computePageAndDocumentFrames];
     [self _revalidateViews];
-    [self _scrollToFragment:_webView.URL.fragment];
 }
 
 - (void)web_setMinimumSize:(CGSize)size
@@ -164,9 +143,7 @@ typedef struct {
         return;
 
     [self _revalidateViews];
-
-    if (!_isPerformingSameDocumentNavigation)
-        [_pageNumberIndicator show];
+    [_pageNumberIndicator show];
 }
 
 - (void)_revalidateViews
@@ -202,7 +179,6 @@ typedef struct {
         pageInfo.view = adoptNS([[UIPDFPageView alloc] initWithPage:pageInfo.page.get() tiledContent:YES]);
         [pageInfo.view setUseBackingLayer:YES];
         [pageInfo.view setDelegate:self];
-        [[pageInfo.view annotationController] setDelegate:self];
         [self addSubview:pageInfo.view.get()];
 
         [pageInfo.view setFrame:pageInfo.frame];
@@ -220,9 +196,6 @@ typedef struct {
 
 - (void)_updatePageNumberIndicator
 {
-    if (_isPerformingSameDocumentNavigation)
-        return;
-
     if (!_pageNumberIndicator)
         _pageNumberIndicator = adoptNS([[WKPDFPageNumberIndicator alloc] initWithFrame:CGRectZero]);
 
@@ -251,40 +224,6 @@ typedef struct {
         [_fixedOverlayView addSubview:_pageNumberIndicator.get()];
 }
 
-- (void)_scrollToFragment:(NSString *)fragment
-{
-    if (![fragment hasPrefix:@"page"])
-        return;
-
-    NSInteger pageIndex = [[fragment substringFromIndex:4] integerValue] - 1;
-    if (pageIndex < 0 || static_cast<std::size_t>(pageIndex) >= _pages.size())
-        return;
-
-    _isPerformingSameDocumentNavigation = YES;
-
-    [_pageNumberIndicator hide];
-    [self _resetZoomAnimated:NO];
-
-    // Ensure that the page margin is visible below the content inset.
-    const CGFloat verticalOffset = _pages[pageIndex].frame.origin.y - _webView._computedContentInset.top - pdfPageMargin;
-    [_scrollView setContentOffset:CGPointMake(_scrollView.contentOffset.x, verticalOffset) animated:NO];
-
-    _isPerformingSameDocumentNavigation = NO;
-}
-
-- (void)web_didSameDocumentNavigation:(WKSameDocumentNavigationType)navigationType
-{
-    // Check for kWKSameDocumentNavigationSessionStatePop instead of kWKSameDocumentNavigationAnchorNavigation since the
-    // latter is only called once when navigating to the same anchor in succession. If the user navigates to a page
-    // then scrolls back and clicks on the same link a second time, we want to scroll again.
-    if (navigationType != kWKSameDocumentNavigationSessionStatePop)
-        return;
-
-    // FIXME: restore the scroll position and page scale if navigating back from a fragment.
-
-    [self _scrollToFragment:_webView.URL.fragment];
-}
-
 - (void)_computePageAndDocumentFrames
 {
     NSUInteger pageCount = [_pdfDocument numberOfPages];
@@ -300,7 +239,7 @@ typedef struct {
         if (!page)
             continue;
 
-        CGSize pageSize = [page cropBoxAccountForRotation].size;
+        CGSize pageSize = [page size];
         pageFrame.size.height = pageSize.height / pageSize.width * pageFrame.size.width;
         CGRect pageFrameWithMarginApplied = CGRectInset(pageFrame, pdfPageMargin, pdfPageMargin);
 
@@ -320,55 +259,6 @@ typedef struct {
     [_scrollView setContentSize:newFrame.size];
 }
 
-- (void)_resetZoomAnimated:(BOOL)animated
-{
-    _isStartingZoom = YES;
-
-    CGRect scrollViewBounds = _scrollView.bounds;
-    CGPoint centerOfPageInDocumentCoordinates = [_scrollView convertPoint:CGPointMake(CGRectGetMidX(scrollViewBounds), CGRectGetMidY(scrollViewBounds)) toView:self];
-    [_webView _zoomOutWithOrigin:centerOfPageInDocumentCoordinates animated:animated];
-
-    _isStartingZoom = NO;
-}
-
-- (void)_highlightLinkAnnotation:(UIPDFLinkAnnotation *)linkAnnotation forDuration:(NSTimeInterval)duration completionHandler:(void (^)())completionHandler
-{
-    static const CGFloat highlightBorderRadius = 3;
-    static const CGFloat highlightColorComponent = 26.0 / 255;
-    static UIColor *highlightColor = [[UIColor alloc] initWithRed:highlightColorComponent green:highlightColorComponent blue:highlightColorComponent alpha:0.3];
-
-    UIPDFPageView *pageView = linkAnnotation.annotationController.pageView;
-    CGRect highlightViewFrame = [self convertRect:[pageView convertRectFromPDFPageSpace:linkAnnotation.Rect] fromView:pageView];
-    RetainPtr<_UIHighlightView> highlightView = adoptNS([[_UIHighlightView alloc] initWithFrame:CGRectInset(highlightViewFrame, -highlightBorderRadius, -highlightBorderRadius)]);
-    [highlightView setOpaque:NO];
-    [highlightView setCornerRadius:highlightBorderRadius];
-    [highlightView setColor:highlightColor];
-
-    ASSERT(isMainThread());
-    [self addSubview:highlightView.get()];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, duration * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [highlightView removeFromSuperview];
-        completionHandler();
-    });
-}
-
-- (NSURL *)_URLForLinkAnnotation:(UIPDFLinkAnnotation *)linkAnnotation
-{
-    NSURL *documentURL = _webView.URL;
-
-    if (NSURL *url = linkAnnotation.url)
-        return [NSURL URLWithString:url.relativeString relativeToURL:documentURL];
-
-    if (NSUInteger pageNumber = linkAnnotation.pageNumber) {
-        String anchorString = ASCIILiteral("#page");
-        anchorString.append(String::number(pageNumber));
-        return [NSURL URLWithString:anchorString relativeToURL:documentURL];
-    }
-
-    return nil;
-}
-
-#pragma mark UIPDFPageViewDelegate
 
 - (void)zoom:(UIPDFPageView *)pageView to:(CGRect)targetRect atPoint:(CGPoint)origin kind:(UIPDFObjectKind)kind
 {
@@ -389,78 +279,13 @@ typedef struct {
 
 - (void)resetZoom:(UIPDFPageView *)pageView
 {
-    [self _resetZoomAnimated:YES];
-}
+    _isStartingZoom = YES;
+    
+    CGRect scrollViewBounds = _scrollView.bounds;
+    CGPoint centerOfPageInDocumentCoordinates = [_scrollView convertPoint:CGPointMake(CGRectGetMidX(scrollViewBounds), CGRectGetMidY(scrollViewBounds)) toView:self];
+    [_webView _zoomOutWithOrigin:centerOfPageInDocumentCoordinates];
 
-#pragma mark UIPDFAnnotationControllerDelegate
-
-- (void)annotation:(UIPDFAnnotation *)annotation wasTouchedAtPoint:(CGPoint)point controller:(UIPDFAnnotationController *)controller
-{
-    if (![annotation isKindOfClass:[UIPDFLinkAnnotation class]])
-        return;
-
-    UIPDFLinkAnnotation *linkAnnotation = (UIPDFLinkAnnotation *)annotation;
-    RetainPtr<NSURL> url = [self _URLForLinkAnnotation:linkAnnotation];
-    if (!url)
-        return;
-
-    CGPoint documentPoint = [controller.pageView convertPoint:point toView:self];
-    CGPoint screenPoint = [self.window convertPoint:[self convertPoint:documentPoint toView:nil] toWindow:nil];
-    RetainPtr<WKWebView> retainedWebView = _webView;
-
-    [self _highlightLinkAnnotation:linkAnnotation forDuration:.2 completionHandler:^{
-        retainedWebView->_page->navigateToURLWithSimulatedClick([url absoluteString], roundedIntPoint(documentPoint), roundedIntPoint(screenPoint));
-    }];
-}
-
-- (void)annotation:(UIPDFAnnotation *)annotation isBeingPressedAtPoint:(CGPoint)point controller:(UIPDFAnnotationController *)controller
-{
-    if (![annotation isKindOfClass:[UIPDFLinkAnnotation class]])
-        return;
-
-    UIPDFLinkAnnotation *linkAnnotation = (UIPDFLinkAnnotation *)annotation;
-    NSURL *url = [self _URLForLinkAnnotation:linkAnnotation];
-    if (!url)
-        return;
-
-    _positionInformation.url = url.absoluteString;
-    _positionInformation.point = roundedIntPoint([controller.pageView convertPoint:point toView:self]);
-    _positionInformation.bounds = roundedIntRect([self convertRect:[controller.pageView convertRectFromPDFPageSpace:annotation.Rect] fromView:controller.pageView]);
-
-    [self _highlightLinkAnnotation:linkAnnotation forDuration:.75 completionHandler:^{
-        [_actionSheetAssistant showLinkSheet];
-    }];
-}
-
-#pragma mark WKActionSheetAssistantDelegate
-
-- (const WebKit::InteractionInformationAtPosition&)positionInformationForActionSheetAssistant:(WKActionSheetAssistant *)assistant
-{
-    return _positionInformation;
-}
-
-- (void)actionSheetAssistant:(WKActionSheetAssistant *)assistant performAction:(WebKit::SheetAction)action
-{
-    if (action != WebKit::SheetAction::Copy)
-        return;
-
-    NSDictionary *representations = @{
-        (NSString *)kUTTypeUTF8PlainText : _positionInformation.url,
-        (NSString *)kUTTypeURL : [NSURL URLWithString:_positionInformation.url]
-    };
-
-    [UIPasteboard generalPasteboard].items = @[ representations ];
-}
-
-- (void)actionSheetAssistant:(WKActionSheetAssistant *)assistant openElementAtLocation:(CGPoint)location
-{
-    CGPoint screenPoint = [self.window convertPoint:[self convertPoint:location toView:nil] toWindow:nil];
-    _webView->_page->navigateToURLWithSimulatedClick(_positionInformation.url, roundedIntPoint(location), roundedIntPoint(screenPoint));
-}
-
-- (RetainPtr<NSArray>)actionSheetAssistant:(WKActionSheetAssistant *)assistant decideActionsForElement:(_WKActivatedElementInfo *)element defaultActions:(RetainPtr<NSArray>)defaultActions
-{
-    return _webView->_page->uiClient().actionsForElement(element, WTF::move(defaultActions));
+    _isStartingZoom = NO;
 }
 
 @end

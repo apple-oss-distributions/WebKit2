@@ -90,6 +90,11 @@ public:
     WTF::IteratorRange<WebPageProxyMap::const_iterator::Values> pages() const { return m_pageMap.values(); }
     unsigned pageCount() const { return m_pageMap.size(); }
 
+    void addVisitedLinkProvider(VisitedLinkProvider&);
+    void addWebUserContentControllerProxy(WebUserContentControllerProxy&);
+    void didDestroyVisitedLinkProvider(VisitedLinkProvider&);
+    void didDestroyWebUserContentControllerProxy(WebUserContentControllerProxy&);
+
     WebBackForwardListItem* webBackForwardItem(uint64_t itemID) const;
 
     ResponsivenessTimer* responsivenessTimer() { return &m_responsivenessTimer; }
@@ -139,9 +144,7 @@ public:
     void processReadyToSuspend();
     void sendCancelProcessWillSuspend();
     void didCancelProcessSuspension();
-
-    void setIsHoldingLockedFiles(bool);
-
+    
     ProcessThrottler& throttler() { return *m_throttler; }
     
 private:
@@ -216,6 +219,9 @@ private:
     WebFrameProxyMap m_frameMap;
     WebBackForwardListItemMap m_backForwardListItemMap;
 
+    HashSet<VisitedLinkProvider*> m_visitedLinkProviders;
+    HashSet<WebUserContentControllerProxy*> m_webUserContentControllerProxies;
+
     std::unique_ptr<DownloadProxyMap> m_downloadProxyMap;
 
 #if ENABLE(CUSTOM_PROTOCOLS)
@@ -229,7 +235,6 @@ private:
 
     int m_numberOfTimesSuddenTerminationWasDisabled;
     std::unique_ptr<ProcessThrottler> m_throttler;
-    std::unique_ptr<ProcessThrottler::BackgroundActivityToken> m_tokenForHoldingLockedFiles;
 };
 
 } // namespace WebKit

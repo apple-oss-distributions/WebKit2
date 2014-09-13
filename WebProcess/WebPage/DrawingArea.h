@@ -104,11 +104,8 @@ public:
     virtual void scheduleCompositingLayerFlushImmediately() = 0;
 
 #if USE(REQUEST_ANIMATION_FRAME_DISPLAY_MONITOR)
-    virtual RefPtr<WebCore::DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID);
+    virtual PassRefPtr<WebCore::DisplayRefreshMonitor> createDisplayRefreshMonitor(PlatformDisplayID);
 #endif
-
-    virtual WebCore::TransformationMatrix rootLayerTransform() const;
-    virtual void setRootLayerTransform(const WebCore::TransformationMatrix&) { }
 
 #if USE(COORDINATED_GRAPHICS)
     virtual void didReceiveCoordinatedLayerTreeHostMessage(IPC::Connection*, IPC::MessageDecoder&) = 0;

@@ -100,7 +100,6 @@
 #include <WebCore/ArchiveResource.h>
 #include <WebCore/Chrome.h>
 #include <WebCore/ContextMenuController.h>
-#include <WebCore/DataTransfer.h>
 #include <WebCore/DatabaseManager.h>
 #include <WebCore/DocumentFragment.h>
 #include <WebCore/DocumentLoader.h>
@@ -146,7 +145,6 @@
 #include <WebCore/Settings.h>
 #include <WebCore/ShadowRoot.h>
 #include <WebCore/SharedBuffer.h>
-#include <WebCore/StyleProperties.h>
 #include <WebCore/SubframeLoader.h>
 #include <WebCore/SubstituteData.h>
 #include <WebCore/TextIterator.h>
@@ -298,6 +296,7 @@ WebPage::WebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
     , m_isShowingContextMenu(false)
 #endif
 #if PLATFORM(IOS)
+    , m_firstLayerTreeTransactionIDAfterDidCommitLoad(0)
     , m_hasReceivedVisibleContentRectsAfterDidCommitLoad(false)
     , m_scaleWasSetByUIProcess(false)
     , m_userHasChangedPageScaleFactor(false)
@@ -321,13 +320,10 @@ WebPage::WebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
     , m_viewState(parameters.viewState)
     , m_processSuppressionDisabledByWebPreference("Process suppression is disabled.")
     , m_pendingNavigationID(0)
-    , m_pageScaleWithoutThumbnailScale(1)
-    , m_thumbnailScale(1)
 #if ENABLE(WEBGL)
     , m_systemWebGLPolicy(WebGLAllowCreation)
 #endif
     , m_pageOverlayController(*this)
-    , m_mainFrameProgressCompleted(false)
 {
     ASSERT(m_pageID);
     // FIXME: This is a non-ideal location for this Setting and
@@ -719,16 +715,14 @@ EditorState WebPage::editorState() const
     if (frame.editor().hasComposition()) {
         RefPtr<Range> compositionRange = frame.editor().compositionRange();
         Vector<WebCore::SelectionRect> compositionRects;
-        if (compositionRange) {
-            compositionRange->collectSelectionRects(compositionRects);
-            if (compositionRects.size())
-                result.firstMarkedRect = compositionRects[0].rect();
-            if (compositionRects.size() > 1)
-                result.lastMarkedRect = compositionRects.last().rect();
-            else
-                result.lastMarkedRect = result.firstMarkedRect;
-            result.markedText = plainTextReplacingNoBreakSpace(compositionRange.get());
-        }
+        compositionRange->collectSelectionRects(compositionRects);
+        if (compositionRects.size())
+            result.firstMarkedRect = compositionRects[0].rect();
+        if (compositionRects.size() > 1)
+            result.lastMarkedRect = compositionRects.last().rect();
+        else
+            result.lastMarkedRect = result.firstMarkedRect;
+        result.markedText = plainTextReplacingNoBreakSpace(compositionRange.get());
     }
     FrameView* view = frame.view();
     if (selection.isCaret()) {
@@ -746,19 +740,15 @@ EditorState WebPage::editorState() const
         result.caretRectAtStart = view->contentsToRootView(VisiblePosition(selection.start()).absoluteCaretBounds());
         result.caretRectAtEnd = view->contentsToRootView(VisiblePosition(selection.end()).absoluteCaretBounds());
         RefPtr<Range> selectedRange = selection.toNormalizedRange();
-        String selectedText;
-        if (selectedRange) {
-            selectedRange->collectSelectionRects(result.selectionRects);
-            convertSelectionRectsToRootView(view, result.selectionRects);
-            selectedText = plainTextReplacingNoBreakSpace(selectedRange.get(), TextIteratorDefaultBehavior, true);
-            result.selectedTextLength = selectedText.length();
-            const int maxSelectedTextLength = 200;
-            if (selectedText.length() <= maxSelectedTextLength)
-                result.wordAtSelection = selectedText;
-        }
-
+        selectedRange->collectSelectionRects(result.selectionRects);
+        convertSelectionRectsToRootView(view, result.selectionRects);
+        String selectedText = plainTextReplacingNoBreakSpace(selectedRange.get(), TextIteratorDefaultBehavior, true);
         // FIXME: We should disallow replace when the string contains only CJ characters.
         result.isReplaceAllowed = result.isContentEditable && !result.isInPasswordField && !selectedText.containsOnlyWhitespace();
+        result.selectedTextLength = selectedText.length();
+        const int maxSelectedTextLength = 200;
+        if (selectedText.length() <= maxSelectedTextLength)
+            result.wordAtSelection = selectedText;
     }
     if (!selection.isNone()) {
         Node* nodeToRemove;
@@ -770,17 +760,10 @@ EditorState WebPage::editorState() const
                 result.typingAttributes |= AttributeBold;
             if (traits & kCTFontTraitItalic)
                 result.typingAttributes |= AttributeItalics;
-
-            RefPtr<EditingStyle> typingStyle = frame.selection().typingStyle();
-            if (typingStyle && typingStyle->style()) {
-                String value = typingStyle->style()->getPropertyValue(CSSPropertyWebkitTextDecorationsInEffect);
-                if (value.contains("underline"))
-                    result.typingAttributes |= AttributeUnderline;
-            } else {
-                if (style->textDecorationsInEffect() & TextDecorationUnderline)
-                    result.typingAttributes |= AttributeUnderline;
-            }
-
+            
+            if (style->textDecorationsInEffect() & TextDecorationUnderline)
+                result.typingAttributes |= AttributeUnderline;
+            
             if (nodeToRemove)
                 nodeToRemove->remove(ASSERT_NO_EXCEPTION);
         }
@@ -1102,18 +1085,6 @@ void WebPage::loadWebArchiveData(const IPC::DataReference& webArchiveData, IPC::
     loadDataImpl(0, sharedBuffer, ASCIILiteral("application/x-webarchive"), ASCIILiteral("utf-16"), blankURL(), URL(), decoder);
 }
 
-void WebPage::navigateToURLWithSimulatedClick(const String& url, IntPoint documentPoint, IntPoint screenPoint)
-{
-    Frame* mainFrame = m_mainFrame->coreFrame();
-    Document* mainFrameDocument = mainFrame->document();
-    if (!mainFrameDocument)
-        return;
-
-    const int singleClick = 1;
-    RefPtr<MouseEvent> mouseEvent = MouseEvent::create(eventNames().clickEvent, true, true, currentTime(), nullptr, singleClick, screenPoint.x(), screenPoint.y(), documentPoint.x(), documentPoint.y(), false, false, false, false, 0, nullptr, nullptr);
-    mainFrame->loader().urlSelected(mainFrameDocument->completeURL(url), emptyString(), mouseEvent.release(), LockHistory::No, LockBackForwardList::No, ShouldSendReferrer::MaybeSendReferrer);
-}
-
 void WebPage::stopLoadingFrame(uint64_t frameID)
 {
     WebFrame* frame = WebProcess::shared().webFrame(frameID);
@@ -1377,7 +1348,7 @@ void WebPage::setPageAndTextZoomFactors(double pageZoomFactor, double textZoomFa
     return frame->setPageAndTextZoomFactors(static_cast<float>(pageZoomFactor), static_cast<float>(textZoomFactor));
 }
 
-void WebPage::windowScreenDidChange(uint32_t displayID)
+void WebPage::windowScreenDidChange(uint64_t displayID)
 {
     m_page->chrome().windowScreenDidChange(static_cast<PlatformDisplayID>(displayID));
 }
@@ -1658,9 +1629,6 @@ void WebPage::takeSnapshot(IntRect snapshotRect, IntSize bitmapSize, uint32_t op
 PassRefPtr<WebImage> WebPage::scaledSnapshotWithOptions(const IntRect& rect, double additionalScaleFactor, SnapshotOptions options)
 {
     IntRect snapshotRect = rect;
-    if (options & SnapshotOptionsRespectDrawingAreaTransform)
-        snapshotRect = m_drawingArea->rootLayerTransform().inverse().mapRect(snapshotRect);
-
     IntSize bitmapSize = snapshotRect.size();
     double scaleFactor = additionalScaleFactor;
     if (!(options & SnapshotOptionsExcludeDeviceScaleFactor))
@@ -1681,9 +1649,6 @@ PassRefPtr<WebImage> WebPage::snapshotAtSize(const IntRect& rect, const IntSize&
         return nullptr;
 
     IntRect snapshotRect = rect;
-    if (options & SnapshotOptionsRespectDrawingAreaTransform)
-        snapshotRect = m_drawingArea->rootLayerTransform().inverse().mapRect(snapshotRect);
-
     float horizontalScaleFactor = static_cast<float>(bitmapSize.width()) / rect.width();
     float verticalScaleFactor = static_cast<float>(bitmapSize.height()) / rect.height();
     float scaleFactor = std::max(horizontalScaleFactor, verticalScaleFactor);
@@ -1739,8 +1704,6 @@ PassRefPtr<WebImage> WebPage::snapshotNode(WebCore::Node& node, SnapshotOptions 
 
     LayoutRect topLevelRect;
     IntRect snapshotRect = pixelSnappedIntRect(node.renderer()->paintingRootRect(topLevelRect));
-    if (snapshotRect.isEmpty())
-        return nullptr;
 
     double scaleFactor = 1;
     IntSize snapshotSize = snapshotRect.size();
@@ -2690,7 +2653,6 @@ void WebPage::updatePreferences(const WebPreferencesStore& store)
     settings.setJavaScriptCanOpenWindowsAutomatically(store.getBoolValueForKey(WebPreferencesKey::javaScriptCanOpenWindowsAutomaticallyKey()));
     settings.setForceFTPDirectoryListings(store.getBoolValueForKey(WebPreferencesKey::forceFTPDirectoryListingsKey()));
     settings.setDNSPrefetchingEnabled(store.getBoolValueForKey(WebPreferencesKey::dnsPrefetchingEnabledKey()));
-    settings.setFeatureCounterEnabled(store.getBoolValueForKey(WebPreferencesKey::featureCounterEnabledKey()));
 #if ENABLE(WEB_ARCHIVE)
     settings.setWebArchiveDebugModeEnabled(store.getBoolValueForKey(WebPreferencesKey::webArchiveDebugModeEnabledKey()));
 #endif
@@ -2747,8 +2709,6 @@ void WebPage::updatePreferences(const WebPreferencesStore& store)
     settings.setForceUpdateScrollbarsOnMainThreadForPerformanceTesting(store.getBoolValueForKey(WebPreferencesKey::forceUpdateScrollbarsOnMainThreadForPerformanceTestingKey()));
     settings.setInteractiveFormValidationEnabled(store.getBoolValueForKey(WebPreferencesKey::interactiveFormValidationEnabledKey()));
     settings.setSpatialNavigationEnabled(store.getBoolValueForKey(WebPreferencesKey::spatialNavigationEnabledKey()));
-
-    settings.setHttpEquivEnabled(store.getBoolValueForKey(WebPreferencesKey::httpEquivEnabledKey()));
 
 #if ENABLE(SQL_DATABASE)
     DatabaseManager::manager().setIsAvailable(store.getBoolValueForKey(WebPreferencesKey::databasesEnabledKey()));
@@ -3936,22 +3896,19 @@ void WebPage::addResourceRequest(unsigned long identifier, const WebCore::Resour
     if (!request.url().protocolIsInHTTPFamily())
         return;
 
-    if (m_mainFrameProgressCompleted && !ScriptController::processingUserGesture())
-        return;
-
-    ASSERT(!m_trackedNetworkResourceRequestIdentifiers.contains(identifier));
-    bool wasEmpty = m_trackedNetworkResourceRequestIdentifiers.isEmpty();
-    m_trackedNetworkResourceRequestIdentifiers.add(identifier);
+    ASSERT(!m_networkResourceRequestIdentifiers.contains(identifier));
+    bool wasEmpty = m_networkResourceRequestIdentifiers.isEmpty();
+    m_networkResourceRequestIdentifiers.add(identifier);
     if (wasEmpty)
         send(Messages::WebPageProxy::SetNetworkRequestsInProgress(true));
 }
 
 void WebPage::removeResourceRequest(unsigned long identifier)
 {
-    if (!m_trackedNetworkResourceRequestIdentifiers.remove(identifier))
+    if (!m_networkResourceRequestIdentifiers.remove(identifier))
         return;
 
-    if (m_trackedNetworkResourceRequestIdentifiers.isEmpty())
+    if (m_networkResourceRequestIdentifiers.isEmpty())
         send(Messages::WebPageProxy::SetNetworkRequestsInProgress(false));
 }
 
@@ -4479,11 +4436,6 @@ void WebPage::didCancelCheckingText(uint64_t requestID)
 
 void WebPage::didCommitLoad(WebFrame* frame)
 {
-#if PLATFORM(IOS)
-    frame->setFirstLayerTreeTransactionIDAfterDidCommitLoad(toRemoteLayerTreeDrawingArea(*m_drawingArea).nextTransactionID());
-    cancelPotentialTapInFrame(*frame);
-#endif
-
     if (!frame->isMainFrame())
         return;
 
@@ -4496,17 +4448,13 @@ void WebPage::didCommitLoad(WebFrame* frame)
     if (frame->coreFrame()->loader().loadType() == FrameLoadType::Standard) {
         Page* page = frame->coreFrame()->page();
 
-        if (page) {
-            if (m_thumbnailScale != 1) {
-                m_pageScaleWithoutThumbnailScale = 1;
-                setThumbnailScale(m_thumbnailScale);
-            } else if (page->pageScaleFactor() != 1)
-                scalePage(1, IntPoint());
-        }
+        if (page && page->pageScaleFactor() != 1)
+            scalePage(1, IntPoint());
     }
 #if PLATFORM(IOS)
     m_hasReceivedVisibleContentRectsAfterDidCommitLoad = false;
     m_scaleWasSetByUIProcess = false;
+    m_firstLayerTreeTransactionIDAfterDidCommitLoad = toRemoteLayerTreeDrawingArea(*m_drawingArea).nextTransactionID();
     m_userHasChangedPageScaleFactor = false;
     m_estimatedLatency = std::chrono::milliseconds(1000 / 60);
 
@@ -4616,7 +4564,7 @@ void WebPage::determinePrimarySnapshottedPlugIn()
     HTMLPlugInImageElement* candidatePlugIn = nullptr;
     unsigned candidatePlugInArea = 0;
 
-    for (Frame* frame = &mainFrame; frame; frame = frame->tree().traverseNextRendered()) {
+    for (Frame* frame = &mainFrame; frame; frame = frame->tree().traverseNext()) {
         if (!frame->loader().subframeLoader().containsPlugins())
             continue;
         if (!frame->document() || !frame->view())
@@ -4786,40 +4734,6 @@ PassRefPtr<DocumentLoader> WebPage::createDocumentLoader(Frame& frame, const Res
     }
 
     return documentLoader.release();
-}
-
-void WebPage::setThumbnailScale(double thumbnailScale)
-{
-    // FIXME (129014): If the page programmatically scales while thumbnailed, we will restore the wrong scroll position.
-
-    ASSERT_ARG(thumbnailScale, thumbnailScale > 0);
-
-    double currentPageScaleFactor = pageScaleFactor();
-
-    if (thumbnailScale == m_thumbnailScale && currentPageScaleFactor == m_thumbnailScale * m_pageScaleWithoutThumbnailScale)
-        return;
-
-    if (m_thumbnailScale == 1) {
-        m_pageScaleWithoutThumbnailScale = currentPageScaleFactor;
-        m_scrollPositionIgnoringThumbnailScale = m_page->mainFrame().view()->scrollPosition();
-    }
-
-    m_thumbnailScale = thumbnailScale;
-
-    // Scale the page, but leave the original page scale intact if there was any.
-    scalePage(m_thumbnailScale * m_pageScaleWithoutThumbnailScale, IntPoint());
-
-    // Scroll as far as we can towards the original scroll position in the scaled page.
-    // This may get constrained; we'll transform the drawing area to expose the right part of the page.
-    m_page->mainFrame().view()->setScrollPosition(IntPoint(m_scrollPositionIgnoringThumbnailScale.x() * m_thumbnailScale, m_scrollPositionIgnoringThumbnailScale.y() * m_thumbnailScale));
-
-    double inverseScale = 1 / m_thumbnailScale;
-    IntPoint newScrollPosition = m_page->mainFrame().view()->scrollPosition();
-    TransformationMatrix transform;
-    transform.translate((newScrollPosition.x() * inverseScale) - m_scrollPositionIgnoringThumbnailScale.x(), (newScrollPosition.y() * inverseScale) - m_scrollPositionIgnoringThumbnailScale.y());
-    transform.scale(inverseScale);
-
-    drawingArea()->setRootLayerTransform(transform);
 }
 
 void WebPage::getBytecodeProfile(uint64_t callbackID)

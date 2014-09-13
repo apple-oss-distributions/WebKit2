@@ -27,7 +27,6 @@
 
 #if WK_API_ENABLED
 
-#import "SameDocumentNavigationType.h"
 #import <wtf/RefPtr.h>
 #import <wtf/RetainPtr.h>
 
@@ -85,7 +84,7 @@ struct PrintInfo;
 - (BOOL)_scrollToRect:(WebCore::FloatRect)targetRect origin:(WebCore::FloatPoint)origin minimumScrollDistance:(float)minimumScrollDistance;
 - (void)_zoomToFocusRect:(WebCore::FloatRect)focusedElementRect selectionRect:(WebCore::FloatRect)selectionRectInDocumentCoordinates fontSize:(float)fontSize minimumScale:(double)minimumScale maximumScale:(double)maximumScale allowScaling:(BOOL)allowScaling forceScroll:(BOOL)forceScroll;
 - (BOOL)_zoomToRect:(WebCore::FloatRect)targetRect withOrigin:(WebCore::FloatPoint)origin fitEntireRect:(BOOL)fitEntireRect minimumScale:(double)minimumScale maximumScale:(double)maximumScale minimumScrollDistance:(float)minimumScrollDistance;
-- (void)_zoomOutWithOrigin:(WebCore::FloatPoint)origin animated:(BOOL)animated;
+- (void)_zoomOutWithOrigin:(WebCore::FloatPoint)origin;
 
 - (void)_setHasCustomContentView:(BOOL)hasCustomContentView loadedMIMEType:(const WTF::String&)mimeType;
 - (void)_didFinishLoadingDataForCustomContentProviderWithSuggestedFilename:(const WTF::String&)suggestedFilename data:(NSData *)data;
@@ -95,8 +94,6 @@ struct PrintInfo;
 - (void)_didInvokeUIScrollViewDelegateCallback;
 
 - (void)_updateVisibleContentRects;
-
-- (void)_didSameDocumentNavigationForMainFrame:(WebKit::SameDocumentNavigationType)navigationType;
 
 @property (nonatomic, readonly) UIEdgeInsets _computedContentInset;
 #endif

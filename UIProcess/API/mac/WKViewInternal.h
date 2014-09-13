@@ -108,7 +108,10 @@ struct WebPageConfiguration;
 - (void)_setSuppressVisibilityUpdates:(BOOL)suppressVisibilityUpdates;
 - (BOOL)_suppressVisibilityUpdates;
 
+- (void)_didFirstVisuallyNonEmptyLayoutForMainFrame;
+- (void)_didFinishLoadForMainFrame;
 - (void)_didSameDocumentNavigationForMainFrame:(WebKit::SameDocumentNavigationType)type;
+- (void)_removeNavigationGestureSnapshot;
 
 #if WK_API_ENABLED
 @property (nonatomic, setter=_setThumbnailView:) _WKThumbnailView *_thumbnailView;

@@ -36,7 +36,6 @@
 #include <wtf/RefPtr.h>
 
 namespace IPC {
-class Attachment;
 class Connection;
 class MessageDecoder;
 class MessageReceiver;
@@ -67,7 +66,6 @@ protected:
     virtual bool operator==(const EventListener& rhs) override { return static_cast<WebCore::EventListener*>(this) == &rhs; }
     
     // FullscreenInterface
-    virtual void resetMediaState() override;
     virtual void setDuration(double) override;
     virtual void setCurrentTime(double currentTime, double anchorTime) override;
     virtual void setRate(bool isPlaying, float playbackRate) override;
@@ -85,7 +83,6 @@ protected:
     virtual void didExitFullscreen();
     virtual void didCleanupFullscreen();
     virtual void setVideoLayerGravityEnum(unsigned);
-    void setVideoLayerFrameFenced(WebCore::FloatRect bounds, IPC::Attachment fencePort);
     
     WebPage* m_page;
     RefPtr<WebCore::Node> m_node;

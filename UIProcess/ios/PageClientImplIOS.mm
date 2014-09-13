@@ -476,11 +476,6 @@ void PageClientImpl::wheelEventWasNotHandledByWebCore(const NativeWebWheelEvent&
     notImplemented();
 }
 
-void PageClientImpl::clearCustomSwipeViews()
-{
-    notImplemented();
-}
-
 void PageClientImpl::commitPotentialTapFailed()
 {
     [m_contentView _commitPotentialTapFailed];
@@ -687,9 +682,16 @@ void PageClientImpl::willRecordNavigationSnapshot(WebBackForwardListItem& item)
     NavigationState::fromWebPage(*m_webView->_page).willRecordNavigationSnapshot(item);
 }
 
-void PageClientImpl::didSameDocumentNavigationForMainFrame(SameDocumentNavigationType navigationType)
+void PageClientImpl::didFirstVisuallyNonEmptyLayoutForMainFrame()
 {
-    [m_webView _didSameDocumentNavigationForMainFrame:navigationType];
+}
+
+void PageClientImpl::didFinishLoadForMainFrame()
+{
+}
+
+void PageClientImpl::didSameDocumentNavigationForMainFrame(SameDocumentNavigationType)
+{
 }
 
 } // namespace WebKit

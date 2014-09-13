@@ -27,7 +27,6 @@
 
 #if PLATFORM(IOS)
 
-#import "Attachment.h"
 #import "WebCoreArgumentCoders.h"
 #import "WebPage.h"
 #import "WebProcess.h"
@@ -46,7 +45,6 @@
 #import <WebCore/Settings.h>
 #import <WebCore/TimeRanges.h>
 #import <WebCore/WebCoreThreadRun.h>
-#import <mach/mach_port.h>
 
 using namespace WebCore;
 
@@ -99,7 +97,7 @@ void WebVideoFullscreenManager::enterFullscreenForNode(Node* node)
 
     m_layerHostingContext = LayerHostingContext::createForExternalHostingProcess();
     
-    m_page->send(Messages::WebVideoFullscreenManagerProxy::SetupFullscreenWithID(m_layerHostingContext->contextID(), clientRectForNode(node), m_page->deviceScaleFactor()), m_page->pageID());
+    m_page->send(Messages::WebVideoFullscreenManagerProxy::SetupFullscreenWithID(m_layerHostingContext->contextID(), clientRectForNode(node)), m_page->pageID());
 }
 
 void WebVideoFullscreenManager::exitFullscreenForNode(Node* node)
@@ -114,11 +112,6 @@ void WebVideoFullscreenManager::exitFullscreenForNode(Node* node)
     m_page->send(Messages::WebVideoFullscreenManagerProxy::ExitFullscreen(clientRectForNode(node)), m_page->pageID());
 }
 
-void WebVideoFullscreenManager::resetMediaState()
-{
-    m_page->send(Messages::WebVideoFullscreenManagerProxy::ResetMediaState(), m_page->pageID());
-}
-    
 void WebVideoFullscreenManager::setDuration(double duration)
 {
     m_page->send(Messages::WebVideoFullscreenManagerProxy::SetDuration(duration), m_page->pageID());
@@ -182,19 +175,10 @@ void WebVideoFullscreenManager::didSetupFullscreen()
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-
-    [videoLayer setPosition:CGPointMake(0, 0)];
     [videoLayer setBackgroundColor:cachedCGColor(WebCore::Color::transparent, WebCore::ColorSpaceDeviceRGB)];
-
-    // Set a scale factor here to make convertRect:toLayer:nil take scale factor into account. <rdar://problem/18316542>.
-    // This scale factor is inverted in the hosting process.
-    float hostingScaleFactor = m_page->deviceScaleFactor();
-    [videoLayer setTransform:CATransform3DMakeScale(hostingScaleFactor, hostingScaleFactor, 1)];
     m_layerHostingContext->setRootLayer(videoLayer);
-
     setVideoFullscreenLayer(videoLayer);
     [CATransaction commit];
-
     m_page->send(Messages::WebVideoFullscreenManagerProxy::EnterFullscreen(), m_page->pageID());
 }
     
@@ -220,12 +204,9 @@ void WebVideoFullscreenManager::didExitFullscreen()
     __block RefPtr<WebVideoFullscreenModelMediaElement> protect(this);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (m_layerHostingContext) {
-            m_layerHostingContext->setRootLayer(nullptr);
-            m_layerHostingContext = nullptr;
-        }
-        if (m_page)
-            m_page->send(Messages::WebVideoFullscreenManagerProxy::CleanupFullscreen(), m_page->pageID());
+        m_layerHostingContext->setRootLayer(nullptr);
+        m_layerHostingContext = nullptr;
+        m_page->send(Messages::WebVideoFullscreenManagerProxy::CleanupFullscreen(), m_page->pageID());
         protect.clear();
     });
 }
@@ -251,14 +232,6 @@ void WebVideoFullscreenManager::didCleanupFullscreen()
 void WebVideoFullscreenManager::setVideoLayerGravityEnum(unsigned gravity)
 {
     setVideoLayerGravity((WebVideoFullscreenModel::VideoGravity)gravity);
-}
-    
-void WebVideoFullscreenManager::setVideoLayerFrameFenced(WebCore::FloatRect bounds, IPC::Attachment fencePort)
-{
-    if (m_layerHostingContext)
-        m_layerHostingContext->setFencePort(fencePort.port());
-    setVideoLayerFrame(bounds);
-    mach_port_deallocate(mach_task_self(), fencePort.port());
 }
 
 } // namespace WebKit

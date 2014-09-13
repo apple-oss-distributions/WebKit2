@@ -36,6 +36,7 @@
 #include "TextChecker.h"
 #include "TextCheckerState.h"
 #include "UserData.h"
+#include "WebUserContentControllerProxy.h"
 #include "WebBackForwardListItem.h"
 #include "WebContext.h"
 #include "WebNavigationDataStore.h"
@@ -151,7 +152,6 @@ void WebProcessProxy::disconnect()
     }
 
     m_responsivenessTimer.invalidate();
-    m_tokenForHoldingLockedFiles = nullptr;
 
     Vector<RefPtr<WebFrameProxy>> frames;
     copyValuesToVector(m_frameMap, frames);
@@ -162,6 +162,14 @@ void WebProcessProxy::disconnect()
 
     if (m_downloadProxyMap)
         m_downloadProxyMap->processDidClose();
+
+    for (VisitedLinkProvider* visitedLinkProvider : m_visitedLinkProviders)
+        visitedLinkProvider->removeProcess(*this);
+    m_visitedLinkProviders.clear();
+
+    for (WebUserContentControllerProxy* webUserContentControllerProxy : m_webUserContentControllerProxies)
+        webUserContentControllerProxy->removeProcess(*this);
+    m_webUserContentControllerProxies.clear();
 
     m_context->disconnectProcess(this);
 }
@@ -187,6 +195,9 @@ PassRefPtr<WebPageProxy> WebProcessProxy::createWebPage(PageClient& pageClient, 
 
 void WebProcessProxy::addExistingWebPage(WebPageProxy* webPage, uint64_t pageID)
 {
+    ASSERT(!m_pageMap.contains(pageID));
+    ASSERT(!globalPageMap().contains(pageID));
+
     m_pageMap.set(pageID, webPage);
     globalPageMap().set(pageID, webPage);
 #if PLATFORM(COCOA)
@@ -216,7 +227,7 @@ void WebProcessProxy::removeWebPage(uint64_t pageID)
 
     // If this was the last WebPage open in that web process, and we have no other reason to keep it alive, let it go.
     // We only allow this when using a network process, as otherwise the WebProcess needs to preserve its session state.
-    if (!m_context->usesNetworkProcess() || !canTerminateChildProcess())
+    if (!m_context->usesNetworkProcess() || state() == State::Terminated || !canTerminateChildProcess())
         return;
 
     abortProcessLaunchIfNeeded();
@@ -230,6 +241,30 @@ void WebProcessProxy::removeWebPage(uint64_t pageID)
 #endif
 
     disconnect();
+}
+
+void WebProcessProxy::addVisitedLinkProvider(VisitedLinkProvider& provider)
+{
+    m_visitedLinkProviders.add(&provider);
+    provider.addProcess(*this);
+}
+
+void WebProcessProxy::addWebUserContentControllerProxy(WebUserContentControllerProxy& proxy)
+{
+    m_webUserContentControllerProxies.add(&proxy);
+    proxy.addProcess(*this);
+}
+
+void WebProcessProxy::didDestroyVisitedLinkProvider(VisitedLinkProvider& provider)
+{
+    ASSERT(m_visitedLinkProviders.contains(&provider));
+    m_visitedLinkProviders.remove(&provider);
+}
+
+void WebProcessProxy::didDestroyWebUserContentControllerProxy(WebUserContentControllerProxy& proxy)
+{
+    ASSERT(m_webUserContentControllerProxies.contains(&proxy));
+    m_webUserContentControllerProxies.remove(&proxy);
 }
 
 WebBackForwardListItem* WebProcessProxy::webBackForwardItem(uint64_t itemID) const
@@ -301,11 +336,9 @@ bool WebProcessProxy::checkURLReceivedFromWebProcess(const URL& url)
     // One case where we don't have sandbox extensions for file URLs in b/f list is if the list has been reinstated after a crash or a browser restart.
     String path = url.fileSystemPath();
     for (WebBackForwardListItemMap::iterator iter = m_backForwardListItemMap.begin(), end = m_backForwardListItemMap.end(); iter != end; ++iter) {
-        URL itemURL(URL(), iter->value->url());
-        if (itemURL.isLocalFile() && itemURL.fileSystemPath() == path)
+        if (URL(URL(), iter->value->url()).fileSystemPath() == path)
             return true;
-        URL itemOriginalURL(URL(), iter->value->originalURL());
-        if (itemOriginalURL.isLocalFile() && itemOriginalURL.fileSystemPath() == path)
+        if (URL(URL(), iter->value->originalURL()).fileSystemPath() == path)
             return true;
     }
 
@@ -474,8 +507,10 @@ void WebProcessProxy::didFinishLaunching(ProcessLauncher* launcher, IPC::Connect
 {
     ChildProcessProxy::didFinishLaunching(launcher, connectionIdentifier);
 
-    for (auto& page : m_pageMap.values())
+    for (WebPageProxy* page : m_pageMap.values()) {
+        ASSERT(this == &page->process());
         page->processDidFinishLaunching();
+    }
 
     m_webConnection = WebConnectionToWebProcess::create(this);
 
@@ -754,16 +789,6 @@ void WebProcessProxy::processReadyToSuspend()
 void WebProcessProxy::didCancelProcessSuspension()
 {
     m_throttler->didCancelProcessSuspension();
-}
-
-void WebProcessProxy::setIsHoldingLockedFiles(bool isHoldingLockedFiles)
-{
-    if (!isHoldingLockedFiles) {
-        m_tokenForHoldingLockedFiles = nullptr;
-        return;
-    }
-    if (!m_tokenForHoldingLockedFiles)
-        m_tokenForHoldingLockedFiles = std::make_unique<ProcessThrottler::BackgroundActivityToken>(*m_throttler);
 }
 
 } // namespace WebKit

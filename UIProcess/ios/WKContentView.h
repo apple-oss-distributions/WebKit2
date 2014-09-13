@@ -71,7 +71,6 @@ struct WebPageConfiguration;
     inStableState:(BOOL)isStableState isChangingObscuredInsetsInteractively:(BOOL)isChangingObscuredInsetsInteractively;
 
 - (void)didFinishScrolling;
-- (void)didInterruptScrolling;
 - (void)didZoomToScale:(CGFloat)scale;
 - (void)willStartZoomOrScroll;
 

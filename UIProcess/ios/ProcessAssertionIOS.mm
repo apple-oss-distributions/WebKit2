@@ -130,9 +130,9 @@
 namespace WebKit {
 
 const BKSProcessAssertionFlags suspendedTabFlags = (BKSProcessAssertionAllowIdleSleep);
-const BKSProcessAssertionFlags backgroundTabFlags = (BKSProcessAssertionAllowIdleSleep | BKSProcessAssertionPreventTaskSuspend);
-const BKSProcessAssertionFlags foregroundTabFlags = (BKSProcessAssertionAllowIdleSleep | BKSProcessAssertionPreventTaskSuspend | BKSProcessAssertionWantsForegroundResourcePriority | BKSProcessAssertionPreventTaskThrottleDown);
-
+const BKSProcessAssertionFlags backgroundTabFlags = (BKSProcessAssertionAllowIdleSleep | BKSProcessAssertionPreventTaskSuspend | BKSProcessAssertionAllowSuspendOnSleep);
+const BKSProcessAssertionFlags foregroundTabFlags = (BKSProcessAssertionAllowIdleSleep | BKSProcessAssertionPreventTaskSuspend | BKSProcessAssertionAllowSuspendOnSleep | BKSProcessAssertionWantsForegroundResourcePriority | BKSProcessAssertionPreventTaskThrottleDown);
+    
 static BKSProcessAssertionFlags flagsForState(AssertionState assertionState)
 {
     switch (assertionState) {
@@ -156,11 +156,6 @@ ProcessAssertion::ProcessAssertion(pid_t pid, AssertionState assertionState)
         }
     };
     m_assertion = adoptNS([[BKSProcessAssertion alloc] initWithPID:pid flags:flagsForState(assertionState) reason:BKSProcessAssertionReasonExtension name:@"Web content visible" withHandler:handler]);
-}
-
-ProcessAssertion::~ProcessAssertion()
-{
-    [m_assertion invalidate];
 }
 
 void ProcessAssertion::setState(AssertionState assertionState)
@@ -203,10 +198,6 @@ namespace WebKit {
 
 ProcessAssertion::ProcessAssertion(pid_t, AssertionState assertionState)
     : m_assertionState(assertionState)
-{
-}
-
-ProcessAssertion::~ProcessAssertion()
 {
 }
 

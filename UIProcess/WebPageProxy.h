@@ -259,9 +259,6 @@ public:
     bool addsVisitedLinks() const { return m_addsVisitedLinks; }
     void setAddsVisitedLinks(bool addsVisitedLinks) { m_addsVisitedLinks = addsVisitedLinks; }
 
-    void didEnterFullscreen();
-    void didExitFullscreen();
-
 #if ENABLE(INSPECTOR)
     WebInspectorProxy* inspector();
 #endif
@@ -311,7 +308,6 @@ public:
     void loadAlternateHTMLString(const String& htmlString, const String& baseURL, const String& unreachableURL, API::Object* userData = nullptr);
     void loadPlainTextString(const String&, API::Object* userData = nullptr);
     void loadWebArchiveData(API::Data*, API::Object* userData = nullptr);
-    void navigateToURLWithSimulatedClick(const String& url, WebCore::IntPoint documentPoint, WebCore::IntPoint screenPoint);
 
     void stopLoading();
     uint64_t reload(bool reloadFromOrigin);
@@ -513,6 +509,7 @@ public:
 
     WKView* wkView() const;
     void intrinsicContentSizeDidChange(const WebCore::IntSize& intrinsicContentSize);
+    CGRect boundsOfLayerInLayerBackedWindowCoordinates(CALayer *) const;
 #endif
 #endif // PLATFORM(COCOA)
 #if PLATFORM(EFL)
@@ -744,8 +741,6 @@ public:
 
     bool isValid() const;
 
-    PassRefPtr<API::Array> relatedPages() const;
-
     const String& urlAtProcessExit() const { return m_urlAtProcessExit; }
     FrameLoadState::State loadStateAtProcessExit() const { return m_loadStateAtProcessExit; }
 
@@ -856,7 +851,6 @@ public:
     void commitPotentialTap();
     void cancelPotentialTap();
     void tapHighlightAtPosition(const WebCore::FloatPoint&, uint64_t& requestID);
-    void handleTap(const WebCore::FloatPoint&);
 
     void inspectorNodeSearchMovedToPosition(const WebCore::FloatPoint&);
     void inspectorNodeSearchEndedAtPosition(const WebCore::FloatPoint&);
@@ -906,8 +900,6 @@ public:
     void unwrapCryptoKey(const Vector<uint8_t>&, bool& succeeded, Vector<uint8_t>&);
 #endif
 
-    void setThumbnailScale(double);
-
     void takeSnapshot(WebCore::IntRect, WebCore::IntSize bitmapSize, SnapshotOptions, std::function<void (const ShareableBitmap::Handle&, CallbackBase::Error)>);
 
     void navigationGestureDidBegin();
@@ -917,6 +909,7 @@ public:
     void willRecordNavigationSnapshot(WebBackForwardListItem&);
 
     bool isShowingNavigationGestureSnapshot() const { return m_isShowingNavigationGestureSnapshot; }
+    void removeNavigationGestureSnapshot();
 
 private:
     WebPageProxy(PageClient&, WebProcessProxy&, uint64_t pageID, const WebPageConfiguration&);
@@ -959,7 +952,6 @@ private:
 
     void didStartProvisionalLoadForFrame(uint64_t frameID, uint64_t navigationID, const String& url, const String& unreachableURL, IPC::MessageDecoder&);
     void didReceiveServerRedirectForProvisionalLoadForFrame(uint64_t frameID, uint64_t navigationID, const String&, IPC::MessageDecoder&);
-    void didChangeProvisionalURLForFrame(uint64_t frameID, uint64_t navigationID, const String& url);
     void didFailProvisionalLoadForFrame(uint64_t frameID, uint64_t navigationID, const WebCore::ResourceError&, IPC::MessageDecoder&);
     void didCommitLoadForFrame(uint64_t frameID, uint64_t navigationID, const String& mimeType, bool frameHasCustomContentProvider, uint32_t frameLoadType, const WebCore::CertificateInfo&, IPC::MessageDecoder&);
     void didFinishDocumentLoadForFrame(uint64_t frameID, uint64_t navigationID, IPC::MessageDecoder&);
@@ -994,9 +986,9 @@ private:
     void createNewPage(uint64_t frameID, const WebCore::ResourceRequest&, const WebCore::WindowFeatures&, const NavigationActionData&, uint64_t& newPageID, WebPageCreationParameters&);
     void showPage();
     void closePage(bool stopResponsivenessTimer);
-    void runJavaScriptAlert(uint64_t frameID, const SecurityOriginData&, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptAlert::DelayedReply>);
-    void runJavaScriptConfirm(uint64_t frameID, const SecurityOriginData&, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptConfirm::DelayedReply>);
-    void runJavaScriptPrompt(uint64_t frameID, const SecurityOriginData&, const String&, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptPrompt::DelayedReply>);
+    void runJavaScriptAlert(uint64_t frameID, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptAlert::DelayedReply>);
+    void runJavaScriptConfirm(uint64_t frameID, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptConfirm::DelayedReply>);
+    void runJavaScriptPrompt(uint64_t frameID, const String&, const String&, RefPtr<Messages::WebPageProxy::RunJavaScriptPrompt::DelayedReply>);
     void shouldInterruptJavaScript(bool& result);
     void setStatusText(const String&);
     void mouseDidMoveOverElement(const WebHitTestResult::Data& hitTestResultData, uint32_t modifiers, IPC::MessageDecoder&);
@@ -1339,13 +1331,10 @@ private:
 #if PLATFORM(IOS)
     RefPtr<WebVideoFullscreenManagerProxy> m_videoFullscreenManager;
     VisibleContentRectUpdateInfo m_lastVisibleContentRectUpdate;
-    bool m_hasReceivedLayerTreeTransactionAfterDidCommitLoad;
-    uint64_t m_firstLayerTreeTransactionIdAfterDidCommitLoad;
     int32_t m_deviceOrientation;
     bool m_dynamicViewportSizeUpdateWaitingForTarget;
     bool m_dynamicViewportSizeUpdateWaitingForLayerTreeCommit;
     uint64_t m_dynamicViewportSizeUpdateLayerTreeTransactionID;
-    uint64_t m_layerTreeTransactionIdAtLastTouchStart;
 #endif
 
 #if ENABLE(VIBRATION)

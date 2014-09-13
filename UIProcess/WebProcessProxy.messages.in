@@ -49,6 +49,4 @@ messages -> WebProcessProxy LegacyReceiver {
 #endif
     ProcessReadyToSuspend()
     DidCancelProcessSuspension()
-
-    SetIsHoldingLockedFiles(bool isHoldingLockedFiles)
 }

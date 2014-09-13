@@ -1285,33 +1285,3 @@ bool WKPreferencesGetGamepadsEnabled(WKPreferencesRef preferencesRef)
 {
     return toImpl(preferencesRef)->gamepadsEnabled();
 }
-
-void WKPreferencesSetMinimumZoomFontSize(WKPreferencesRef preferencesRef, double size)
-{
-    toImpl(preferencesRef)->setMinimumZoomFontSize(size);
-}
-
-double WKPreferencesGetMinimumZoomFontSize(WKPreferencesRef preferencesRef)
-{
-    return toImpl(preferencesRef)->minimumZoomFontSize();
-}
-
-void WKPreferencesSetMetaRefreshEnabled(WKPreferencesRef preferencesRef, bool enabled)
-{
-    toImpl(preferencesRef)->setHTTPEquivEnabled(enabled);
-}
-
-bool WKPreferencesGetMetaRefreshEnabled(WKPreferencesRef preferencesRef)
-{
-    return toImpl(preferencesRef)->httpEquivEnabled();
-}
-
-void WKPreferencesSetHTTPEquivEnabled(WKPreferencesRef preferencesRef, bool enabled)
-{
-    toImpl(preferencesRef)->setHTTPEquivEnabled(enabled);
-}
-
-bool WKPreferencesGetHTTPEquivEnabled(WKPreferencesRef preferencesRef)
-{
-    return toImpl(preferencesRef)->httpEquivEnabled();
-}

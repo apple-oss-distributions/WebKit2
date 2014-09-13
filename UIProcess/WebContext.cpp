@@ -421,17 +421,18 @@ void WebContext::ensureNetworkProcess()
         SandboxExtension::createHandleForReadWriteDirectory(parameters.diskCacheDirectory, parameters.diskCacheDirectoryExtensionHandle);
 
     parameters.cookieStorageDirectory = cookieStorageDirectory();
+
+#if PLATFORM(IOS)
     if (!parameters.cookieStorageDirectory.isEmpty())
         SandboxExtension::createHandleForReadWriteDirectory(parameters.cookieStorageDirectory, parameters.cookieStorageDirectoryExtensionHandle);
 
-#if PLATFORM(IOS)
-    parameters.hstsDatabasePath = networkingHSTSDatabasePath();
-    if (!parameters.hstsDatabasePath.isEmpty())
-        SandboxExtension::createHandle(parameters.hstsDatabasePath, SandboxExtension::ReadWrite, parameters.hstsDatabasePathExtensionHandle);
+    String hstsDatabasePath = networkingHSTSDatabasePath();
+    if (!hstsDatabasePath.isEmpty())
+        SandboxExtension::createHandle(hstsDatabasePath, SandboxExtension::ReadWrite, parameters.hstsDatabasePathExtensionHandle);
 
-    parameters.parentBundleDirectory = parentBundleDirectory();
-    if (!parameters.parentBundleDirectory.isEmpty())
-        SandboxExtension::createHandle(parameters.parentBundleDirectory, SandboxExtension::ReadOnly, parameters.parentBundleDirectoryExtensionHandle);
+    String parentBundleDirectory = parentBundleDirectory();
+    if (!parentBundleDirectory.isEmpty())
+        SandboxExtension::createHandle(parentBundleDirectory, SandboxExtension::ReadOnly, parameters.parentBundleDirectoryExtensionHandle);
 #endif
 
     parameters.shouldUseTestingNetworkSession = m_shouldUseTestingNetworkSession;
@@ -618,21 +619,22 @@ WebProcessProxy& WebContext::createNewWebProcess()
         SandboxExtension::createHandleForReadWriteDirectory(parameters.diskCacheDirectory, parameters.diskCacheDirectoryExtensionHandle);
 
     parameters.cookieStorageDirectory = cookieStorageDirectory();
+
+#if PLATFORM(IOS)
     if (!parameters.cookieStorageDirectory.isEmpty())
         SandboxExtension::createHandleForReadWriteDirectory(parameters.cookieStorageDirectory, parameters.cookieStorageDirectoryExtensionHandle);
 
-    parameters.openGLCacheDirectory = openGLCacheDirectory();
-    if (!parameters.openGLCacheDirectory.isEmpty())
-        SandboxExtension::createHandleForReadWriteDirectory(parameters.openGLCacheDirectory, parameters.openGLCacheDirectoryExtensionHandle);
+    String openGLCacheDirectory = openGLCacheDirectory();
+    if (!openGLCacheDirectory.isEmpty())
+        SandboxExtension::createHandleForReadWriteDirectory(openGLCacheDirectory, parameters.openGLCacheDirectoryExtensionHandle);
 
-    parameters.containerTemporaryDirectory = containerTemporaryDirectory();
-    if (!parameters.containerTemporaryDirectory.isEmpty())
-        SandboxExtension::createHandleForReadWriteDirectory(parameters.containerTemporaryDirectory, parameters.containerTemporaryDirectoryExtensionHandle);
+    String containerTemporaryDirectory = containerTemporaryDirectory();
+    if (!containerTemporaryDirectory.isEmpty())
+        SandboxExtension::createHandleForReadWriteDirectory(containerTemporaryDirectory, parameters.containerTemporaryDirectoryExtensionHandle);
 
-#if PLATFORM(IOS)
-    parameters.hstsDatabasePath = webContentHSTSDatabasePath();
-    if (!parameters.hstsDatabasePath.isEmpty())
-        SandboxExtension::createHandle(parameters.hstsDatabasePath, SandboxExtension::ReadWrite, parameters.hstsDatabasePathExtensionHandle);
+    String hstsDatabasePath = webContentHSTSDatabasePath();
+    if (!hstsDatabasePath.isEmpty())
+        SandboxExtension::createHandle(hstsDatabasePath, SandboxExtension::ReadWrite, parameters.hstsDatabasePathExtensionHandle);
 #endif
 
     parameters.shouldUseTestingNetworkSession = m_shouldUseTestingNetworkSession;
@@ -681,7 +683,8 @@ WebProcessProxy& WebContext::createNewWebProcess()
 #if ENABLE(SERVICE_CONTROLS)
     parameters.hasImageServices = ServicesController::shared().hasImageServices();
     parameters.hasSelectionServices = ServicesController::shared().hasSelectionServices();
-    ServicesController::shared().refreshExistingServices(this);
+    parameters.hasRichContentServices = ServicesController::shared().hasRichContentServices();
+    ServicesController::shared().refreshExistingServices();
 #endif
 
     // Add any platform specific parameters
@@ -1220,19 +1223,6 @@ String WebContext::cookieStorageDirectory() const
     return platformDefaultCookieStorageDirectory();
 }
 
-String WebContext::openGLCacheDirectory() const
-{
-    if (!m_overrideOpenGLCacheDirectory.isEmpty())
-        return m_overrideOpenGLCacheDirectory;
-
-    return platformDefaultOpenGLCacheDirectory();
-}
-
-String WebContext::networkingHSTSDatabasePath() const
-{
-    return platformDefaultNetworkingHSTSDatabasePath();
-}
-
 void WebContext::useTestingNetworkSession()
 {
     ASSERT(m_processes.isEmpty());
@@ -1360,14 +1350,6 @@ void WebContext::didGetStatistics(const StatisticsData& statisticsData, uint64_t
     request->completedRequest(requestID, statisticsData);
 }
 
-#if ENABLE(SERVICE_CONTROLS)
-void WebContext::refreshExistingServices()
-{
-    ServicesController::shared().refreshExistingServices(this);
-}
-#endif
-
-    
 void WebContext::garbageCollectJavaScriptObjects()
 {
     sendToAllProcesses(Messages::WebProcess::GarbageCollectJavaScriptObjects());

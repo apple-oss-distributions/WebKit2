@@ -95,7 +95,6 @@ public:
         WebCore::PlatformCALayer::LayerType type;
 
         uint32_t hostingContextID;
-        float hostingDeviceScaleFactor;
     };
 
     struct LayerProperties {

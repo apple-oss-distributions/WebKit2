@@ -143,18 +143,11 @@ static NSString *stringWithWritingDirection(NSString *string, UITextWritingDirec
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-
-    if (_singleSelectionIndex == NSNotFound)
-        return;
-
-    if (_singleSelectionSection >= (NSUInteger)[self.tableView numberOfSections])
-        return;
-
-    if (_singleSelectionIndex >= (NSUInteger)[self.tableView numberOfRowsInSection:_singleSelectionSection])
-        return;
-
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:_singleSelectionIndex inSection:_singleSelectionSection];
-    [self.tableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+    
+    if (_singleSelectionIndex != NSNotFound) {
+        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:_singleSelectionIndex inSection:_singleSelectionSection];
+        [self.tableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+    }
 }
 
 #pragma mark UITableView delegate methods
@@ -377,6 +370,7 @@ static NSString *stringWithWritingDirection(NSString *string, UITextWritingDirec
 @implementation WKSelectPopover {
     WKContentView *_view;
     RetainPtr<WKSelectTableViewController> _tableViewController;
+    RetainPtr<UIKeyboard> _keyboard;
 }
 
 - (instancetype)initWithView:(WKContentView *)view hasGroups:(BOOL)hasGroups
@@ -388,6 +382,7 @@ static NSString *stringWithWritingDirection(NSString *string, UITextWritingDirec
     CGRect frame;
     frame.origin = CGPointZero;
     frame.size = [UIKeyboard defaultSizeForInterfaceOrientation:[UIApp interfaceOrientation]];
+    _keyboard = adoptNS([[UIKeyboard alloc] initWithFrame:frame]);
 
     _tableViewController = adoptNS([[WKSelectTableViewController alloc] initWithView:view hasGroups:hasGroups]);
     [_tableViewController setPopover:self];
@@ -413,6 +408,10 @@ static NSString *stringWithWritingDirection(NSString *string, UITextWritingDirec
     [navController release];
     
     [[UIKeyboardImpl sharedInstance] setDelegate:_tableViewController.get()];
+    [_keyboard setSize:[UIKeyboard defaultSizeForInterfaceOrientation:[UIApp interfaceOrientation]]];
+    [_keyboard prepareForGeometryChange];
+    [_keyboard geometryChangeDone:NO];
+    [_keyboard activate];
     
     return self;
 }

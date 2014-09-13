@@ -28,21 +28,16 @@
 
 #import <WebKitSystemInterface.h>
 
-#if __has_include(<QuartzCore/CAContext.h>)
-#import <QuartzCore/CAContext.h>
+#if __has_include(<QuartzCore/QuartzCorePrivate.h>)
+#import <QuartzCore/QuartzCorePrivate.h>
 #else
 @interface CAContext : NSObject
 @end
+#endif
 
 @interface CAContext (Details)
-- (void)invalidate;
-@property (readonly) uint32_t contextId;
-@property (strong) CALayer *layer;
-@property CGColorSpaceRef colorSpace;
-- (void)setFencePort:(mach_port_t)port;
 + (CAContext *)remoteContextWithOptions:(NSDictionary *)dict;
 @end
-#endif
 
 extern NSString * const kCAContextIgnoresHitTest;
 
@@ -53,7 +48,7 @@ std::unique_ptr<LayerHostingContext> LayerHostingContext::createForPort(mach_por
     auto layerHostingContext = std::make_unique<LayerHostingContext>();
 
     layerHostingContext->m_layerHostingMode = LayerHostingMode::InProcess;
-    layerHostingContext->m_context = (CAContext *)WKCAContextMakeRemoteWithServerPort(serverPort);
+    layerHostingContext->m_context = WKCAContextMakeRemoteWithServerPort(serverPort);
 
     return layerHostingContext;
 }
@@ -67,11 +62,11 @@ std::unique_ptr<LayerHostingContext> LayerHostingContext::createForExternalHosti
 #if PLATFORM(IOS)
     // Use a very large display ID to ensure that the context is never put on-screen 
     // without being explicitly parented. See <rdar://problem/16089267> for details.
-    layerHostingContext->m_context = [CAContext remoteContextWithOptions:@{
+    layerHostingContext->m_context = (WKCAContextRef)[CAContext remoteContextWithOptions:@{
         kCAContextIgnoresHitTest : @YES,
         kCAContextDisplayId : @10000 }];
 #else
-    layerHostingContext->m_context = (CAContext *)WKCAContextMakeRemoteForWindowServer();
+    layerHostingContext->m_context = WKCAContextMakeRemoteForWindowServer();
 #endif
     
     return layerHostingContext;
@@ -88,39 +83,32 @@ LayerHostingContext::~LayerHostingContext()
 
 void LayerHostingContext::setRootLayer(CALayer *rootLayer)
 {
-    [m_context setLayer:rootLayer];
+    WKCAContextSetLayer(m_context.get(), rootLayer);
 }
 
 CALayer *LayerHostingContext::rootLayer() const
 {
-    return [m_context layer];
+    return WKCAContextGetLayer(m_context.get());
 }
 
 uint32_t LayerHostingContext::contextID() const
 {
-    return [m_context contextId];
+    return WKCAContextGetContextId(m_context.get());
 }
 
 void LayerHostingContext::invalidate()
 {
-    [m_context invalidate];
+    WKCAContextInvalidate(m_context.get());
 }
 
 void LayerHostingContext::setColorSpace(CGColorSpaceRef colorSpace)
 {
-    [m_context setColorSpace:colorSpace];
+    WKCAContextSetColorSpace(m_context.get(), colorSpace);
 }
 
 CGColorSpaceRef LayerHostingContext::colorSpace() const
 {
-    return [m_context colorSpace];
+    return WKCAContextGetColorSpace(m_context.get());
 }
-
-#if PLATFORM(IOS)
-void LayerHostingContext::setFencePort(mach_port_t fencePort)
-{
-    [m_context setFencePort:fencePort];
-}
-#endif
 
 } // namespace WebKit

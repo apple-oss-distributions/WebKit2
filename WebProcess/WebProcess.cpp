@@ -113,9 +113,6 @@
 
 #if ENABLE(SQL_DATABASE)
 #include "WebDatabaseManager.h"
-#if PLATFORM(IOS)
-#include "WebSQLiteDatabaseTracker.h"
-#endif
 #endif
 
 #if ENABLE(BATTERY_STATUS)
@@ -177,6 +174,7 @@ WebProcess::WebProcess()
 #if ENABLE(SERVICE_CONTROLS)
     , m_hasImageServices(false)
     , m_hasSelectionServices(false)
+    , m_hasRichContentServices(false)
 #endif
     , m_nonVisibleProcessCleanupTimer(this, &WebProcess::nonVisibleProcessCleanupTimerFired)
 {
@@ -195,11 +193,7 @@ WebProcess::WebProcess()
     
 #if ENABLE(SQL_DATABASE)
     addSupplement<WebDatabaseManager>();
-#if PLATFORM(IOS)
-    addSupplement<WebSQLiteDatabaseTracker>();
 #endif
-#endif
-
 #if ENABLE(NOTIFICATIONS) || ENABLE(LEGACY_NOTIFICATIONS)
     addSupplement<WebNotificationManager>();
 #endif
@@ -371,7 +365,7 @@ void WebProcess::initializeWebProcess(const WebProcessCreationParameters& parame
     setMemoryCacheDisabled(parameters.memoryCacheDisabled);
 
 #if ENABLE(SERVICE_CONTROLS)
-    setEnabledServices(parameters.hasImageServices, parameters.hasSelectionServices);
+    setEnabledServices(parameters.hasImageServices, parameters.hasSelectionServices, parameters.hasRichContentServices);
 #endif
 
 #if ENABLE(REMOTE_INSPECTOR)
@@ -1135,7 +1129,9 @@ void WebProcess::setTextCheckerState(const TextCheckerState& textCheckerState)
 
 void WebProcess::releasePageCache()
 {
-    pageCache()->pruneToCapacityNow(0, PruningReason::MemoryPressure);
+    int savedPageCacheCapacity = pageCache()->capacity();
+    pageCache()->setCapacity(0);
+    pageCache()->setCapacity(savedPageCacheCapacity);
 }
 
 #if !PLATFORM(COCOA)
@@ -1256,10 +1252,11 @@ void WebProcess::setMemoryCacheDisabled(bool disabled)
 }
 
 #if ENABLE(SERVICE_CONTROLS)
-void WebProcess::setEnabledServices(bool hasImageServices, bool hasSelectionServices)
+void WebProcess::setEnabledServices(bool hasImageServices, bool hasSelectionServices, bool hasRichContentServices)
 {
     m_hasImageServices = hasImageServices;
     m_hasSelectionServices = hasSelectionServices;
+    m_hasRichContentServices = hasRichContentServices;
 }
 #endif
 

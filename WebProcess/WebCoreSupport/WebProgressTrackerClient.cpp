@@ -51,8 +51,7 @@ void WebProgressTrackerClient::progressStarted(Frame& originatingProgressFrame)
 {
     if (!originatingProgressFrame.isMainFrame())
         return;
-
-    m_webPage.setMainFrameProgressCompleted(false);
+    
     m_webPage.send(Messages::WebPageProxy::DidStartProgress());
 }
 
@@ -69,12 +68,10 @@ void WebProgressTrackerClient::progressFinished(Frame& originatingProgressFrame)
 {
     if (!originatingProgressFrame.isMainFrame())
         return;
-
-    m_webPage.setMainFrameProgressCompleted(true);
-
+    
     // Notify the bundle client.
     m_webPage.injectedBundleLoaderClient().didFinishProgress(&m_webPage);
-
+    
     m_webPage.send(Messages::WebPageProxy::DidFinishProgress());
 }
 

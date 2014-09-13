@@ -122,11 +122,6 @@ const NSTimeInterval indicatorMoveDuration = 0.3;
         _timer = [NSTimer scheduledTimerWithTimeInterval:indicatorTimeout target:self selector:@selector(hide:) userInfo:nil repeats:NO];
 }
 
-- (void)hide
-{
-    [self hide:nil];
-}
-
 - (void)hide:(NSTimer *)timer
 {
     [UIView animateWithDuration:indicatorFadeDuration animations:^{
