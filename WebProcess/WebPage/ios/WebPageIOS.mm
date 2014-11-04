@@ -1138,7 +1138,7 @@ PassRefPtr<Range> WebPage::expandedRangeFromHandle(Range* currentRange, Selectio
 
         RefPtr<Range> newRange;
         RefPtr<Range> rangeAtPosition = rangeForBlockAtPoint(testPoint);
-        if (&currentRange->ownerDocument() != &rangeAtPosition->ownerDocument())
+        if (!rangeAtPosition || &currentRange->ownerDocument() != &rangeAtPosition->ownerDocument())
             continue;
 
         if (containsRange(rangeAtPosition.get(), currentRange))
@@ -1258,7 +1258,7 @@ PassRefPtr<Range> WebPage::contractedRangeFromHandle(Range* currentRange, Select
         distance *= multiple;
 
         RefPtr<Range> newRange = rangeForBlockAtPoint(testPoint);
-        if (&newRange->ownerDocument() != &currentRange->ownerDocument())
+        if (!newRange || &newRange->ownerDocument() != &currentRange->ownerDocument())
             continue;
 
         if (handlePosition == SelectionHandlePosition::Top || handlePosition == SelectionHandlePosition::Left)
@@ -1326,8 +1326,6 @@ void WebPage::computeExpandAndShrinkThresholdsForHandle(const IntPoint& point, S
     Frame& frame = m_page->focusController().focusedOrMainFrame();
     RefPtr<Range> currentRange = m_currentBlockSelection ? m_currentBlockSelection.get() : frame.selection().selection().toNormalizedRange();
 
-    // FIXME: This used to be an assertion but there appears to be some race condition under which we get a null range.
-    // Should we do other things in addition to the null check here?
     if (!currentRange)
         return;
 
@@ -1409,6 +1407,8 @@ PassRefPtr<WebCore::Range> WebPage::changeBlockSelection(const IntPoint& point, 
 {
     Frame& frame = m_page->focusController().focusedOrMainFrame();
     RefPtr<Range> currentRange = m_currentBlockSelection ? m_currentBlockSelection.get() : frame.selection().selection().toNormalizedRange();
+    if (!currentRange)
+        return nullptr;
     RefPtr<Range> newRange = shouldExpand(handlePosition, selectionBoxForRange(currentRange.get()), point) ? expandedRangeFromHandle(currentRange.get(), handlePosition) : contractedRangeFromHandle(currentRange.get(), handlePosition, flags);
 
     if (newRange) {
@@ -2384,6 +2384,8 @@ void WebPage::dynamicViewportSizeUpdate(const FloatSize& minimumLayoutSize, cons
     frameView.setCustomSizeForResizeEvent(expandedIntSize(targetUnobscuredRectInScrollViewCoordinates.size()));
     setDeviceOrientation(deviceOrientation);
     frameView.setScrollOffset(roundedUnobscuredContentRectPosition);
+
+    m_drawingArea->scheduleCompositingLayerFlush();
 
     send(Messages::WebPageProxy::DynamicViewportUpdateChangedTarget(pageScaleFactor(), frameView.scrollPosition()));
 }

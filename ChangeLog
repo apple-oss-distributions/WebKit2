@@ -1,3 +1,254 @@
+2014-11-03  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173851.
+
+    2014-09-22  Daniel Bates  <dabates@apple.com>
+
+            [Cocoa] Add UI delegate callback when window.close() is called
+            https://bugs.webkit.org/show_bug.cgi?id=137008
+            <rdar://problem/17801001>
+
+            Reviewed by Anders Carlsson.
+
+            Implement support infrastructure to notify the UI client when window.close() is called.
+
+            * UIProcess/API/Cocoa/WKUIDelegatePrivate.h: Added method declaration for -_webViewClose:.
+            * UIProcess/Cocoa/UIDelegate.h: Added override declaration for API::UIClient::close().
+            * UIProcess/Cocoa/UIDelegate.mm:
+            (WebKit::UIDelegate::setDelegate): Wire up delegate method to Objective-C selector, -[WKUIDelegatePrivate _webViewClose:].
+            (WebKit::UIDelegate::UIClient::close): Added; turns around and calls -[WKUIDelegatePrivate _webViewClose:] (if applicable).
+
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175235.
+
+    2014-10-27  Enrica Casucci  <enrica@apple.com>
+
+            WebContent crash in WebKit::WebPage::expandedRangeFromHandle.
+            https://bugs.webkit.org/show_bug.cgi?id=138023
+            rdar://problem/18787412
+
+            Reviewed by Ryosuke Niwa.
+
+            We must change that we have a valid currentRange before trying
+            to expand or contract.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::changeBlockSelection):
+
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175157.
+
+    2014-10-23  Benjamin Poulain  <bpoulain@apple.com>
+
+            Fix a bad find-and-replace in r175153
+
+            Looks like I messed up the commit on landing.
+
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::WebPageProxy):
+            (WebKit::WebPageProxy::didCommitLoadForFrame):
+
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175153.
+
+    2014-10-23  Benjamin Poulain  <bpoulain@apple.com>
+
+            [iOS WK2] If a page has the exact same VisibleContentRect as the page before, its VisibleContentRectUpdate can be ignored
+            https://bugs.webkit.org/show_bug.cgi?id=138031
+            rdar://problem/18739335
+
+            Reviewed by Simon Fraser.
+
+            Since any VisibleContentRectUpdate is costly for the WebProcess, we avoid sending updates
+            if none of the important parameters have changed (scale and geometry).
+
+            One unintended side effect is that the update of a page can be blocked if the parameters
+            of the previous page were identical.
+
+            What happen is this:
+            1) Page [A] sends its content rect update as needed. WebPageProxy saves the last update
+               in m_lastVisibleContentRectUpdate and use that value to avoid useless updates.
+            2) Page [B] load after page [A] and have the exact VisibleContentRect. When receiving the first
+               layer tree commit after didCommitLoadForFrame, WKWebView sends its VisibleContentRect
+               to WebPageProxy to synchronize the state of the WebProcess with what is on screen.
+            3) Since the two VisibleContentRect update has the same value as the ones of page [A], WebPageProxy
+               discards the update. The WebProcess has its initialization viewport and is not udpated until
+               a major parameter changes (scale or position).
+
+            In rdar://problem/18739335, the problem is the similar but with a different failure point:
+            1) Everything above happened already.
+            2) The layer tree transaction has a scrolling request. This is processed by WKWebView.
+            3) Since the scrolling position is invalid, the request is ignored and we send the last
+               VisibleContentRect to the WebProcess with WebPageProxy::resendLastVisibleContentRects().
+            4) Since the VisibleContentRect was never updated after didCommitLoadForFrame, the one we send
+               is for the previous page, which the web process correctly ignores.
+
+            This patch solves the problem by nuking the cached m_lastVisibleContentRectUpdate before
+            any valid VisibleContentRectUpdate for a new page.
+
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::WebPageProxy):
+            (WebKit::WebPageProxy::didCommitLoadForFrame):
+            * UIProcess/WebPageProxy.h:
+            * UIProcess/ios/WebPageProxyIOS.mm:
+            (WebKit::WebPageProxy::didCommitLayerTree):
+
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175145.
+
+    2014-10-23  Benjamin Poulain  <bpoulain@apple.com>
+
+            [iOS WK2] Make sure any dynamic viewport update schedules a layer tree commit
+            https://bugs.webkit.org/show_bug.cgi?id=138021
+
+            Reviewed by Simon Fraser.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::dynamicViewportSizeUpdate):
+            Sometimes, the clients can do a dynamic viewport update but only change the minimum
+            layout size (see rdar://problem/18755250).
+
+            When that happens, it is possible to do the full state update without ever scheduling
+            a layer tree commit. For example, if the new minimum layout height is only a few pixels
+            smaller than the old value and the layout of the page is equal or larger than the old value,
+            the layout is done without any side effect to the content (assuming a viewport configuration
+            based on width).
+
+            The contract with the client is that the next layer tree commit after a dynamic viewport update
+            carries all the valid parameters for the new viewport size. Since the new layout never scheduled
+            a layer tree commit, the UIProcess is just waiting for one, discarding all input.
+
+            This patch solves the issue by explicitely scheduling a layer flush after updating all the layout
+            and view parameters to their final values. In most cases, this makes no difference since a layer
+            tree commit was already scheduled. In the rare cases where nothing was scheduled, scheduling
+            the layer tree commit ensure we unlock the UIProcess.
+
+2014-10-27  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175143.
+
+    2014-10-23  Ryosuke Niwa  <rniwa@webkit.org>
+
+            WebContent crash in WebKit::WebPage::expandedRangeFromHandle
+            https://bugs.webkit.org/show_bug.cgi?id=138023
+
+            Reviewed by Enrica Casucci.
+
+            The crashes are caused by rangeForBlockAtPoint returning a null Range.
+            Exit early or continue if a range is null in various places.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::expandedRangeFromHandle): Continue looking for another point if the range returned by
+            rangeForBlockAtPoint is null.
+            (WebKit::WebPage::contractedRangeFromHandle): Ditto.
+            (WebKit::WebPage::computeExpandAndShrinkThresholdsForHandle): Removed the FIXME now that Enrica has
+            verified that this early exit added in r173788 is correct.
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge patch for r174799. <rdar://problem/18742380>
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175081.
+
+    2014-10-22  Benjamin Poulain  <bpoulain@apple.com>
+
+            [iOS WK2] Protect WKWebView dynamic viewport change against empty sizes
+            https://bugs.webkit.org/show_bug.cgi?id=137988
+            rdar://problem/17785162
+
+            Reviewed by Simon Fraser.
+
+            * UIProcess/API/Cocoa/WKWebView.mm:
+            (-[WKWebView _beginAnimatedResizeWithUpdates:]):
+            The algorithm behind dynamic size update finds the best content area to put in the viewport
+            after a viewport change. If an initial size or a target size is empty, it is impossible to
+            compute a reasonable area to keep in the view. We end up handling NaN scales
+            and/or sizes and CoreAnimation raises an exception when applying that value.
+
+            This patch add early exits when that occurs and fallback to the common code.
+
+            On Input, things are easy. If any of the initial values is empty, we just execute the updateBlock
+            without attempting any of the dynamic behaviors.
+
+            For the target values, things are trickier. We do not know what the values are going to be before we execute
+            the block. But once we executed the block, we have already skipped all the setters that call the web process.
+
+            To handle that, every value is set manually on WebPageProxy. This is a bit unfortunate because the setters
+            get yet another entry point.
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174788.
+
+    2014-10-16  Tim Horton  <timothy_horton@apple.com>
+
+            Various crashes in ViewGestureControllerIOS when closing a tab while a swipe gesture is in progress
+            https://bugs.webkit.org/show_bug.cgi?id=137770
+            <rdar://problem/17916459>
+
+            Reviewed by Dan Bernstein.
+
+            When tearing down a WKWebView in the middle of a swipe gesture, a variety of
+            UI process crashes were observed. First, two uses of potentially deleted objects
+            (the WebBackForwardListItem and ViewGestureController), which were fixed by
+            extending the object's lifetime and checking for its liveness, respectively.
+            Second, a potential null-deref of DrawingArea if the timing of endSwipeGesture
+            vs. page teardown was such that DrawingArea was null but everything else was in line.
+            Lastly, another case of messaging a potentially deleted object (specifically,
+            the _UIViewControllerTransitionContext's animator) in a callback from CA, which
+            was fixed by nulling out the animator (and a few other properties) when tearing
+            down the ViewGestureController.
+
+            * UIProcess/ios/ViewGestureControllerIOS.mm:
+            (-[WKSwipeTransitionController invalidate]):
+            Clear the soon-to-be-invalid ViewGestureController pointer.
+
+            (WebKit::ViewGestureController::~ViewGestureController):
+            Call [WKSwipeTransitionController invalidate] upon destruction.
+            Clear our transition context's interactor and animator, and inform it that
+            the transition is not in flight. This avoids a crash when calling back
+            to the already-destroyed animator later.
+
+            (WebKit::ViewGestureController::beginSwipeGesture):
+            Keep a reference to the target WebBackForwardListItem; this avoids
+            it being deleted between here and the transition completion block firing.
+
+            Look up the ViewGestureController by pageID, just like we do in endSwipeGesture,
+            to avoid situations where the callback fires after the WKWebView/ViewGestureController
+            have gone away.
+
+            Hold on to our _UIViewControllerOneToOneTransitionContext, so that we can do the
+            aforementioned clearing upon deallocation.
+
+            (WebKit::ViewGestureController::endSwipeGesture):
+            Null check the DrawingArea. If it is null, instead of doing our normal delayed logic
+            for swipe snapshot teardown, just put things back together immediately.
+
+            (WebKit::ViewGestureController::removeSwipeSnapshot):
+            Clear m_swipeTransitionContext.
+
+2014-10-23  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174512.
+
+    2014-10-09  Andy Estes  <aestes@apple.com>
+
+            [iOS] Crash in CFURLDownloadClient.didFail if the download has a null resumeData
+            https://bugs.webkit.org/show_bug.cgi?id=137551
+
+            Reviewed by David Kilzer.
+
+            CFDataGetBytePtr() and CFDataGetLength() crash if passed a null value.
+
+            * Shared/Downloads/ios/DownloadIOS.mm:
+            (WebKit::setUpDownloadClient):
+
 2014-09-22  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r173788.
