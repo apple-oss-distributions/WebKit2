@@ -1,3 +1,91 @@
+2014-12-22  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177463.
+
+    2014-12-17  Enrica Casucci  <enrica@apple.com>
+
+            [iOS] Define button and action should respect profile settings.
+            https://bugs.webkit.org/show_bug.cgi?id=139739
+            rdar://problem/15461887
+
+            Reviewed by Joseph Pecoraro.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView canPerformAction:withSender:]):
+            (-[WKContentView _define:]):
+
+2014-12-22  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173973.
+
+    2014-09-25  Tim Horton  <timothy_horton@apple.com>
+
+            CommitLayerTree decode fails in 32-bit apps on 64-bit devices (TransformationMatrix alignment differs)
+            https://bugs.webkit.org/show_bug.cgi?id=136444
+            <rdar://problem/17952526>
+
+            Reviewed by Anders Carlsson.
+
+            * Shared/WebCoreArgumentCoders.cpp:
+            (IPC::ArgumentCoder<TransformationMatrix>::encode):
+            (IPC::ArgumentCoder<TransformationMatrix>::decode):
+            Stop using SimpleArgumentCoder to encode/decode TransformationMatrix,
+            because the alignment of TransformationMatrix differs between architectures,
+            and there's no guarantee that both sides of a connection are the same architecture.
+
+2014-12-17  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176996.
+
+    2014-12-08  Dan Bernstein  <mitz@apple.com>
+
+            <rdar://problem/18905383> [iOS] Crash due to null m_webPageProxyForBackForwardListForCurrentSwipe in ViewGestureController::endSwipeGesture
+            https://bugs.webkit.org/show_bug.cgi?id=138750
+
+            Reviewed by Tim Horton.
+
+            The snapshot for the current gesture was being removed mid-gesture by the callback from
+            dispatchAfterEnsuringDrawing scheduled by the previous gesture. The fix is to ignore the
+            callback for a gesture if it is made after the snapshot for that gesture has already been
+            removed (which can happen as a result of the watchdog timer firing).
+
+            * UIProcess/ios/ViewGestureControllerIOS.mm:
+            (WebKit::ViewGestureController::ViewGestureController): Initialize new member variable.
+            (WebKit::addLogEntry): Fixed the log message format.
+            (WebKit::ViewGestureController::endSwipeGesture): When dispatchAfterEnsuringDrawing() calls
+            us back, bail out if the gesture snapshot has already been removed.
+            (WebKit::ViewGestureController::removeSwipeSnapshot): Increment
+            m_gesturePendingSnapshotRemoval.
+            * UIProcess/mac/ViewGestureController.h: Added m_gesturePendingSnapshotRemoval member
+            variable.
+
+2014-12-17  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176133.
+
+    2014-11-14  Dan Bernstein  <mitz@apple.com>
+
+            Add some tracing to help investigating <rdar://problem/18905383> [iOS] Crash due to null m_webPageProxyForBackForwardListForCurrentSwipe in ViewGestureController::endSwipeGesture
+            https://bugs.webkit.org/show_bug.cgi?id=138750
+
+            Reviewed by Tim Horton.
+
+            Emit trace messages at various points, and log them prior to crashing if the error condition
+            occurs. Otherwise, clear the trace messages.
+
+            * UIProcess/ios/ViewGestureControllerIOS.mm:
+            (WebKit::addLogEntry): Helper function that adds a message, including a time stamp and a
+            backtrace, to m_logEntries.
+            (WebKit::dumpLogEntries): Helper function that logs everything in m_logEntries.
+            (WebKit::ViewGestureController::beginSwipeGesture): Add a log entry.
+            (WebKit::ViewGestureController::endSwipeGesture): If
+            m_webPageProxyForBackForwardListForCurrentSwipe is null, dump the log entries just before
+            crashing. Otherwise, clear m_logEntries.
+            (WebKit::ViewGestureController::willCommitPostSwipeTransitionLayerTree): Add a log entry.
+            (WebKit::ViewGestureController::removeSwipeSnapshot): Add a log entry.
+            * UIProcess/mac/ViewGestureController.h: Defined ENABLE_VIEW_GESTURE_CONTROLLER_TRACING,
+            and added m_logEntries member variable.
+
 2014-11-03  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r173851.
