@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,57 +23,32 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef FindIndicatorWindow_h
-#define FindIndicatorWindow_h
+#ifndef WKActionMenuTypes_h
+#define WKActionMenuTypes_h
 
-#if PLATFORM(MAC)
+#include <stdint.h>
 
-#import "WebKitSystemInterface.h"
-#import <wtf/Noncopyable.h>
-#import <wtf/RefPtr.h>
-#import <wtf/RetainPtr.h>
-#import <wtf/RunLoop.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-@class WKFindIndicatorWindowAnimation;
-@class WKView;
-
-namespace WebKit {
-
-class FindIndicator;
-
-class FindIndicatorWindow {
-    WTF_MAKE_NONCOPYABLE(FindIndicatorWindow);
-
-public:
-    explicit FindIndicatorWindow(WKView *);
-    ~FindIndicatorWindow();
-
-    void setFindIndicator(PassRefPtr<FindIndicator>, bool fadeOut, bool animate);
-
-private:
-    void closeWindow();
-
-    void startFadeOutTimerFired();
-
-    void fadeOutAnimationCallback(double);
-    void fadeOutAnimationDidEnd();
-
-    void bounceAnimationCallback(double);
-    void bounceAnimationDidEnd();
-
-    WKView* m_wkView;
-    RefPtr<FindIndicator> m_findIndicator;
-    RetainPtr<NSWindow> m_findIndicatorWindow;
-
-    WKWindowBounceAnimationContextRef m_bounceAnimationContext;
-    RetainPtr<WKFindIndicatorWindowAnimation> m_bounceAnimation;
-
-    RunLoop::Timer<FindIndicatorWindow> m_startFadeOutTimer;
-    RetainPtr<WKFindIndicatorWindowAnimation> m_fadeOutAnimation;
+enum {
+    kWKActionMenuNone = 0,
+    kWKActionMenuLink,
+    kWKActionMenuImage,
+    kWKActionMenuDataDetectedItem,
+    kWKActionMenuReadOnlyText,
+    kWKActionMenuEditableText,
+    kWKActionMenuEditableTextWithSuggestions,
+    kWKActionMenuWhitespaceInEditableArea,
+    kWKActionMenuVideo,
+    kWKActionMenuMailtoLink,
+    kWKActionMenuTelLink
 };
+typedef uint32_t _WKActionMenuType;
 
-} // namespace WebKit
+#ifdef __cplusplus
+}
+#endif
 
-#endif // FindIndicatorWindow_h
-
-#endif // PLATFORM(MAC)
+#endif /* WKActionMenuTypes_h */

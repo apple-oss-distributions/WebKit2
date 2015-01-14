@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,39 +23,49 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "OriginAndDatabases.h"
+#ifndef ActionMenuHitTestResult_h
+#define ActionMenuHitTestResult_h
 
-#if ENABLE(SQL_DATABASE)
+#include "DataReference.h"
+#include "DictionaryPopupInfo.h"
+#include "ShareableBitmap.h"
+#include "SharedMemory.h"
+#include "WebHitTestResult.h"
+#include <WebCore/FloatRect.h>
+#include <WebCore/PageOverlay.h>
+#include <WebCore/TextIndicator.h>
+#include <wtf/text/WTFString.h>
 
-#include "WebCoreArgumentCoders.h"
+OBJC_CLASS DDActionContext;
 
-using namespace WebCore;
+namespace IPC {
+class ArgumentDecoder;
+class ArgumentEncoder;
+}
 
 namespace WebKit {
 
-void OriginAndDatabases::encode(IPC::ArgumentEncoder& encoder) const
-{
-    encoder << originIdentifier;
-    encoder << originQuota;
-    encoder << originUsage;
-    encoder << databases;
-}
+struct ActionMenuHitTestResult {
+    void encode(IPC::ArgumentEncoder&) const;
+    static bool decode(IPC::ArgumentDecoder&, ActionMenuHitTestResult&);
 
-bool OriginAndDatabases::decode(IPC::ArgumentDecoder& decoder, OriginAndDatabases& originAndDatabases)
-{
-    if (!decoder.decode(originAndDatabases.originIdentifier))
-        return false;
-    if (!decoder.decode(originAndDatabases.originQuota))
-        return false;
-    if (!decoder.decode(originAndDatabases.originUsage))
-        return false;
-    if (!decoder.decode(originAndDatabases.databases))
-        return false;
+    WebCore::FloatPoint hitTestLocationInViewCooordinates;
+    WebHitTestResult::Data hitTestResult;
 
-    return true;
-}
+    String lookupText;
+    RefPtr<SharedMemory> imageSharedMemory;
+    String imageExtension;
+
+    RetainPtr<DDActionContext> actionContext;
+    WebCore::FloatRect detectedDataBoundingBox;
+    RefPtr<WebCore::TextIndicator> detectedDataTextIndicator;
+    WebCore::PageOverlay::PageOverlayID detectedDataOriginatingPageOverlay;
+
+    DictionaryPopupInfo dictionaryPopupInfo;
+
+    RefPtr<WebCore::TextIndicator> linkTextIndicator;
+};
 
 } // namespace WebKit
 
-#endif // ENABLE(SQL_DATABASE)
+#endif // ActionMenuHitTestResult_h
