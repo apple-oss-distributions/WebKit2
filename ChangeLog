@@ -1,3 +1,1536 @@
+2015-03-16  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge patch for rdar://problem/20155503.
+
+    2015-03-13  Enrica Casucci  <enrica@apple.com>
+
+            Webkit crash in WebKit::nextFocusableElement() when typing TAB on external keyboard
+            rdar://problem/20155503
+
+            Reviewed by David Kilzer.
+
+            Adding null check!
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::nextFocusableElement):
+
+2015-03-12  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r181448.
+
+    2015-03-11  Enrica Casucci  <enrica@apple.com>
+
+            Adopt new API for keyboard event handling.
+            https://bugs.webkit.org/show_bug.cgi?id=142602
+            rdar://problem/19966087
+
+            Reviewed by Sam Weinig.
+
+            Adopts the new API.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView _didHandleKeyEvent:]):
+
+2015-03-03  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r180967.
+
+    2015-03-03  Enrica Casucci  <enrica@apple.com>
+
+            Incomplete dictation results in text fields in a web page.
+            https://bugs.webkit.org/show_bug.cgi?id=142240
+            rdar://problem/19953432
+
+            Reviewed by Tim Horton.
+
+            The empty stub for insertDictationResult:withCorrectionIdentifier
+            must be removed. This way UIKit will call insertText and do the right thing.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView insertDictationResult:withCorrectionIdentifier:]): Deleted.
+
+2015-02-26  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r179904
+
+    2015-02-10  Dan Bernstein  <mitz@apple.com>
+
+            <rdar://problem/19770264> Starting a navigation gesture dismisses the keyboard
+
+            Reviewed by Tim Horton.
+
+            * UIProcess/ios/ViewGestureControllerIOS.mm:
+            (WebKit::ViewGestureController::beginSwipeGesture): Reordered the view hierarchy changes,
+            such that m_liveSwipeView will not momentarily move out of the window, because that causes
+            the window’s first responder to be set to nil (if it was a descendant of m_liveSwipView).
+
+2015-02-26  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r179480
+
+    2015-02-02  Jeremy Jones  <jeremyj@apple.com>
+
+            Prevent crash when accessing WebAVPlayerController.delegate.
+            https://bugs.webkit.org/show_bug.cgi?id=140893
+
+            Reviewed by Darin Adler.
+
+            Plumb new resetMediaState() through IPC interface WebVideoFullscreenManagerProxy.
+
+            * UIProcess/ios/WebVideoFullscreenManagerProxy.messages.in:
+            * UIProcess/ios/WebVideoFullscreenManagerProxy.mm:
+            (WebKit::WebVideoFullscreenManagerProxy::invalidate): remove redundant set to nullptr.
+            * WebProcess/ios/WebVideoFullscreenManager.h:
+            * WebProcess/ios/WebVideoFullscreenManager.mm:
+            (WebKit::WebVideoFullscreenManager::resetMediaState):
+
+2015-02-25  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r180539.
+
+    2015-02-23  Benjamin Poulain  <bpoulain@apple.com>
+
+            [iOS WK2] The WebProcess keep scrolling pages based on the last velocity after scrolling has been interrupted
+            https://bugs.webkit.org/show_bug.cgi?id=141933
+            rdar://problem/18746673
+            rdar://problem/19711490
+
+            Reviewed by Simon Fraser.
+
+            The bug happened like this:
+            1) The user scroll the page. WKContentView tracks the velocity and send
+               the update rect + velocity to the WebProcess.
+            2) The user interupts the scrolling but does not commit to either scrolling
+               again or cancelling the scrolling.
+               Since we were not notified of this state, the WebProcess still believed
+               the velocity is stable.
+            3) With any paint update, the WebProcess would account for the last velocity
+               and try to guess the best repaint area. This would drift endlessly out
+               of the view since the view is not really moving.
+
+            This patch fixes the issue by adding special handling for interrupted scrolling.
+
+            Kudos to Kurt Revis for providing us the required APIs.
+
+            * Shared/VisibleContentRectUpdateInfo.h:
+            (WebKit::operator==):
+            We can no longer filter VisibleContentRectUpdateInfo ignoring the velocity.
+
+            Typically, UIScrollView would call -scrollViewDidScroll: before being interrupted.
+            If we filter based on the VisibleContentRectUpdateInfo, we have two identical
+            states differing only by the velocity. If we filter the second update, the WebProcess
+            would never know the velocity should be zero.
+
+            * UIProcess/API/Cocoa/WKWebView.mm:
+            (-[WKWebView _scrollViewDidInterruptDecelerating:]):
+            We get this callback when scrolling is interrupted. We just need to clear
+            the velocity and re-send a new update for the current state.
+
+            (-[WKWebView _updateVisibleContentRects]):
+            Do not consider an interrupted scroll as a stable state. We don't know if scrolling
+            will resume or will stop.
+
+            * UIProcess/ios/WKContentView.h:
+            * UIProcess/ios/WKContentView.mm:
+            (-[WKContentView didInterruptScrolling]):
+
+2015-02-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r180062.
+
+    2015-02-12  Simon Fraser  <simon.fraser@apple.com>
+
+            determinePrimarySnapshottedPlugIn() should only traverse visible Frames
+            https://bugs.webkit.org/show_bug.cgi?id=141547
+            Part of rdar://problem/18445733.
+
+            Reviewed by Anders Carlsson.
+
+            Use FrameTree::traverseNextRendered() to avoid doing things in unrendered frames
+            which are not guaranteed to have been laid out.
+
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::determinePrimarySnapshottedPlugIn):
+
+2015-02-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r179955.
+
+    2015-02-11  Tim Horton  <timothy_horton@apple.com>
+
+            REGRESSION (iOS 8): PDFs embedded in <object>/<embed> tag don't load at all
+            https://bugs.webkit.org/show_bug.cgi?id=141457
+            <rdar://problem/18221851>
+
+            Reviewed by Alexey Proskuryakov.
+
+            * WebProcess/WebCoreSupport/WebFrameLoaderClient.cpp:
+            (WebKit::WebFrameLoaderClient::objectContentType):
+            On iOS, if we don't know what to do with a PDF-in-object, treat it as an image.
+
+2015-02-16  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177625.
+
+    2014-12-21  Eric Carlson  <eric.carlson@apple.com>
+
+            [iOS] avoid WebVideoFullscreenManager crash
+            https://bugs.webkit.org/show_bug.cgi?id=139852
+            <rdar://problem/19319302>
+
+            Reviewed by Darin Adler.
+
+            * WebProcess/ios/WebVideoFullscreenManager.mm:
+            (WebKit::WebVideoFullscreenManager::didExitFullscreen): NULL-check m_layerHostingContext and m_page.
+            (WebKit::WebVideoFullscreenManager::setVideoLayerFrameFenced): NULL-check m_layerHostingContext.
+
+2015-02-13  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r179580. rdar://problem/19709200
+
+    2015-02-03  Enrica Casucci  <enrica@apple.com>
+
+            [iOS] Add support for deleteFromInputWithFlags.
+            https://bugs.webkit.org/show_bug.cgi?id=141216
+            rdar://problem/19130081
+
+            Reviewed by Benjamin Poulain.
+
+            Adopts the new method as soon as it is available.
+            The patch also removes some obsolete code used for staging.
+
+            * Platform/spi/ios/UIKitSPI.h:
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView _interpretKeyEvent:isCharEvent:]):
+
+2015-02-13  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r180031. rdar://problem/19432928
+
+    2015-02-12  Tim Horton  <timothy_horton@apple.com>
+
+            Crash removing RemoteLayerTreeDisplayRefreshMonitor from the drawing area's map
+            https://bugs.webkit.org/show_bug.cgi?id=141545
+            <rdar://problem/17712200>
+
+            Reviewed by Simon Fraser.
+
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::windowScreenDidChange):
+            * WebProcess/WebPage/WebPage.h:
+            * WebProcess/WebPage/WebPage.messages.in:
+            windowScreenDidChange should take uint32_t, since that's what PlatformDisplayID is.
+
+            * WebProcess/WebPage/mac/RemoteLayerTreeDrawingArea.mm:
+            (WebKit::RemoteLayerTreeDrawingArea::RemoteLayerTreeDrawingArea):
+            RemoteLayerTreeDisplayRefreshMonitor is driven by the page's
+            RemoteLayerTreeDrawingArea. Because of this, we cannot have the same
+            sharing of DisplayRefreshMonitors that other platforms use.
+            In order to ensure that we get a unique DisplayRefreshMonitor
+            per-DrawingArea, give each page a unique DisplayID derived
+            from WebPage's unique ID.
+
+2015-02-13  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r179885. rdar://problem/19812617
+
+    2015-02-10  Enrica Casucci  <enrica@apple.com>
+
+            Hit testing is misplaced when selecting on wikipedia page.
+            https://bugs.webkit.org/show_bug.cgi?id=141410
+            rdar://problem/19768211
+
+            Reviewed by Simon Fraser.
+
+            When loading a new document into the same WebPage object, we need
+            to clear the assisted node, since there is no guarantee that the
+            node will be blurred. The bug was caused by the use of a stale
+            assisted node to constrain the point where the gesture occurs.
+            The node was still valid, since the previous page was in the cache.
+            I've added a ASSERT to check that, when constraining the point to
+            node rectangle, the node is in the same document as the one we
+            are performing hit test on. When the frame is detached, we clear
+            the assisted node if the node is part of the document is the frame
+            being detached.
+
+            * WebProcess/WebCoreSupport/WebFrameLoaderClient.cpp:
+            (WebKit::WebFrameLoaderClient::detachedFromParent2):
+            * WebProcess/WebPage/WebPage.h:
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::constrainPoint):
+            (WebKit::WebPage::resetAssistedNodeForFrame):
+
+2015-02-13  Matthew Hanson  <matthew_hanson@apple.com>
+
+        Merge r179847. rdar://problem/19711485
+
+    2015-02-09  Enrica Casucci  <enrica@apple.com>
+
+            Selection flickers when trying to change size of selection.
+            https://bugs.webkit.org/show_bug.cgi?id=141404
+            rdar://problem/18824863
+
+            Reviewed by Benjamin Poulain.
+
+            When looking for the contracted range from the current range,
+            we were incorrectly choosing a selection whose rectangle is empty
+            as a best match candidate. This was throwing off all the logic
+            and producing a contracted range whose rectangle was bigger than the
+            expanded range, therefore producing a shrink threshold larger than the
+            growth one.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::contractedRangeFromHandle):
+
+2015-02-10  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r179578.
+
+    2015-02-03  Joseph Pecoraro  <pecoraro@apple.com>
+
+            [iOS] Selection Callout should not immediately disappear on pages with frequent layouts
+            https://bugs.webkit.org/show_bug.cgi?id=141210
+
+            Reviewed by Enrica Casucci.
+
+            In iOS WebKit2 in order to keep caret refreshes in sync with WebCore layouts
+            the selection assistant is told to update whenever WebKit's layer tree
+            commits. Unfortunately, for pages with JavaScript animation that are
+            frequently doing a layout / layer tree update, this would trigger very
+            frequent selection updates that would keep the caret from blinking and
+            dismiss any selection callouts.
+
+            This change tracks the last selection drawing information so that we can
+            avoid informing the assistant of a selection updates unless it has changed
+            visually or needs to redraw (zoom).
+
+            * Shared/EditorState.cpp:
+            Remove include already in header.
+
+            * UIProcess/ios/WKContentViewInteraction.h:
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (WebKit::WKSelectionDrawingInfo::WKSelectionDrawingInfo):
+            (WebKit::operator==):
+            (WebKit::operator!=):
+            (-[WKContentView observeValueForKeyPath:ofObject:change:context:]):
+            When zooming, force the selection update, even though the drawing
+            information hasn't changed, the views will need to be updated.
+
+            (-[WKContentView _updateChangedSelection]):
+            (-[WKContentView _updateChangedSelection:]):
+            Monitor EditorState for changes in selection drawing and avoid
+            informing the selection assistant unless necessary.
+
+2015-01-28  David Kilzer  <ddkilzer@apple.com>
+
+        run-webkit-tests: Merge 46 commits from trunk to make it work
+
+        r171686, r171687, r171789, r171800, r171967, r171968, r171969,
+        r172115, r172117, r172118, r172174, r172602, r172942, r172967,
+        r173129, r173452, r173647, r173937, r174406, r174626, r174628,
+        r174634, r174642, r174650, r174702, r174728, r174824, r174835,
+        r174844, r175204, r176669, r176677, r176872, r176880, r176885,
+        r176897, r177129, r177363, r177370, r177510, r178444, r178570,
+        r178601, r178656, r178867, r178925
+
+        * UIProcess/API/C/WKPreferences.cpp:
+        (WKPreferencesSetMinimumZoomFontSize):
+        (WKPreferencesGetMinimumZoomFontSize):
+        * UIProcess/API/C/WKPreferencesRefPrivate.h:
+
+    2014-10-16  Simon Fraser  <simon.fraser@apple.com>
+
+        [iOS] Turn off font autosizing for iOS WebKitTestRunner
+        https://bugs.webkit.org/show_bug.cgi?id=137806
+
+        Reviewed by Sam Weinig.
+        
+        Confusingly, WKPreferencesSetTextAutosizingEnabled() does nothing on iOS.
+        Instead, we have to add WKPreferencesSetMinimumZoomFontSize() and set it to 0
+        to disable font autosizing.
+
+        * UIProcess/API/C/WKPreferences.cpp:
+        (WKPreferencesSetMinimumZoomFontSize):
+        (WKPreferencesGetMinimumZoomFontSize):
+        * UIProcess/API/C/WKPreferencesRefPrivate.h:
+
+2015-01-28  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r178980
+
+    2015-01-22  Benjamin Poulain  <bpoulain@apple.com>
+
+            [iOS][WK2] Ignore synthetic click initiated on a previous page
+            https://bugs.webkit.org/show_bug.cgi?id=139556
+            rdar://problem/18586008
+
+            Reviewed by David Kilzer.
+
+            Under the right accumulation of bad luck, a synthetic click could be generated
+            on a page that never asked for it.
+
+            What happened was:
+            1) Page Foo listen to touch event.
+            2) In response to touch events, Foo decides to navigate to page Bar
+               *but* it does not cancel the native gesture recognizers with preventDefault().
+            3) Page Bar loads.
+            4) The native gesture recognizer ask us to click, we forward that to the WebProcess
+               and generate a synthetic mouse event.
+            -> Bar receives a click.
+            If you are unlucky enough, it looks like a single tap does a double click.
+
+            There are two ways this patch avoids the problem:
+
+            First, in the UIProcess, we just cancel the HighlightLongPressGestureRecognizer
+            on didCommitLoadForMainFrame. This prevents "fast clicks" from accidentally going through.
+            This is not bullet proof because we get didCommitLoadForMainFrame asynchronously but
+            killing the timer and gesture seems like a good idea.
+
+            Second, we skip any tap command at the WebProcess level when it was issued for
+            the previous page. This is using the same principle we used for VisibleContentRect:
+            any input generated before the current layer tree commit is useless for the current page.
+
+            We track the commit ID in the UIProcess when we decide to do the tracking or not.
+            Note that we keep the ID regardless of the tracking state, it does not matter if we have sent
+            touch events, what matters is what content was on screen when the touch events were handled.
+
+            If the user interaction result in a tap, we send the commit ID along the tap commands.
+            In the WebProcess, we know the actual layer tree commit associated with the current page.
+            If the tap was generated with a layer ID preceding the current page, we fail the command.
+
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::WebPageProxy):
+            (WebKit::WebPageProxy::handleTouchEventSynchronously):
+            (WebKit::WebPageProxy::resetState):
+            * UIProcess/WebPageProxy.h:
+            * UIProcess/ios/WKContentView.mm:
+            (-[WKContentView _didCommitLoadForMainFrame]):
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView _attemptClickAtLocation:]):
+            * UIProcess/ios/WebPageProxyIOS.mm:
+            (WebKit::WebPageProxy::commitPotentialTap):
+            (WebKit::WebPageProxy::handleTap):
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::didCommitLoad):
+            * WebProcess/WebPage/WebPage.h:
+            * WebProcess/WebPage/WebPage.messages.in:
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::handleTap):
+            (WebKit::WebPage::commitPotentialTap):
+
+2015-01-28  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r178175
+
+    2015-01-08  Enrica Casucci  <enrica@apple.com>
+
+            [iOS] Cannot paste an image URL in a plain text field in a page.
+            https://bugs.webkit.org/show_bug.cgi?id=140274
+            rdar://problem/18590809
+
+            Reviewed by Alexey Proskuryakov.
+
+            supportedPasteboardTypesForCurrentSelection should include kUTTypeURL for plain
+            text controls and WebArchivePboardType for rich text controls.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView supportedPasteboardTypesForCurrentSelection]): Remove obsolete and
+            incorrect FIXME.
+
+2015-01-28  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177738
+
+    2014-12-25  Chris Dumez  <cdumez@apple.com>
+
+            [iOS] Log better using FeatureCounter why PageCache is failing due to pruned resources
+            https://bugs.webkit.org/show_bug.cgi?id=139921
+
+            Reviewed by Gavin Barraclough and Alexey Proskuryakov.
+
+            Call PageCache::pruneToCapacityNow() instead of multiple calls to
+            setCapacity() as it does exactly what we want. Also pass the new
+            PrunedReason argument so help us do better logging.
+
+            * WebProcess/WebProcess.cpp:
+            (WebKit::WebProcess::releasePageCache):
+
+2015-01-27  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177666
+
+    2014-12-22  Chris Dumez  <cdumez@apple.com>
+
+            [iOS] Log using FeatureCounter user-triggered zooming
+            https://bugs.webkit.org/show_bug.cgi?id=139879
+            <rdar://problem/19329130>
+
+            Reviewed by Benjamin Poulain.
+
+            Log using FeatureCounter user-triggered zooming on iOS.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::willStartUserTriggeredZooming):
+
+2015-01-27  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177612
+
+    2014-12-19  Chris Dumez  <cdumez@apple.com>
+
+            [iOS] Add didEnterFullscreen / didExitFullscreen callbacks to WKUIDelegatePrivate
+            https://bugs.webkit.org/show_bug.cgi?id=139835
+            <rdar://problem/19312042>
+
+            Reviewed by Anders Carlsson.
+
+            Add didEnterFullscreen / didExitFullscreen callbacks to WKUIDelegatePrivate
+            so that they can be implemented in MobileSafari.
+
+            * UIProcess/API/APIUIClient.h:
+            (API::UIClient::didEnterFullscreen):
+            (API::UIClient::didExitFullscreen):
+            * UIProcess/API/Cocoa/WKUIDelegatePrivate.h:
+            * UIProcess/Cocoa/UIDelegate.h:
+            * UIProcess/Cocoa/UIDelegate.mm:
+            (WebKit::UIDelegate::setDelegate):
+            (WebKit::UIDelegate::UIClient::didEnterFullscreen):
+            (WebKit::UIDelegate::UIClient::didExitFullscreen):
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::didEnterFullscreen):
+            (WebKit::WebPageProxy::didExitFullscreen):
+            * UIProcess/WebPageProxy.h:
+            * UIProcess/ios/WebVideoFullscreenManagerProxy.mm:
+            (WebKit::WebVideoFullscreenManagerProxy::didExitFullscreen):
+            (WebKit::WebVideoFullscreenManagerProxy::didEnterFullscreen):
+
+2015-01-27  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177531
+
+    2014-12-18  Chris Dumez  <cdumez@apple.com>
+
+            Add missing availability annotation on @property _featureCounterEnabled
+            https://bugs.webkit.org/show_bug.cgi?id=139794
+            <rdar://problem/19266254>
+
+            Rubber-stamped by Dan Bernstein.
+
+            Follow-up to r177526 adding availability annotation on @property
+            _featureCounterEnabled.
+
+            * UIProcess/API/Cocoa/WKWebViewConfigurationPrivate.h:
+
+2015-01-27  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177526
+
+    2014-12-18  Chris Dumez  <cdumez@apple.com>
+
+            [WK2] Stop using WKPreferencesPrivate API to toggle FeatureCounter support
+            https://bugs.webkit.org/show_bug.cgi?id=139794
+            <rdar://problem/19266254>
+
+            Reviewed by Anders Carlsson.
+
+            Stop using WKPreferencesPrivate API to toggle FeatureCounter support
+            and use WKWebViewConfigurationPrivate API instead. FeatureCounter is
+            not meant to change state after the view has been created.
+
+            * UIProcess/API/C/WKPreferences.cpp:
+            (WKPreferencesSetFeatureCounterEnabled): Deleted.
+            (WKPreferencesGetFeatureCounterEnabled): Deleted.
+            * UIProcess/API/C/WKPreferencesRefPrivate.h:
+            * UIProcess/API/Cocoa/WKPreferences.mm:
+            (-[WKPreferences _featureCounterEnabled]): Deleted.
+            (-[WKPreferences _setFeatureCounterEnabled:]): Deleted.
+            * UIProcess/API/Cocoa/WKPreferencesPrivate.h:
+            * UIProcess/API/Cocoa/WKWebView.mm:
+            (-[WKWebView initWithFrame:configuration:]):
+            * UIProcess/API/Cocoa/WKWebViewConfiguration.mm:
+            (-[WKWebViewConfiguration init]):
+            (-[WKWebViewConfiguration copyWithZone:]):
+            (-[WKWebViewConfiguration _featureCounterEnabled]):
+            (-[WKWebViewConfiguration _setFeatureCounterEnabled:]):
+            * UIProcess/API/Cocoa/WKWebViewConfigurationPrivate.h:
+
+2015-01-27  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r177455
+
+    2014-12-17  Chris Dumez  <cdumez@apple.com>
+
+            [iOS] Make it possible to toggle FeatureCounter support at runtime
+            https://bugs.webkit.org/show_bug.cgi?id=139688
+            <rdar://problem/19266254>
+
+            Reviewed by Andreas Kling.
+
+            Add private settings API to toggle FeatureCounter support on Safari and
+            MobileSafari.
+
+            * Shared/WebPreferencesDefinitions.h:
+            * UIProcess/API/C/WKPreferences.cpp:
+            (WKPreferencesSetFeatureCounterEnabled):
+            (WKPreferencesGetFeatureCounterEnabled):
+            * UIProcess/API/C/WKPreferencesRefPrivate.h:
+            * UIProcess/API/Cocoa/WKPreferences.mm:
+            (-[WKPreferences _featureCounterEnabled]):
+            (-[WKPreferences _setFeatureCounterEnabled:]):
+            * UIProcess/API/Cocoa/WKPreferencesPrivate.h:
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::updatePreferences):
+
+2015-01-25  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r177332.
+
+    2014-12-15  Bartlomiej Gajda  <b.gajda@samsung.com>
+
+        Build fix after r177301.
+        https://bugs.webkit.org/show_bug.cgi?id=139666
+
+        Reviewed by Gyuyoung Kim.
+
+        * WebProcess/WebPage/CoordinatedGraphics/WebPageCoordinatedGraphics.cpp:
+        (WebKit::WebPage::findZoomableAreaForPoint):
+
+2015-01-25  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r177301.
+
+    2014-12-15  Myles C. Maxfield  <mmaxfield@apple.com>
+
+        Addressing post-review comments in r177035
+        https://bugs.webkit.org/show_bug.cgi?id=139557
+
+        Reviewed by Darin Adler.
+
+        * Shared/WebHitTestResult.cpp:
+        (WebKit::WebHitTestResult::Data::elementBoundingBoxInWindowCoordinates): Migrate off rendererBoundingBox().
+        * WebProcess/WebPage/CoordinatedGraphics/WebPageCoordinatedGraphics.cpp:
+        (WebKit::WebPage::findZoomableAreaForPoint): Ditto.
+
+2015-01-24  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r177035.
+
+    2014-12-09  Myles C. Maxfield  <mmaxfield@apple.com>
+
+        Delete Node::boundingBox()
+        https://bugs.webkit.org/show_bug.cgi?id=139333
+
+        Reviewed by Zalan Bujtas.
+
+        * Shared/WebHitTestResult.cpp:
+        (WebKit::WebHitTestResult::Data::elementBoundingBoxInWindowCoordinates):
+        Use RenderObject::absoluteBoundingBoxRect().
+        * WebProcess/WebPage/CoordinatedGraphics/WebPageCoordinatedGraphics.cpp:
+        (WebKit::WebPage::findZoomableAreaForPoint): Use
+        RenderObject::absoluteBoundingBoxRect().
+
+2015-01-24  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r176382.
+
+    2014-11-19  Yongjun Zhang  <yongjun_zhang@apple.com>
+
+        Don't track sub-resources that are started after main frame progress has completed.
+        https://bugs.webkit.org/show_bug.cgi?id=138582
+
+        Reviewed by Sam Weinig.
+
+        After main frame progress has finished, starting loading a sub-resource shouldn't affect
+        UI process's view of page loading status (i.e., the page has already completed loading
+        and the progress shouldn't change). To achive that, don't track the subresources that
+        are started after the main frame has finished, except for those triggered by user interaction.
+
+        * WebProcess/WebCoreSupport/WebProgressTrackerClient.cpp:  Notify WebPage that the main frame progress
+            has started or finished.
+        (WebKit::WebProgressTrackerClient::progressStarted):
+        (WebKit::WebProgressTrackerClient::progressFinished):
+        * WebProcess/WebPage/WebPage.cpp:
+        (WebKit::WebPage::WebPage):
+        (WebKit::WebPage::addResourceRequest): Don't track the resource request if it is initiated after
+            the main frame is loaded and it is not triggered by user interaction.
+        (WebKit::WebPage::removeResourceRequest):
+        * WebProcess/WebPage/WebPage.h: Rename m_networkResourceRequestIdentifiers to m_trackedNetworkResourceRequestIdentifiers.
+        (WebKit::WebPage::setMainFrameProgressCompleted):
+
+2015-01-24  David Kilzer  <ddkilzer@apple.com>
+
+        <rdar://problem/19433134> REGRESSION (iOS 8): Reproducible null deref in WebKit::nextFocusableElement
+
+        Merged small change from r175549.
+
+        * WebProcess/WebPage/ios/WebPageIOS.mm:
+        (WebKit::nextFocusableElement): Add isElementNode() check.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r175608.
+
+    2014-11-04  Andy Estes  <aestes@apple.com>
+
+        [iOS] WKPDFView should scroll to a fragment when loading a PDF
+        https://bugs.webkit.org/show_bug.cgi?id=138404
+
+        Reviewed by Tim Horton.
+
+        WKPDFView already knew how to scroll to a page number fragment during a same-document navigation, but it didn't
+        know to do so when loading a PDF whose URL already contained a page number fragment. This could happen if the
+        user long-presses a page number link and taps 'Open in New Tab'.
+
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView web_setContentProviderData:suggestedFilename:]): Called _scrollToFragment:.
+        (-[WKPDFView _scrollToFragment:]): Moved fragment scrolling code to here from web_didSameDocumentNavigation:.
+        (-[WKPDFView web_didSameDocumentNavigation:]): Called _scrollToFragment.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r175607.
+
+    2014-11-04  Andy Estes  <aestes@apple.com>
+
+        [iOS] Stop using +[NSURL _web_URLWithWTFString:relativeToURL:] in WKPDFView
+        https://bugs.webkit.org/show_bug.cgi?id=138357
+
+        Rubber-stamped by Dan Bernstein.
+
+        During patch review for r175595 I changed from using +URLWithString:relativeToURL: to using
+        +_web_URLWithWTFString:relativeToURL: to append a page number fragment to the document URL.
+        If the base URL already contains a fragment, +_web_URLWithWTFString:relativeToURL: appends to the existing
+        fragment whereas +URLWithString:relativeToURL: replaces the existing fragment. I want the latter behavior.
+
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView _URLForLinkAnnotation:]):
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r175595.
+
+    2014-11-04  Andy Estes  <aestes@apple.com>
+
+        [iOS] Add long press support for links in WKPDFView
+        https://bugs.webkit.org/show_bug.cgi?id=138357
+
+        Reviewed by Dan Bernstein.
+
+        Use WKActionSheetAssistant to show a link action sheet in response to long-pressing on a link. Have WKPDFView
+        conform to WKActionSheetAssistantDelegate in order to respond to the open and copy actions as well as to
+        provide the link's URL and position information to WKActionSheetAssistant. The long-pressed link is highlighted
+        for .75 seconds before the sheet is displayed in order to match UIWebPDFView.
+
+        * UIProcess/ios/WKActionSheetAssistant.h: Made protocol methods that WKPDFView doesn't implement optional.
+        * UIProcess/ios/WKActionSheetAssistant.mm:
+        (-[WKActionSheetAssistant updatePositionInformation]): Checked if delegate responds to
+        updatePositionInformationForActionSheetAssistant: before calling.
+        (-[WKActionSheetAssistant _createSheetWithElementActions:showLinkTitle:]): Checked if delegate responds to
+        actionSheetAssistant:willStartInteractionWithElement: before calling.
+        (-[WKActionSheetAssistant cleanupSheet]): Checked if delegate responds to actionSheetAssistantDidStopInteraction:
+        before calling.
+        * UIProcess/ios/WKPDFView.h: Conformed to WKActionSheetAssistantDelegate.
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView web_initWithFrame:webView:]): Instantiated a WKActionSheetAssistant and set self as its delegate.
+        (-[WKPDFView _highlightLinkAnnotation:forDuration:completionHandler:]): Moved highlight drawing to here from
+        annotation:wasTouchedAtPoint:controller: in order to be reused for long-press.
+        (-[WKPDFView _URLForLinkAnnotation:]): Moved URL creation to here from annotation:wasTouchedAtPoint:controller:
+        in order to be reused for long-press. Generated an absolute URL since this URL might go into the pasteboard.
+        (-[WKPDFView annotation:wasTouchedAtPoint:controller:]): Changed to call
+        _highlightLinkAnnotation:forDuration:completionHandler: and _URLForLinkAnnotation:.
+        (-[WKPDFView annotation:isBeingPressedAtPoint:controller:]): Set values on _positionInformation and called
+        -[WKActionSheetAssistant showLinkSheet] after showing a highlight for .75 seconds.
+        (-[WKPDFView positionInformation]): Returned _positionInformation.
+        (-[WKPDFView performAction:]): Added a UTF-8 text and URL representation of the pressed URL to the pasteboard.
+        (-[WKPDFView openElementAtLocation:]): Called WebPage::navigateToURLWithSimulatedClick().
+        (-[WKPDFView actionsForElement:defaultActions:]): Returned actions from UIClient::actionsForElement().
+        (-[WKPDFView _createHighlightViewWithFrame:]): Deleted.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r175577.
+
+    2014-11-04  Andy Estes  <aestes@apple.com>
+
+        [iOS] Include a WKActionSheetAssistant parameter in WKActionSheetAssistantDelegate methods
+        https://bugs.webkit.org/show_bug.cgi?id=137792
+
+        Reviewed by Dan Bernstein.
+
+        * UIProcess/API/Cocoa/_WKElementAction.mm:
+        (+[_WKElementAction elementActionWithTitle:actionHandler:]):
+        (+[_WKElementAction elementActionWithType:customTitle:]):
+        (-[_WKElementAction _runActionWithElementInfo:forActionSheetAssistant:]):
+        * UIProcess/API/Cocoa/_WKElementActionInternal.h:
+        * UIProcess/ios/WKActionSheetAssistant.h:
+        * UIProcess/ios/WKActionSheetAssistant.mm:
+        (-[WKActionSheetAssistant initialPresentationRectInHostViewForSheet]):
+        (-[WKActionSheetAssistant presentationRectInHostViewForSheet]):
+        (-[WKActionSheetAssistant updatePositionInformation]):
+        (-[WKActionSheetAssistant _createSheetWithElementActions:showLinkTitle:]):
+        (-[WKActionSheetAssistant showImageSheet]):
+        (-[WKActionSheetAssistant showLinkSheet]):
+        (-[WKActionSheetAssistant showDataDetectorsSheet]):
+        (-[WKActionSheetAssistant cleanupSheet]):
+        * UIProcess/ios/WKContentViewInteraction.mm:
+        (-[WKContentView positionInformationForActionSheetAssistant:]):
+        (-[WKContentView updatePositionInformationForActionSheetAssistant:]):
+        (-[WKContentView actionSheetAssistant:performAction:]):
+        (-[WKContentView actionSheetAssistant:openElementAtLocation:]):
+        (-[WKContentView actionSheetAssistant:decideActionsForElement:defaultActions:]):
+        (-[WKContentView actionSheetAssistant:willStartInteractionWithElement:]):
+        (-[WKContentView actionSheetAssistantDidStopInteraction:]):
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r174885.
+
+    2014-10-16  Andy Estes  <aestes@apple.com>
+
+        [iOS] Capture WKActionSheetAssistant's interaction with WKContentView in a @protocol
+        https://bugs.webkit.org/show_bug.cgi?id=137792
+
+        Reviewed by Tim Horton.
+
+        WKPDFView would like to use WKActionSheetAssistant to show an action sheet when long-pressing a link, but it
+        can't so long as WKActionSheetAssistant is tightly coupled to WKContentView. Resolve this by factoring
+        WKActionSheetAssistant's interaction with WKContentView into a new protocol called
+        WKActionSheetAssistantDelegate and having WKContentView conform to this protocol.
+
+        * UIProcess/API/Cocoa/_WKElementAction.mm:
+        (+[_WKElementAction elementActionWithTitle:actionHandler:]): Changed instances of WKContentView * to id <WKActionSheetAssistantDelegate>.
+        (+[_WKElementAction elementActionWithType:customTitle:]): Ditto.
+        (-[_WKElementAction _runActionWithElementInfo:delegate:]): Ditto.
+        (copyElement): Deleted.
+        (saveImage): Deleted.
+        (-[_WKElementAction _runActionWithElementInfo:view:]): Deleted.
+        * UIProcess/API/Cocoa/_WKElementActionInternal.h:
+        * UIProcess/ios/WKActionSheet.h:
+        * UIProcess/ios/WKActionSheet.mm:
+        (-[WKActionSheet init]): Renamed from initWithView: since WKActionSheet no longer needs to know about a view.
+        (-[WKActionSheet _didRotateAndLayout]): Called -[WKActionSheetDelegate updatePositionInformation].
+        (-[WKActionSheet initWithView:]): Deleted.
+        * UIProcess/ios/WKActionSheetAssistant.h:
+        * UIProcess/ios/WKActionSheetAssistant.mm:
+        (-[WKActionSheetAssistant delegate]): Added a getter for the delegate property.
+        (-[WKActionSheetAssistant setDelegate:]): Added a setter for the delegate property.
+        (-[WKActionSheetAssistant initWithView:]): Changed argument type from WKContentView * to UIView *.
+        (-[WKActionSheetAssistant initialPresentationRectInHostViewForSheet]): Returned CGRectZero if there is no delegate.
+        Otherwise, retrieved positionInformation from the delegate.
+        (-[WKActionSheetAssistant presentationRectInHostViewForSheet]): Ditto.
+        (-[WKActionSheetAssistant updatePositionInformation]): Called -[WKActionSheetAssistantDelegate updatePositionInformation].
+        (-[WKActionSheetAssistant _createSheetWithElementActions:showLinkTitle:]): Returned early if there is no delegate.
+        Otherwise, retrieved positionInformation from the delegate.
+        (-[WKActionSheetAssistant showImageSheet]): Ditto.
+        (-[WKActionSheetAssistant showLinkSheet]): Ditto.
+        (-[WKActionSheetAssistant showDataDetectorsSheet]): Ditto.
+        (-[WKActionSheetAssistant cleanupSheet]):
+        * UIProcess/ios/WKContentViewInteraction.h:
+        * UIProcess/ios/WKContentViewInteraction.mm:
+        (-[WKContentView setupInteraction]): Installed self as WKActionSheetAssistant's delegate.
+        (-[WKContentView updatePositionInformation]): Renamed from _updatePositionInformation.
+        (-[WKContentView performAction:]): Renamed from _performAction:.
+        (-[WKContentView openElementAtLocation:]): Called _attemptClickAtLocation:.
+        (-[WKContentView actionsForElement:defaultActions:]): Called API::UIClient::actionsForElement().
+        (-[WKContentView startInteractionWithElement:]): Called WebPageProxy::startInteractionWithElementAtPosition().
+        (-[WKContentView stopInteraction]): Called WebPageProxy::stopInteraction().
+        (-[WKContentView _updatePositionInformation]): Deleted.
+        (-[WKContentView _performAction:]): Deleted.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r174286.
+
+    2014-10-03  Andy Estes  <aestes@apple.com>
+
+        [iOS] Highlight clicked links in WKPDFView
+        https://bugs.webkit.org/show_bug.cgi?id=137400
+
+        Reviewed by Tim Horton.
+
+        Show a _UIHighlightView on top of clicked links for 200 ms before starting the navigation. This matches the behavior of UIWebPDFView.
+
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView _createHighlightViewWithFrame:]): Created a _UIHighlightView with a color and border radius matching the values used by UIWebPDFView.
+        (-[WKPDFView annotation:wasTouchedAtPoint:controller:]): Displayed the highlight, then removed it after the navigation began.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r174250.
+
+    2014-10-02  Andy Estes  <aestes@apple.com>
+
+        [iOS] Create an SPI wrapper for _UIHighlightView and use it in WKContentView
+        https://bugs.webkit.org/show_bug.cgi?id=137370
+
+        Reviewed by Tim Horton.
+
+        * UIProcess/ios/WKContentViewInteraction.mm: Included <WebCore/_UIHighlightViewSPI.h> instead of <UIKit/_UIHighlightView.h>.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r174232.
+
+    2014-10-02  Andy Estes  <aestes@apple.com>
+
+        [iOS] Teach WKPDFView to navigate to pageNumber links
+        https://bugs.webkit.org/show_bug.cgi?id=137358
+
+        Reviewed by Tim Horton.
+
+        Treat PDF pageNumber annotations as if they were fragment navigations in an HTML document. For a given page
+        number N, create a fragment called "#pageN" and tell WebKit to navigate to it. By doing this we create history
+        entries for each pageNumber navigation and allow for proper back/forward. When navigating to a page, reset to
+        the initial scale factor and scroll to the beginning of the Nth page.
+
+        * UIProcess/API/Cocoa/WKWebView.mm:
+        (-[WKWebView _zoomToPoint:atScale:animated:]): Added an animated parameter. If animated is NO, use a duration of 0.
+        (-[WKWebView _zoomToRect:atScale:origin:animated:]): Added an animated parameter and passed it to _zoomToPoint:atScale:animated:.
+        (-[WKWebView _zoomOutWithOrigin:animated:]): Ditto.
+        (-[WKWebView _zoomToRect:withOrigin:fitEntireRect:minimumScale:maximumScale:minimumScrollDistance:]): Called _zoomToRect:atScale:origin:animated:,
+        setting animated to YES.
+        (-[WKWebView _didSameDocumentNavigationForMainFrame:]): Called web_didSameDocumentNavigation: on _customContentView.
+        (-[WKWebView _zoomToPoint:atScale:]): Deleted.
+        (-[WKWebView _zoomToRect:atScale:origin:]): Deleted.
+        (-[WKWebView _zoomOutWithOrigin:]): Deleted.
+        * UIProcess/API/Cocoa/WKWebViewInternal.h:
+        * UIProcess/Cocoa/WKWebViewContentProvider.h:
+        * UIProcess/ios/PageClientImplIOS.mm:
+        (WebKit::PageClientImpl::didSameDocumentNavigationForMainFrame): Called _didSameDocumentNavigationForMainFrame on m_webView.
+        * UIProcess/ios/WKContentView.mm:
+        (-[WKContentView _zoomOutWithOrigin:]): Called _zoomOutWithOrigin:animated: on m_webView, setting animated to YES.
+        * UIProcess/ios/WKPDFPageNumberIndicator.h:
+        * UIProcess/ios/WKPDFPageNumberIndicator.mm:
+        (-[WKPDFPageNumberIndicator hide]): Added a method to hide the page number indicator.
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView web_setContentProviderData:suggestedFilename:]): Added a FIXME for restoring scroll position and page scale when loading from the back/forward list.
+        (-[WKPDFView scrollViewDidScroll:]): Stopped showing the page number indicator if a same-document navigation is occurring (to match UIWebPDFView).
+        (-[WKPDFView _updatePageNumberIndicator]): Ditto.
+        (-[WKPDFView web_didSameDocumentNavigation:]):
+        (-[WKPDFView _resetZoomAnimated:]): For same-document navigations of type kWKSameDocumentNavigationSessionStatePop, extracted the page index from the URL fragment
+        identifier, hid the page number indicator, reset the zoom (without an animation to match UIWebPDFView), and scrolled to the beginning of the given page.
+        (-[WKPDFView resetZoom:]): Called _resetZoomAnimated:, setting animated to YES.
+        (-[WKPDFView annotation:wasTouchedAtPoint:controller:]): If there is a non-zero pageNumber in the link annotation, construct a "#pageN" fragment and navigate to it.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r174072.
+
+    2014-09-27  Andy Estes  <aestes@apple.com>
+
+        [iOS] Add basic support for link navigation in WKPDFView
+        https://bugs.webkit.org/show_bug.cgi?id=137182
+
+        Reviewed by Tim Horton.
+
+        Teach WKPDFView to navigate to URLs when PDF link annotations are tapped.
+
+        * UIProcess/WebPageProxy.cpp:
+        (WebKit::WebPageProxy::navigateToURLWithSimulatedClick): Sent Messages::WebPage::NavigateToURLWithSimulatedClick.
+        * UIProcess/WebPageProxy.h:
+        * UIProcess/ios/WKPDFView.h:
+        * UIProcess/ios/WKPDFView.mm:
+        (-[WKPDFView _clearPages]): Removed self as the UIPDFAnnotationControllerDelegate.
+        (-[WKPDFView _revalidateViews]): Added self as the UIPDFAnnotationControllerDelegate.
+        (-[WKPDFView annotation:wasTouchedAtPoint:controller:]): Retrieved the URL from the touched annotation,
+        computed the touched point relative to the WKPDFView and to the screen, and called
+        navigateToURLWithSimulatedClick() after a 200 ms delay in order to show a soon-to-be-added tap highlight
+        (this value matches the delay in UIWebPDFView).
+        * WebProcess/WebPage/WebPage.cpp:
+        (WebKit::WebPage::navigateToURLWithSimulatedClick): Created a fake single-click MouseEvent and called
+        FrameLoader::urlSelected(). Creating a mouse event ensures that the navigation appears as a
+        NavigationTypeLinkClicked in navigation policy delegates.
+        * WebProcess/WebPage/WebPage.h:
+        * WebProcess/WebPage/WebPage.messages.in:
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r172966.
+
+    2014-08-26  Tim Horton  <timothy_horton@apple.com>
+
+        REGRESSION (r172771): Amazon product page becomes unresponsive after swiping back to it
+        https://bugs.webkit.org/show_bug.cgi?id=136260
+        <rdar://problem/18107826>
+
+        Reviewed by Dan Bernstein.
+
+        Previously, when a swipe ended up performing a same-document navigation,
+        we would never get didFinishLoadForMainFrame nor didFirstVisuallyNonEmptyLayoutForMainFrame
+        nor would we even get didHitRenderTreeSizeThreshold in all cases, so we would never
+        remove the swipe snapshot. Previous implementations removed the snapshot on
+        didSameDocumentNavigation for the main frame if the navigation type was Replace or Pop,
+        so we will match that behavior.
+
+        Also, reinstate the watchdog that starts at swipe-end which would have prevented
+        this bug from forever breaking the view it was associated with.
+
+        Also, defend against removing the snapshot before the swipe has finished (before
+        we have even caused the navigation that we're watching for the effects of).
+
+        * UIProcess/API/mac/WKView.mm:
+        (-[WKView _didSameDocumentNavigationForMainFrame:]):
+        * UIProcess/API/mac/WKViewInternal.h:
+        * UIProcess/PageClient.h:
+        * UIProcess/WebPageProxy.cpp:
+        (WebKit::WebPageProxy::didSameDocumentNavigationForFrame):
+        * UIProcess/ios/PageClientImplIOS.h:
+        * UIProcess/ios/PageClientImplIOS.mm:
+        (WebKit::PageClientImpl::didSameDocumentNavigationForMainFrame):
+        * UIProcess/mac/PageClientImpl.h:
+        * UIProcess/mac/PageClientImpl.mm:
+        (WebKit::PageClientImpl::didSameDocumentNavigationForMainFrame):
+        Plumb main-frame same-document navigation notification from WebPageProxy
+        to ViewGestureControllerMac via PageClient and WKView.
+
+        * UIProcess/mac/ViewGestureController.h:
+        * UIProcess/mac/ViewGestureControllerMac.mm:
+        (WebKit::ViewGestureController::ViewGestureController):
+        (WebKit::ViewGestureController::beginSwipeGesture):
+        (WebKit::ViewGestureController::endSwipeGesture):
+        Keep track of whether a swipe is currently occurring. We can't use
+        activeGestureType for this because the swipe currently remains the "active"
+        gesture until the snapshot is removed.
+
+        Reintroduce the old swipeWatchdogTimer (and rename the shorter timer that starts
+        when we get a visually non-empty layout) so that we will always remove the
+        snapshot after 5 seconds, even if we haven't committed the load.
+        This could lead to flashing back to the old content if we fail to get a single
+        byte for 5 seconds, but that is a rare case and should eventually get additional
+        special treatment (dropping the tiles until we do get content, or some such).
+
+        (WebKit::ViewGestureController::didHitRenderTreeSizeThreshold):
+        If a swipe is still in progress, we haven't done our navigation and thus
+        don't care about render tree size changes.
+
+        (WebKit::ViewGestureController::didFirstVisuallyNonEmptyLayoutForMainFrame):
+        If a swipe is still in progress, we haven't done our navigation and thus
+        don't care about layouts.
+
+        Stop the 5 second overall watchdog if we start the 3 second after-visuallyNonEmptyLayout
+        watchdog. This means that the snapshot could stay up for a maximum of 8 seconds
+        for a very, very slow load.
+
+        (WebKit::ViewGestureController::didFinishLoadForMainFrame):
+        If a swipe is still in progress, we haven't done our navigation and thus
+        don't care about loads that complete.
+
+        (WebKit::ViewGestureController::didSameDocumentNavigationForMainFrame):
+        Remove the swipe snapshot after painting if we do replaceState or popState.
+
+        (WebKit::ViewGestureController::removeSwipeSnapshotAfterRepaint):
+        If a swipe is still in progress, we shouldn't remove the snapshot yet.
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r173762.
+
+    2014-09-19  Simon Fraser  <simon.fraser@apple.com>
+
+        Fix the Mac Mavericks build. Only iOS cares about fencing.
+
+        * Platform/mac/LayerHostingContext.h:
+        * Platform/mac/LayerHostingContext.mm:
+
+2015-01-22  David Kilzer  <ddkilzer@apple.com>
+
+        Merge r173741.
+
+    2014-09-18  Jeremy Jones  <jeremyj@apple.com>
+
+        Improve fullscreen video rotation animation.
+        https://bugs.webkit.org/show_bug.cgi?id=136870
+
+        Reviewed by Simon Fraser.
+
+        Remove WKCAContext from LayerHostingContext and use a fencePort to synchronize animation between processes.
+
+        * Platform/mac/LayerHostingContext.h: add setFencePort. Remove WKCAContext.
+        * Platform/mac/LayerHostingContext.mm:
+        (WebKit::LayerHostingContext::createForPort): Remove WKCAContext.
+        (WebKit::LayerHostingContext::createForExternalHostingProcess): ditto
+        (WebKit::LayerHostingContext::setRootLayer): ditto
+        (WebKit::LayerHostingContext::rootLayer): ditto
+        (WebKit::LayerHostingContext::contextID): ditto
+        (WebKit::LayerHostingContext::invalidate): ditto
+        (WebKit::LayerHostingContext::setColorSpace): ditto
+        (WebKit::LayerHostingContext::colorSpace): ditto
+        (WebKit::LayerHostingContext::setFencePort): added
+        * UIProcess/ios/WebVideoFullscreenManagerProxy.mm:
+        (WebKit::WebVideoFullscreenManagerProxy::setVideoLayerFrame): 
+        * WebProcess/ios/WebVideoFullscreenManager.h:
+        * WebProcess/ios/WebVideoFullscreenManager.messages.in: add fence port parameter
+        * WebProcess/ios/WebVideoFullscreenManager.mm: ditto
+        (WebKit::WebVideoFullscreenManager::didSetupFullscreen): ditto
+        (WebKit::WebVideoFullscreenManager::setVideoLayerFrameFenced): ditto
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177329.
+
+    2014-12-15  Simon Fraser  <simon.fraser@apple.com>
+
+            [iOS WK2] Possible crash when setting the WKWebViews's scroll view delegate, if the scroll view outlives the web view
+            https://bugs.webkit.org/show_bug.cgi?id=139662
+            rdar://problem/18083882
+
+            Reviewed by Benjamin Poulain.
+
+            Null out the internal delegate on the WKScrollView when the WKWebView goes away, since
+            it's possible for a client to set its own scroll view delegate, forcing the creation of
+            a WKScrollViewDelegateForwarder, and then retain the UIScrollView past the lifetime of
+            the WKWebView. In this situation, the WKScrollViewDelegateForwarder's internalDelegate
+            would point to a deleted WKWebView.
+
+            * UIProcess/API/Cocoa/WKWebView.mm:
+            (-[WKWebView dealloc]):
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177115.
+
+    2014-12-09  Jon Honeycutt  <jhoneycutt@apple.com>
+
+            Null dereference performing a "TapAndAHalf" gesture in Google search field
+
+            <https://bugs.webkit.org/show_bug.cgi?id=139506>
+            <rdar://problem/19028828>
+
+            Reviewed by Darin Adler.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::selectWithGesture):
+            Add a null check in the case that there is no word range for the
+            current position.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176969.
+
+    2014-12-08  Dan Bernstein  <mitz@apple.com>
+
+            <rdar://problem/18046692> [iOS] Safari crashes at -[_NSUndoStack popAndInvoke] when trying to undo typing on closed tab
+            https://bugs.webkit.org/show_bug.cgi?id=139408
+
+            Reviewed by Anders Carlsson.
+
+            * UIProcess/ios/WKContentView.mm:
+            (-[WKContentView undoManager]): Override to initialize if necessary and return a unique undo
+            manager for this instance. This ensures that undoable operations for this webview don’t get
+            put in other undo managers, and matches UIWebView behavior.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176701.
+
+    2014-12-02  Dan Bernstein  <mitz@apple.com>
+
+            <rdar://problem/18441138> [iOS] Text selection in WKWebView with WKSelectionGranularityCharacter only works in the most recent WKWebView to load
+            https://bugs.webkit.org/show_bug.cgi?id=139211
+
+            Reviewed by Anders Carlsson.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView becomeFirstResponder]): Override to activate the text selection for when
+            becoming first resopnder.
+            (-[WKContentView resignFirstResponder]): Deactiavte the text selection when resigning first
+            responder. This ensures that if another WKWebView becomes first responder, and it uses
+            block selection, we don’t end up with two active selection views.
+            (-[WKContentView useSelectionAssistantWithMode:]): Only activate the text selection if this
+            is the first responder. This ensures that loading content into a non-first-responder
+            WKWebView doesn‘t deactivate the text selection in the current first responder.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176305.
+
+    2014-11-18  Benjamin Poulain  <bpoulain@apple.com>
+
+            iOS8 new "slow tap" heuristic fires mouse compat events despite preventDefault on touchend
+            https://bugs.webkit.org/show_bug.cgi?id=137069
+            rdar://problem/18481464
+
+            Reviewed by Simon Fraser.
+
+            On WebKit2, we let UIWebTouchEventsGestureRecognizer and _UIWebHighlightLongPressGestureRecognizer
+            run concurrently. This causes a race with an incorrect behavior:
+            1) If UIWebTouchEventsGestureRecognizer does not cancel the native gestures on start.
+            2) _UIWebHighlightLongPressGestureRecognizer starts after highlightDelay.
+            3) When the finger leaves the screen, both gestures end.
+            -> If the touch end sent to JavaScript in [3] ask the priority over native events, that no longer stops
+               the _UIWebHighlightLongPressGestureRecognizer.
+
+            The two gesture recognizers can run in any order, there is no guarantee on which one runs first.
+            To solve the bug, I must make sure the _UIWebHighlightLongPressGestureRecognizer never trigger a click
+            if the page wants the event.
+
+            To solve the order problem, I use the fact that event recognition goes in two phases for
+            non cancelled events:
+            1) Update the gesture recognizers.
+            2) Trigger the actions.
+
+            I do not know the order of recognizers in [1], but I know both have run before [2] is executed.
+            I use that to stop _UIWebHighlightLongPressGestureRecognizer from ending with a click in the case of the bug:
+            1) When _UIWebHighlightLongPressGestureRecognizer starts, I set _highlightLongPressCanClick signaling
+               the gesture can end normally. This is done on a timer and not direct input so I don't really have to worry
+               about a race here.
+            2) When processing the touch event for UIWebTouchEventsGestureRecognizer, I reset the flag _highlightLongPressCanClick
+               if the page wants the event.
+            3) When the actions of _UIWebHighlightLongPressGestureRecognizer are processed, the touch event
+               has already been processed by the page and the flag has been cleared if needed.
+
+            * UIProcess/ios/WKContentViewInteraction.h:
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView _webTouchEvent:preventsNativeGestures:]):
+            (-[WKContentView _highlightLongPressRecognized:]):
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175698.
+
+    2014-11-06  Daniel Bates  <dabates@apple.com>
+
+            [iOS] WebProcess needs to take a background task assertion to prevent being killed
+            for "suspended with locked system files"
+            https://bugs.webkit.org/show_bug.cgi?id=138155
+            <rdar://problem/17939303>
+
+            Reviewed by Anders Carlsson.
+
+            Mitigates an issue where the WebProcess may be killed when suspended holding locked files
+            by allowing the WebProcess to notify the UIProcess when it is holding such files so that
+            both can continue to run for a period of time after the UIProcess transitions to the
+            background. In particular, the WebProcess notifies the UIProcess that it is holding- or
+            relinquished- a locked file when it begins and ends a sequence of SQLite transactions,
+            respectively.
+
+            * UIProcess/WebProcessProxy.cpp:
+            (WebKit::WebProcessProxy::disconnect): Relinquish an existing background task assertion
+            when the WebProcess disconnects. Among other situations, the WebProcess may disconnect as
+            a result of being suspended holding locked files even when the UIProcess requested a
+            background task assertion (i.e. it may have exceeded its background time limit).
+            (WebKit::WebProcessProxy::setIsHoldingLockedFiles): Added. Either acquires a new background
+            task assertion or relinquishes an existing one.
+            * UIProcess/WebProcessProxy.h:
+            * UIProcess/WebProcessProxy.messages.in: Added message SetIsHoldingLockedFiles(bool). The WebProcess
+            dispatches this message to inform the UIProcess that it is holding- or relinquished- a locked file.
+            * WebKit2.xcodeproj/project.pbxproj: Added files WebSQLiteDatabaseTracker.{cpp, h}.
+            * WebProcess/WebCoreSupport/WebSQLiteDatabaseTracker.cpp: Added.
+            (WebKit::WebSQLiteDatabaseTracker::supplementName): Added.
+            (WebKit::WebSQLiteDatabaseTracker::WebSQLiteDatabaseTracker): Added.
+            (WebKit::WebSQLiteDatabaseTracker::initialize): Register to receive SQLiteDatabaseTrackerClient callbacks.
+            (WebKit::WebSQLiteDatabaseTracker::willBeginFirstTransaction): Inform the HysteresisActivity object on
+            the main thread that we began a transaction so that it calls WebSQLiteDatabaseTracker::started().
+            (WebKit::WebSQLiteDatabaseTracker::didFinishLastTransaction): Inform the HysteresisActivity object on
+            the main thread that we finished a transaction so that it may eventually call WebSQLiteDatabaseTracker::stopped().
+            (WebKit::WebSQLiteDatabaseTracker::started): Notify the UIProcess that the WebProcess is holding
+            a locked file.
+            (WebKit::WebSQLiteDatabaseTracker::stopped): Notify the UIProcess that the WebProcess has
+            relinquished the locked file.
+            * WebProcess/WebCoreSupport/WebSQLiteDatabaseTracker.h: Added. We use a HysteresisActivity object
+            to coalesce SetIsHoldingLockedFiles(false) messages as an optimization to minimize the number of
+            messages exchanged between the UIProcess and WebProcess when a web page performs SQLite transactions
+            in batches.
+            * WebProcess/WebProcess.cpp:
+            (WebKit::WebProcess::WebProcess): Instantiate the supplement WebSQLiteDatabaseTracker when building
+            for iOS.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175636.
+
+    2014-11-04  Jon Honeycutt  <jhoneycutt@apple.com>
+
+            WebContent crash in WebPage::selectWithGesture()
+
+            <https://bugs.webkit.org/show_bug.cgi?id=138399>
+            <rdar://problem/18550631>
+
+            This crash occurs when the web process receives a "TapAndAHalf" gesture
+            with the "Changed" state without having received a "TapAndAHalf"
+            gesture with the "Began" state.
+
+            No test possible.
+
+            Reviewed by Simon Fraser.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::selectWithGesture):
+            Null check m_currentWordRange before dereferencing it.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175334.
+
+    2014-10-29  Joseph Pecoraro  <pecoraro@apple.com>
+
+            [iOS] iPad: Occasional <select> crashes attempting to scroll to non-existing row 0 in viewWillAppear
+            https://bugs.webkit.org/show_bug.cgi?id=138165
+
+            Reviewed by David Kilzer.
+
+            This is a speculative fix for a crash attempting to scroll to a row in a
+            select picker on iPad. In these cases we are trying to scroll to the first
+            row of the first section, but no such row appears to exist. I was unable
+            to reproduce the issue, but if it is happening we should be able to protect
+            safely protect against crashing.
+
+            * UIProcess/ios/forms/WKFormSelectPopover.mm:
+            (-[WKSelectTableViewController viewWillAppear:]):
+            Protect against trying to scroll to a section/row that does not exist
+            by pre-checking that the section/row is valid.
+
+2015-01-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175266.
+
+    2014-10-28  Joseph Pecoraro  <pecoraro@apple.com>
+
+            [iOS] iPhone should not allow selecting <optgroup> in <select multiple>
+            https://bugs.webkit.org/show_bug.cgi?id=137991
+
+            Reviewed by Darin Adler.
+
+            We seem to be getting the delegate when we are not supposed to.
+            Workaround the issue as best we can by reseting the styles
+            for the group's content view and not changing selections.
+
+            * UIProcess/ios/forms/WKFormSelectPicker.mm:
+            (-[WKMultipleSelectPicker pickerView:row:column:checked:]):
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r175135.
+
+    2014-10-23  Joseph Pecoraro  <pecoraro@apple.com>
+
+            [iOS] iPhone unselecting items in <select multiple> shows incorrect values selected
+            https://bugs.webkit.org/show_bug.cgi?id=137989
+
+            Reviewed by Alexey Proskuryakov.
+
+            * UIProcess/ios/forms/WKFormSelectPicker.mm:
+            (-[WKMultipleSelectPicker pickerView:row:column:checked:]):
+            The second argument is "allowsMultipleSelection" and should only be set
+            when we are making a selection in a <select multiple>.
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174148.
+
+    2014-10-01  Joseph Pecoraro  <pecoraro@apple.com>
+
+            [iOS] <select> with <optgroup> may change initial selected option when assisted
+            https://bugs.webkit.org/show_bug.cgi?id=137261
+
+            Reviewed by Enrica Casucci.
+
+            The initial assignemnt of _singleSelectionIndex was calculating the
+            item index (ignoring groups) instead of the row index (affected by
+            groups!). Thus if there was N groups we would select the row N
+            before the real selection.
+
+            Also avoid this entirely if this is a multiple selection picker.
+            This logic is only needed for single selection with groups.
+
+            * UIProcess/ios/forms/WKFormSelectPicker.mm:
+            (-[WKMultipleSelectPicker initWithView:]):
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173934.
+
+    2014-09-24  Sam Weinig  <sam@webkit.org>
+
+            Remove incorrect use of the BKSProcessAssertionAllowSuspendOnSleep flag for process suspension in iOS WebKit2
+            <rdar://problem/18400566>
+            https://bugs.webkit.org/show_bug.cgi?id=137077
+
+            Reviewed by Anders Carlsson.
+
+            * UIProcess/ios/ProcessAssertionIOS.mm:
+            Remove use of the BKSProcessAssertionAllowSuspendOnSleep which does not do what we expect, and instead
+            causes processes to be suspended "forever" after sleep.
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173737.
+
+    2014-09-18  Simon Fraser  <simon.fraser@apple.com>
+
+            Avoid divide by zero when we get an empty rect while snapshotting a node
+            https://bugs.webkit.org/show_bug.cgi?id=136932
+            rdar://problem/18383473
+
+            Reviewed by Dean Jackson.
+
+            renderer()->paintingRootRect() can return an empty rect for some inline configurations,
+            for example an <a> containing a floated <span>
+
+            When this occurs, avoid a divide by zero and return a null snapshot image.
+
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::snapshotNode):
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173071.
+
+    2014-08-27  Enrica Casucci  <enrica@apple.com>
+
+            textStylingAtPosition returns incorrect values after executing toggleBold, toggleItalic and toggleUnderline.
+            https://bugs.webkit.org/show_bug.cgi?id=136323
+            rdar://problem/18141964
+
+            Reviewed by Antti Koivisto.
+
+            For underline style we need to check typingStyle first and use that information to populate
+            the dictionary. If there is no typing style we can use the render style.
+            We also need to update the editor state for the toggle commands to reflect the state in the UIProcess
+            even for commands that don't change the selection.
+
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::editorState):
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::executeEditCommandWithCallback):
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r172199.
+
+    2014-08-06  Simon Fraser  <simon.fraser@apple.com>
+
+            [iOS WK2] www.france24.com doesn't always load the page, sections stay white
+            https://bugs.webkit.org/show_bug.cgi?id=135684
+            <rdar://problem/17931712>
+
+            Reviewed by Tim Horton.
+
+            It's possible for a UIScrollView for overflow to move between one scrolling tree node
+            and another. When this happens, we need to avoid unconditionally clearing the delegate
+            on the node that's being destroyed, because the new node will already have set the
+            UIScrollView delegate to its own delegate.
+
+            * UIProcess/Scrolling/ios/ScrollingTreeOverflowScrollingNodeIOS.mm:
+            (WebKit::ScrollingTreeOverflowScrollingNodeIOS::~ScrollingTreeOverflowScrollingNodeIOS):
+
+2015-01-20  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r171775.
+
+    2014-07-29  Tim Horton  <timothy_horton@apple.com>
+
+            WKPDFView paints rotated pages squished
+            https://bugs.webkit.org/show_bug.cgi?id=135401
+            <rdar://problem/17173916>
+
+            Reviewed by Simon Fraser.
+
+            * UIProcess/ios/WKPDFView.mm:
+            (-[WKPDFView _computePageAndDocumentFrames]):
+            [page size] returns the crop box's size, ignoring rotation.
+            [page cropBoxAccountForRotation] respects rotation, but otherwise returns the same size.
+            UIPDFPageView will respect rotation when painting, so we
+            should make sure that it is given an aspect ratio that also
+            respects rotation, so that the page isn't squished.
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r176441.
+
+    2014-11-20  Dan Bernstein  <mitz@apple.com>
+
+            Build fix.
+
+            * UIProcess/ios/forms/WKAirPlayRoutePicker.mm:
+            (-[WKAirPlayRoutePicker showAirPlayPickerIPad:fromRect:]): Cast the return value of
+            [getMPAudioVideoRoutingPopoverControllerClass() alloc] to resolve ambiguity about which
+            -initWithType: we are calling.
+            (-[WKAirPlayRoutePicker showAirPlayPickerIPhone:]): Cast to resolve ambiguity.
+            (-[WKAirPlayRoutePicker show:fromRect:]): Cast for consistency.
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174742.
+
+    2014-10-15  Dan Bernstein  <mitz@apple.com>
+
+            [Cocoa] "Plug-in will handle load" error isn't declared in the modern API
+            https://bugs.webkit.org/show_bug.cgi?id=137747
+
+            Reviewed by Anders Carlsson.
+
+            * UIProcess/API/Cocoa/WKError.mm: Define _WKLegacyErrorDomain.
+            * UIProcess/API/Cocoa/WKErrorInternal.h: Changed to import WKErrorPrivate.h.
+            * UIProcess/API/Cocoa/WKErrorPrivate.h: Added. Declares _WKLegacyErrorDomain
+            and _WKLegacyErrorPlugInWillHandleLoad.
+            * WebKit2.xcodeproj/project.pbxproj: Added new private header.
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174299.
+
+    2014-10-03  Anders Carlsson  <andersca@apple.com>
+
+            Remove a workaround for a bug that's been fixed
+            https://bugs.webkit.org/show_bug.cgi?id=137411
+
+            Reviewed by Dan Bernstein.
+
+            * mac/rewrite-availability-macros.sh:
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r174081.
+
+    2014-09-29  Anders Carlsson  <andersca@apple.com>
+
+            Set the TBA versions based on the PLATFORM_NAME
+            https://bugs.webkit.org/show_bug.cgi?id=137226
+            Follow-up fix for <rdar://problem/17761459>.
+
+            Reviewed by Dan Bernstein.
+
+            * mac/rewrite-availability-macros.sh:
+            Turns out that MACOSX_DEPLOYMENT_TARGET is set even for iOS builds,
+            so set the versions based on the PLATFORM_NAME environment variable.
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r173975.
+
+    2014-09-25  Anders Carlsson  <andersca@apple.com>
+
+            Expand WK_MAC_TBA and WK_IOS_TBA to the current deployment target version (or NA).
+            https://bugs.webkit.org/show_bug.cgi?id=137127
+            Part of rdar://problem/17761459.
+
+            Reviewed by Dan Bernstein.
+
+            * mac/rewrite-availability-macros.sh:
+
+2015-01-09  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r177163.
+
+    2014-12-11  Yongjun Zhang  <yongjun_zhang@apple.com>
+
+            WebKit2 should expose FirstVisuallyNonEmptyLayout rendering milestone.
+            https://bugs.webkit.org/show_bug.cgi?id=139514
+
+            Expose DidFirstVisuallyNonEmptyLayout so that WebKit2 client can listen to visually non-empty layout rendering event.
+
+            Reviewed by Dan Bernstein.
+
+            * Shared/API/Cocoa/WKRenderingProgressEvents.h: Add WKRenderingProgressEventFirstVisuallyNonEmptyLayout to WKRenderingProgressEvents.
+            * Shared/API/Cocoa/WKRenderingProgressEventsInternal.h: Also map kWKDidFirstVisuallyNonEmptyLayout to WKRenderingProgressEventFirstVisuallyNonEmptyLayout.
+            (renderingProgressEvents):
+            * UIProcess/API/Cocoa/WKWebView.mm:
+            (layoutMilestones): Map _WKRenderingProgressEventFirstVisuallyNonEmptyLayout to WebCore::DidFirstVisuallyNonEmptyLayout.
+            * UIProcess/API/Cocoa/WKWebViewPrivate.h:
+            * UIProcess/Cocoa/NavigationState.mm: Add _WKRenderingProgressEventFirstVisuallyNonEmptyLayout to _WKRenderingProgressEventFirstLayout.
+            (WebKit::renderingProgressEvents): Map WebCore::DidFirstVisuallyNonEmptyLayout to _WKRenderingProgressEventFirstVisuallyNonEmptyLayout.
+
 2015-01-08  Babak Shafiei  <bshafiei@apple.com>
 
         Merge r173450.

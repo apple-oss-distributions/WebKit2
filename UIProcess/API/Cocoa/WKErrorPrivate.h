@@ -23,15 +23,14 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import <WebKit/WKFoundation.h>
+#import <WebKit/WKError.h>
 
 #if WK_API_ENABLED
 
-typedef NS_OPTIONS(NSUInteger, WKRenderingProgressEvents)
-{
-    WKRenderingProgressEventFirstLayout = 1 << 0,
-    WKRenderingProgressEventFirstVisuallyNonEmptyLayout = 1 << 1,
-    WKRenderingProgressEventFirstPaintWithSignificantArea = 1 << 2,
-};
+WK_EXTERN NSString * const _WKLegacyErrorDomain WK_AVAILABLE(WK_MAC_TBA, WK_IOS_TBA);
+
+typedef NS_ENUM(NSInteger, _WKLegacyErrorCode) {
+    _WKLegacyErrorPlugInWillHandleLoad = 204,
+} WK_ENUM_AVAILABLE(WK_MAC_TBA, WK_IOS_TBA);
 
 #endif

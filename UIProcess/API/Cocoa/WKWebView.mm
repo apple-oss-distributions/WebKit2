@@ -50,6 +50,7 @@
 #import "WKNavigationInternal.h"
 #import "WKPreferencesInternal.h"
 #import "WKProcessPoolInternal.h"
+#import "WKSharedAPICast.h"
 #import "WKUIDelegate.h"
 #import "WKUIDelegatePrivate.h"
 #import "WKUserContentControllerInternal.h"
@@ -100,6 +101,7 @@
 @interface UIScrollView (UIScrollViewInternal)
 - (void)_adjustForAutomaticKeyboardInfo:(NSDictionary*)info animated:(BOOL)animated lastAdjustment:(CGFloat*)lastAdjustment;
 - (BOOL)_isScrollingToTop;
+- (BOOL)_isInterruptingDeceleration;
 @end
 
 @interface UIPeripheralHost(UIKitInternal)
@@ -278,6 +280,7 @@ static int32_t deviceOrientation()
 
 #if PLATFORM(IOS)
     webPageConfiguration.preferenceValues.set(WebKit::WebPreferencesKey::mediaPlaybackAllowsInlineKey(), WebKit::WebPreferencesStore::Value(!![_configuration allowsInlineMediaPlayback]));
+    webPageConfiguration.preferenceValues.set(WebKit::WebPreferencesKey::featureCounterEnabledKey(), WebKit::WebPreferencesStore::Value(!![_configuration _featureCounterEnabled]));
     webPageConfiguration.preferenceValues.set(WebKit::WebPreferencesKey::mediaPlaybackRequiresUserGestureKey(), WebKit::WebPreferencesStore::Value(!![_configuration mediaPlaybackRequiresUserAction]));
     webPageConfiguration.preferenceValues.set(WebKit::WebPreferencesKey::mediaPlaybackAllowsAirPlayKey(), WebKit::WebPreferencesStore::Value(!![_configuration mediaPlaybackAllowsAirPlay]));
 #endif
@@ -360,6 +363,7 @@ static int32_t deviceOrientation()
 #if PLATFORM(IOS)
     [[_configuration _contentProviderRegistry] removePage:*_page];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [_scrollView setInternalDelegate:nil];
 #endif
 
     pageToViewMap().remove(_page.get());
@@ -955,14 +959,18 @@ static inline bool withinEpsilon(TypeA a, TypeB b)
     return WebKit::ViewSnapshot::create(slotID, imageSize, imageSize.width() * imageSize.height() * 4);
 }
 
-- (void)_zoomToPoint:(WebCore::FloatPoint)point atScale:(double)scale
+- (void)_zoomToPoint:(WebCore::FloatPoint)point atScale:(double)scale animated:(BOOL)animated
 {
-    double maximumZoomDuration = 0.4;
-    double minimumZoomDuration = 0.1;
-    double zoomDurationFactor = 0.3;
-
+    CFTimeInterval duration = 0;
     CGFloat zoomScale = contentZoomScale(self);
-    CFTimeInterval duration = std::min(fabs(log(zoomScale) - log(scale)) * zoomDurationFactor + minimumZoomDuration, maximumZoomDuration);
+
+    if (animated) {
+        const double maximumZoomDuration = 0.4;
+        const double minimumZoomDuration = 0.1;
+        const double zoomDurationFactor = 0.3;
+
+        duration = std::min(fabs(log(zoomScale) - log(scale)) * zoomDurationFactor + minimumZoomDuration, maximumZoomDuration);
+    }
 
     if (scale != zoomScale)
         _page->willStartUserTriggeredZooming();
@@ -970,7 +978,7 @@ static inline bool withinEpsilon(TypeA a, TypeB b)
     [_scrollView _zoomToCenter:point scale:scale duration:duration];
 }
 
-- (void)_zoomToRect:(WebCore::FloatRect)targetRect atScale:(double)scale origin:(WebCore::FloatPoint)origin
+- (void)_zoomToRect:(WebCore::FloatRect)targetRect atScale:(double)scale origin:(WebCore::FloatPoint)origin animated:(BOOL)animated
 {
     // FIMXE: Some of this could be shared with _scrollToRect.
     const double visibleRectScaleChange = contentZoomScale(self) / scale;
@@ -996,7 +1004,7 @@ static inline bool withinEpsilon(TypeA a, TypeB b)
     visibleRectAfterZoom.move(-topLeftObscuredInsetAfterZoom);
     visibleRectAfterZoom.expand(topLeftObscuredInsetAfterZoom + bottomRightObscuredInsetAfterZoom);
 
-    [self _zoomToPoint:visibleRectAfterZoom.center() atScale:scale];
+    [self _zoomToPoint:visibleRectAfterZoom.center() atScale:scale animated:animated];
 }
 
 static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOffset, WebCore::FloatSize contentSize, WebCore::FloatSize unobscuredContentSize)
@@ -1069,9 +1077,9 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     return true;
 }
 
-- (void)_zoomOutWithOrigin:(WebCore::FloatPoint)origin
+- (void)_zoomOutWithOrigin:(WebCore::FloatPoint)origin animated:(BOOL)animated
 {
-    [self _zoomToPoint:origin atScale:[_scrollView minimumZoomScale]];
+    [self _zoomToPoint:origin atScale:[_scrollView minimumZoomScale] animated:animated];
 }
 
 // focusedElementRect and selectionRect are both in document coordinates.
@@ -1211,7 +1219,7 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
         if ([self _scrollToRect:targetRect origin:origin minimumScrollDistance:minimumScrollDistance])
             return true;
     } else if (targetScale != currentScale) {
-        [self _zoomToRect:targetRect atScale:targetScale origin:origin];
+        [self _zoomToRect:targetRect atScale:targetScale origin:origin animated:YES];
         return true;
     }
     
@@ -1342,6 +1350,15 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     [_contentView didZoomToScale:scale];
 }
 
+- (void)_scrollViewDidInterruptDecelerating:(UIScrollView *)scrollView
+{
+    if (![self usesStandardContentView])
+        return;
+
+    [_contentView didInterruptScrolling];
+    [self _updateVisibleContentRects];
+}
+
 - (void)_frameOrBoundsChanged
 {
     CGRect bounds = self.bounds;
@@ -1399,11 +1416,21 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     CGFloat scaleFactor = contentZoomScale(self);
 
     BOOL isStableState = !(_isChangingObscuredInsetsInteractively || [_scrollView isDragging] || [_scrollView isDecelerating] || [_scrollView isZooming] || [_scrollView isZoomBouncing] || [_scrollView _isAnimatingZoom] || [_scrollView _isScrollingToTop]);
+
+    // FIXME: this can be made static after we stop supporting iOS 8.x.
+    if (isStableState && [_scrollView respondsToSelector:@selector(_isInterruptingDeceleration)])
+        isStableState = ![_scrollView performSelector:@selector(_isInterruptingDeceleration)];
+
     [_contentView didUpdateVisibleRect:visibleRectInContentCoordinates
         unobscuredRect:unobscuredRectInContentCoordinates
         unobscuredRectInScrollViewCoordinates:unobscuredRect
         scale:scaleFactor minimumScale:[_scrollView minimumZoomScale]
         inStableState:isStableState isChangingObscuredInsetsInteractively:_isChangingObscuredInsetsInteractively];
+}
+
+- (void)_didSameDocumentNavigationForMainFrame:(WebKit::SameDocumentNavigationType)navigationType
+{
+    [_customContentView web_didSameDocumentNavigation:toAPI(navigationType)];
 }
 
 - (void)_keyboardChangedWithInfo:(NSDictionary *)keyboardInfo adjustScrollView:(BOOL)adjustScrollView
@@ -1751,6 +1778,9 @@ static inline WebCore::LayoutMilestones layoutMilestones(_WKRenderingProgressEve
 
     if (events & _WKRenderingProgressEventFirstLayout)
         milestones |= WebCore::DidFirstLayout;
+
+    if (events & _WKRenderingProgressEventFirstVisuallyNonEmptyLayout)
+        milestones |= WebCore::DidFirstVisuallyNonEmptyLayout;
 
     if (events & _WKRenderingProgressEventFirstPaintWithSignificantArea)
         milestones |= WebCore::DidHitRelevantRepaintedObjectsAreaThreshold;

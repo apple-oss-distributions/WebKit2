@@ -50,9 +50,9 @@ messages -> WebPage LegacyReceiver {
     DynamicViewportSizeUpdate(WebCore::FloatSize minimumLayoutSize, WebCore::FloatSize minimumLayoutSizeForMinimalUI,  WebCore::FloatSize maximumUnobscuredSize, WebCore::FloatRect targetExposedContentRect, WebCore::FloatRect targetUnobscuredRect, WebCore::FloatRect targetUnobscuredRectInScrollViewCoordinates, double scale, int32_t deviceOrientation)
     SynchronizeDynamicViewportUpdate() -> (double newTargetScale, WebCore::FloatPoint newScrollPosition, uint64_t nextValidLayerTreeTransactionID)
 
-    HandleTap(WebCore::IntPoint point)
+    HandleTap(WebCore::IntPoint point, uint64_t lastLayerTreeTranscationId)
     PotentialTapAtPosition(uint64_t requestID, WebCore::FloatPoint point)
-    CommitPotentialTap()
+    CommitPotentialTap(uint64_t lastLayerTreeTranscationId)
     CancelPotentialTap()
     TapHighlightAtPosition(uint64_t requestID, WebCore::FloatPoint point)
     InspectorNodeSearchMovedToPosition(WebCore::FloatPoint point)
@@ -125,6 +125,7 @@ messages -> WebPage LegacyReceiver {
     LoadAlternateHTMLString(String htmlString, String baseURL, String unreachableURL, WebKit::WebContextUserMessageEncoder userData) Variadic
     LoadPlainTextString(String string, WebKit::WebContextUserMessageEncoder userData) Variadic
     LoadWebArchiveData(IPC::DataReference webArchiveData, WebKit::WebContextUserMessageEncoder userData) Variadic
+    NavigateToURLWithSimulatedClick(String url, WebCore::IntPoint documentPoint, WebCore::IntPoint screenPoint)
 
     Reload(uint64_t navigationID, bool reloadFromOrigin, WebKit::SandboxExtension::Handle sandboxExtensionHandle)
     StopLoading()
@@ -180,7 +181,7 @@ messages -> WebPage LegacyReceiver {
     SetPageAndTextZoomFactors(double pageZoomFactor, double textZoomFactor)
     SetPageZoomFactor(double zoomFactor)
     SetTextZoomFactor(double zoomFactor)
-    WindowScreenDidChange(uint64_t displayID)
+    WindowScreenDidChange(uint32_t displayID)
 
     ScalePage(double scale, WebCore::IntPoint origin)
     ScalePageInViewCoordinates(double scale, WebCore::IntPoint centerInViewCoordinates)

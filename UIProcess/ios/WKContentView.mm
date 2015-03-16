@@ -183,6 +183,8 @@ private:
     RetainPtr<WKInspectorHighlightView> _inspectorHighlightView;
 
     HistoricalVelocityData _historicalKinematicData;
+
+    RetainPtr<NSUndoManager> _undoManager;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame context:(WebKit::WebContext&)context configuration:(WebKit::WebPageConfiguration)webPageConfiguration webView:(WKWebView *)webView
@@ -370,6 +372,11 @@ private:
     [self _didEndScrollingOrZooming];
 }
 
+- (void)didInterruptScrolling
+{
+    _historicalKinematicData.clear();
+}
+
 - (void)willStartZoomOrScroll
 {
     [self _willStartScrollingOrZooming];
@@ -378,6 +385,14 @@ private:
 - (void)didZoomToScale:(CGFloat)scale
 {
     [self _didEndScrollingOrZooming];
+}
+
+- (NSUndoManager *)undoManager
+{
+    if (!_undoManager)
+        _undoManager = adoptNS([[NSUndoManager alloc] init]);
+
+    return _undoManager.get();
 }
 
 #pragma mark Internal
@@ -442,6 +457,7 @@ private:
 - (void)_didCommitLoadForMainFrame
 {
     [self _stopAssistingNode];
+    [self _cancelLongPressGestureRecognizer];
     [_webView _didCommitLoadForMainFrame];
 }
 
@@ -501,7 +517,7 @@ private:
 
 - (void)_zoomOutWithOrigin:(CGPoint)origin
 {
-    return [_webView _zoomOutWithOrigin:origin];
+    return [_webView _zoomOutWithOrigin:origin animated:YES];
 }
 
 - (void)_applicationWillResignActive:(NSNotification*)notification

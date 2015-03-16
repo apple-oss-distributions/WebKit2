@@ -28,6 +28,7 @@
 
 #if PLATFORM(IOS)
 
+#import "APIUIClient.h"
 #import "EditingRange.h"
 #import "NativeWebKeyboardEvent.h"
 #import "NativeWebTouchEvent.h"
@@ -59,12 +60,14 @@
 #import <UIKit/UITapGestureRecognizer_Private.h>
 #import <UIKit/UITextInteractionAssistant_Private.h>
 #import <UIKit/UIWebDocumentView.h> // FIXME: should not include this header.
-#import <UIKit/_UIHighlightView.h>
 #import <UIKit/_UIWebHighlightLongPressGestureRecognizer.h>
+#import <MobileCoreServices/UTCoreTypes.h>
 #import <WebCore/Color.h>
 #import <WebCore/FloatQuad.h>
+#import <WebCore/Pasteboard.h>
 #import <WebCore/SoftLinking.h>
 #import <WebCore/WebEvent.h>
+#import <WebCore/_UIHighlightViewSPI.h>
 #import <WebKit/WebSelectionRect.h> // FIXME: WK2 should not include WebKit headers!
 #import <wtf/RetainPtr.h>
 
@@ -78,6 +81,58 @@ SOFT_LINK_CONSTANT(ManagedConfiguration, MCFeatureDefinitionLookupAllowed, NSStr
 
 using namespace WebCore;
 using namespace WebKit;
+
+namespace WebKit {
+
+WKSelectionDrawingInfo::WKSelectionDrawingInfo()
+    : type(SelectionType::None)
+{
+}
+
+WKSelectionDrawingInfo::WKSelectionDrawingInfo(const EditorState& editorState)
+{
+    if (editorState.selectionIsNone) {
+        type = SelectionType::None;
+        return;
+    }
+
+    if (editorState.isInPlugin) {
+        type = SelectionType::Plugin;
+        return;
+    }
+
+    type = SelectionType::Range;
+    caretRect = editorState.caretRectAtEnd;
+    selectionRects = editorState.selectionRects;
+}
+
+inline bool operator==(const WKSelectionDrawingInfo& a, const WKSelectionDrawingInfo& b)
+{
+    if (a.type != b.type)
+        return false;
+
+    if (a.type == WKSelectionDrawingInfo::SelectionType::Range) {
+        if (a.caretRect != b.caretRect)
+            return false;
+
+        if (a.selectionRects.size() != b.selectionRects.size())
+            return false;
+
+        for (unsigned i = 0; i < a.selectionRects.size(); ++i) {
+            if (a.selectionRects[i].rect() != b.selectionRects[i].rect())
+                return false;
+        }
+    }
+
+    return true;
+}
+
+inline bool operator!=(const WKSelectionDrawingInfo& a, const WKSelectionDrawingInfo& b)
+{
+    return !(a == b);
+}
+
+} // namespace WebKit
 
 static const float highlightDelay = 0.12;
 static const float tapAndHoldDelay  = 0.75;
@@ -149,6 +204,8 @@ const CGFloat minimumTapHighlightRadius = 2.0;
 
 @interface UIKeyboardImpl (StagingToRemove)
 - (void)didHandleWebKeyEvent;
+- (void)didHandleWebKeyEvent:(WebIOSEvent *)event;
+- (void)deleteFromInputWithFlags:(NSUInteger)flags;
 @end
 
 @interface UIView (UIViewInternalHack)
@@ -277,6 +334,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     [self useSelectionAssistantWithMode:toUIWebSelectionMode([[_webView configuration] selectionGranularity])];
     
     _actionSheetAssistant = adoptNS([[WKActionSheetAssistant alloc] initWithView:self]);
+    [_actionSheetAssistant setDelegate:self];
     _smartMagnificationController = std::make_unique<SmartMagnificationController>(self);
 }
 
@@ -387,7 +445,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     }
 
     _selectionNeedsUpdate = YES;
-    [self _updateChangedSelection];
+    [self _updateChangedSelection:YES];
     [self _updateTapHighlight];
 }
 
@@ -453,6 +511,15 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     return YES;
 }
 
+- (BOOL)becomeFirstResponder
+{
+    BOOL didBecomeFirstResponder = [super becomeFirstResponder];
+    if (didBecomeFirstResponder)
+        [_textSelectionAssistant activateSelection];
+
+    return didBecomeFirstResponder;
+}
+
 - (BOOL)resignFirstResponder
 {
     // FIXME: Maybe we should call resignFirstResponder on the superclass
@@ -462,6 +529,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     _page->blurAssistedNode();
     [self _cancelInteraction];
     [_webSelectionAssistant resignedFirstResponder];
+    [_textSelectionAssistant deactivateSelection];
 
     return [super resignFirstResponder];
 }
@@ -542,6 +610,8 @@ static FloatQuad inflateQuad(const FloatQuad& quad, float inflateSize)
 - (void)_webTouchEvent:(const WebKit::NativeWebTouchEvent&)touchEvent preventsNativeGestures:(BOOL)preventsNativeGesture
 {
     if (preventsNativeGesture) {
+        _highlightLongPressCanClick = NO;
+
         _canSendTouchEventsAsynchronously = YES;
         [_touchEventGestureRecognizer setDefaultPrevented:YES];
     }
@@ -811,12 +881,6 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     }
 }
 
-- (void)_updatePositionInformation
-{
-    _hasValidPositionInformation = NO;
-    _page->requestPositionInformation(_positionInformation.point);
-}
-
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
 {
     CGPoint point = [gestureRecognizer locationInView:self];
@@ -945,19 +1009,22 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
 
     switch ([gestureRecognizer state]) {
     case UIGestureRecognizerStateBegan:
+        _highlightLongPressCanClick = YES;
         cancelPotentialTapIfNecessary(self);
         _page->tapHighlightAtPosition([gestureRecognizer startPoint], ++_latestTapHighlightID);
         _isTapHighlightIDValid = YES;
         break;
     case UIGestureRecognizerStateEnded:
-        if (!_positionInformation.clickableElementName.isEmpty()) {
+        if (_highlightLongPressCanClick && !_positionInformation.clickableElementName.isEmpty()) {
             [self _attemptClickAtLocation:[gestureRecognizer startPoint]];
             [self _finishInteraction];
         } else
             [self _cancelInteraction];
+        _highlightLongPressCanClick = NO;
         break;
     case UIGestureRecognizerStateCancelled:
         [self _cancelInteraction];
+        _highlightLongPressCanClick = NO;
         break;
     default:
         break;
@@ -1063,7 +1130,7 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
     if (![self isFirstResponder])
         [self becomeFirstResponder];
 
-    _page->process().send(Messages::WebPage::HandleTap(IntPoint(location)), _page->pageID());
+    _page->handleTap(location);
 }
 
 - (void)useSelectionAssistantWithMode:(UIWebSelectionMode)selectionMode
@@ -1086,7 +1153,8 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
             [_textSelectionAssistant setGestureRecognizers];
         }
 
-        [_textSelectionAssistant activateSelection];
+        if (self.isFirstResponder)
+            [_textSelectionAssistant activateSelection];
     }
 }
 
@@ -1170,13 +1238,11 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
     static NSMutableArray *plainTextTypes = nil;
     if (!plainTextTypes) {
         plainTextTypes = [[NSMutableArray alloc] init];
-        // FIXME: should add [plainTextTypes addObject:(id)kUTTypeURL];
-        // when we figure out how to share this type between WebCore and WebKit2
+        [plainTextTypes addObject:(id)kUTTypeURL];
         [plainTextTypes addObjectsFromArray:UIPasteboardTypeListString];
 
         richTypes = [[NSMutableArray alloc] init];
-        // FIXME: should add [richTypes addObject:(PasteboardTypes::WebArchivePboardType)];
-        // when we figure out how to share this type between WebCore and WebKit2
+        [richTypes addObject:WebArchivePboardType];
         [richTypes addObjectsFromArray:UIPasteboardTypeListImage];
         [richTypes addObjectsFromArray:plainTextTypes];
     }
@@ -1378,11 +1444,6 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 {
     _showingTextStyleOptions = NO;
     [_textSelectionAssistant hideTextStyleOptions];
-}
-
-- (void)_performAction:(SheetAction)action
-{
-    _page->performActionOnElement((uint32_t)action);
 }
 
 - (void)copy:(id)sender
@@ -2253,7 +2314,9 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 {
     if (event.type == WebEventKeyDown) {
         // FIXME: This is only for staging purposes.
-        if ([[UIKeyboardImpl sharedInstance] respondsToSelector:@selector(didHandleWebKeyEvent)])
+        if ([[UIKeyboardImpl sharedInstance] respondsToSelector:@selector(didHandleWebKeyEvent:)])
+            [[UIKeyboardImpl sharedInstance] didHandleWebKeyEvent:event];
+        else
             [[UIKeyboardImpl sharedInstance] didHandleWebKeyEvent];
     }
 }
@@ -2309,17 +2372,22 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
         NSString *characters = [event characters];
         if ([characters length] == 0)
             break;
+        UIKeyboardImpl *keyboard = [UIKeyboardImpl sharedInstance];
         switch ([characters characterAtIndex:0]) {
         case kWebBackspaceKey:
         case kWebDeleteKey:
-            [[UIKeyboardImpl sharedInstance] deleteFromInput];
+            // FIXME: remove deleteFromInput once UIKit adopts deleteFromInputWithFlags
+            if ([keyboard respondsToSelector:@selector(deleteFromInputWithFlags:)])
+                [keyboard deleteFromInputWithFlags:event.keyboardFlags];
+            else
+                [keyboard deleteFromInput];
             return YES;
 
         case kWebEnterKey:
         case kWebReturnKey:
             if (isCharEvent) {
                 // Map \r from HW keyboard to \n to match the behavior of the soft keyboard.
-                [[UIKeyboardImpl sharedInstance] addInputString:@"\n" withFlags:0];
+                [keyboard addInputString:@"\n" withFlags:0];
                 return YES;
             }
             return NO;
@@ -2330,7 +2398,7 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 
         default: {
             if (isCharEvent) {
-                [[UIKeyboardImpl sharedInstance] addInputString:event.characters withFlags:event.keyboardFlags];
+                [keyboard addInputString:event.characters withFlags:event.keyboardFlags];
                 return YES;
             }
             return NO;
@@ -2438,10 +2506,6 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 - (UITextGranularity)selectionGranularity
 {
     return UITextGranularityCharacter;
-}
-
-- (void)insertDictationResult:(NSArray *)dictationResult withCorrectionIdentifier:(id)correctionIdentifier
-{
 }
 
 // Should return an array of NSDictionary objects that key/value paries for the final text, correction identifier and
@@ -2652,8 +2716,19 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 
 - (void)_updateChangedSelection
 {
+    [self _updateChangedSelection:NO];
+}
+
+- (void)_updateChangedSelection:(BOOL)force
+{
     if (!_selectionNeedsUpdate)
         return;
+
+    WKSelectionDrawingInfo selectionDrawingInfo(_page->editorState());
+    if (!force && selectionDrawingInfo == _lastSelectionDrawingInfo)
+        return;
+
+    _lastSelectionDrawingInfo = selectionDrawingInfo;
 
     // FIXME: We need to figure out what to do if the selection is changed by Javascript.
     if (_textSelectionAssistant) {
@@ -2706,6 +2781,44 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 - (BOOL)isAnyTouchOverActiveArea:(NSSet *)touches
 {
     return YES;
+}
+
+#pragma mark - Implementation of WKActionSheetAssistantDelegate.
+
+- (const WebKit::InteractionInformationAtPosition&)positionInformationForActionSheetAssistant:(WKActionSheetAssistant *)assistant
+{
+    return _positionInformation;
+}
+
+- (void)updatePositionInformationForActionSheetAssistant:(WKActionSheetAssistant *)assistant
+{
+    _hasValidPositionInformation = NO;
+    _page->requestPositionInformation(_positionInformation.point);
+}
+
+- (void)actionSheetAssistant:(WKActionSheetAssistant *)assistant performAction:(WebKit::SheetAction)action
+{
+    _page->performActionOnElement((uint32_t)action);
+}
+
+- (void)actionSheetAssistant:(WKActionSheetAssistant *)assistant openElementAtLocation:(CGPoint)location
+{
+    [self _attemptClickAtLocation:location];
+}
+
+- (RetainPtr<NSArray>)actionSheetAssistant:(WKActionSheetAssistant *)assistant decideActionsForElement:(_WKActivatedElementInfo *)element defaultActions:(RetainPtr<NSArray>)defaultActions
+{
+    return _page->uiClient().actionsForElement(element, WTF::move(defaultActions));
+}
+
+- (void)actionSheetAssistant:(WKActionSheetAssistant *)assistant willStartInteractionWithElement:(_WKActivatedElementInfo *)element
+{
+    _page->startInteractionWithElementAtPosition(_positionInformation.point);
+}
+
+- (void)actionSheetAssistantDidStopInteraction:(WKActionSheetAssistant *)assistant
+{
+    _page->stopInteraction();
 }
 
 @end

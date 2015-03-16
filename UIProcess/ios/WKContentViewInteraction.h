@@ -28,12 +28,14 @@
 #import "WKContentView.h"
 
 #import "AssistedNodeInformation.h"
+#import "EditorState.h"
 #import "GestureTypes.h"
 #import "InteractionInformationAtPosition.h"
-#import "WKSyntheticClickTapGestureRecognizer.h"
+#import "WKActionSheetAssistant.h"
 #import "WKAirPlayRoutePicker.h"
 #import "WKFileUploadPanel.h"
 #import "WKFormPeripheral.h"
+#import "WKSyntheticClickTapGestureRecognizer.h"
 #import <UIKit/UITextInput_Private.h>
 #import <UIKit/UIView.h>
 #import <UIKit/UIWKSelectionAssistant.h>
@@ -72,6 +74,14 @@ typedef void (^UIWKAutocorrectionContextHandler)(UIWKAutocorrectionContext *auto
 typedef void (^UIWKDictationContextHandler)(NSString *selectedText, NSString *beforeText, NSString *afterText);
 
 namespace WebKit {
+struct WKSelectionDrawingInfo {
+    enum class SelectionType { None, Plugin, Range };
+    WKSelectionDrawingInfo();
+    explicit WKSelectionDrawingInfo(const EditorState&);
+    SelectionType type;
+    WebCore::IntRect caretRect;
+    Vector<WebCore::SelectionRect> selectionRects;
+};
 struct WKAutoCorrectionData {
     String fontName;
     CGFloat fontSize;
@@ -130,11 +140,14 @@ struct WKAutoCorrectionData {
 
     CGPoint _lastInteractionLocation;
 
+    WebKit::WKSelectionDrawingInfo _lastSelectionDrawingInfo;
+
     BOOL _isEditable;
     BOOL _showingTextStyleOptions;
     BOOL _hasValidPositionInformation;
     BOOL _isTapHighlightIDValid;
     BOOL _potentialTapInProgress;
+    BOOL _highlightLongPressCanClick;
     BOOL _hasTapHighlightForPotentialTap;
     BOOL _selectionNeedsUpdate;
     BOOL _shouldRestoreSelection;
@@ -145,7 +158,7 @@ struct WKAutoCorrectionData {
 
 @end
 
-@interface WKContentView (WKInteraction) <UIGestureRecognizerDelegate, UIWebTouchEventsGestureRecognizerDelegate, UITextInputPrivate, UIWebFormAccessoryDelegate, UIWKInteractionViewProtocol, WKFileUploadPanelDelegate>
+@interface WKContentView (WKInteraction) <UIGestureRecognizerDelegate, UIWebTouchEventsGestureRecognizerDelegate, UITextInputPrivate, UIWebFormAccessoryDelegate, UIWKInteractionViewProtocol, WKFileUploadPanelDelegate, WKActionSheetAssistantDelegate>
 
 @property (nonatomic, readonly) CGPoint lastInteractionLocation;
 @property (nonatomic, readonly) BOOL isEditable;
@@ -170,8 +183,6 @@ struct WKAutoCorrectionData {
 - (BOOL)_interpretKeyEvent:(WebIOSEvent *)theEvent isCharEvent:(BOOL)isCharEvent;
 - (void)_positionInformationDidChange:(const WebKit::InteractionInformationAtPosition&)info;
 - (void)_attemptClickAtLocation:(CGPoint)location;
-- (void)_updatePositionInformation;
-- (void)_performAction:(WebKit::SheetAction)action;
 - (void)_willStartScrollingOrZooming;
 - (void)_didScroll;
 - (void)_didEndScrollingOrZooming;

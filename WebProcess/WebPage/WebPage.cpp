@@ -100,6 +100,7 @@
 #include <WebCore/ArchiveResource.h>
 #include <WebCore/Chrome.h>
 #include <WebCore/ContextMenuController.h>
+#include <WebCore/DataTransfer.h>
 #include <WebCore/DatabaseManager.h>
 #include <WebCore/DocumentFragment.h>
 #include <WebCore/DocumentLoader.h>
@@ -145,6 +146,7 @@
 #include <WebCore/Settings.h>
 #include <WebCore/ShadowRoot.h>
 #include <WebCore/SharedBuffer.h>
+#include <WebCore/StyleProperties.h>
 #include <WebCore/SubframeLoader.h>
 #include <WebCore/SubstituteData.h>
 #include <WebCore/TextIterator.h>
@@ -326,6 +328,7 @@ WebPage::WebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
     , m_systemWebGLPolicy(WebGLAllowCreation)
 #endif
     , m_pageOverlayController(*this)
+    , m_mainFrameProgressCompleted(false)
 {
     ASSERT(m_pageID);
     // FIXME: This is a non-ideal location for this Setting and
@@ -762,10 +765,17 @@ EditorState WebPage::editorState() const
                 result.typingAttributes |= AttributeBold;
             if (traits & kCTFontTraitItalic)
                 result.typingAttributes |= AttributeItalics;
-            
-            if (style->textDecorationsInEffect() & TextDecorationUnderline)
-                result.typingAttributes |= AttributeUnderline;
-            
+
+            RefPtr<EditingStyle> typingStyle = frame.selection().typingStyle();
+            if (typingStyle && typingStyle->style()) {
+                String value = typingStyle->style()->getPropertyValue(CSSPropertyWebkitTextDecorationsInEffect);
+                if (value.contains("underline"))
+                    result.typingAttributes |= AttributeUnderline;
+            } else {
+                if (style->textDecorationsInEffect() & TextDecorationUnderline)
+                    result.typingAttributes |= AttributeUnderline;
+            }
+
             if (nodeToRemove)
                 nodeToRemove->remove(ASSERT_NO_EXCEPTION);
         }
@@ -1087,6 +1097,18 @@ void WebPage::loadWebArchiveData(const IPC::DataReference& webArchiveData, IPC::
     loadDataImpl(0, sharedBuffer, ASCIILiteral("application/x-webarchive"), ASCIILiteral("utf-16"), blankURL(), URL(), decoder);
 }
 
+void WebPage::navigateToURLWithSimulatedClick(const String& url, IntPoint documentPoint, IntPoint screenPoint)
+{
+    Frame* mainFrame = m_mainFrame->coreFrame();
+    Document* mainFrameDocument = mainFrame->document();
+    if (!mainFrameDocument)
+        return;
+
+    const int singleClick = 1;
+    RefPtr<MouseEvent> mouseEvent = MouseEvent::create(eventNames().clickEvent, true, true, currentTime(), nullptr, singleClick, screenPoint.x(), screenPoint.y(), documentPoint.x(), documentPoint.y(), false, false, false, false, 0, nullptr, nullptr);
+    mainFrame->loader().urlSelected(mainFrameDocument->completeURL(url), emptyString(), mouseEvent.release(), LockHistory::No, LockBackForwardList::No, ShouldSendReferrer::MaybeSendReferrer);
+}
+
 void WebPage::stopLoadingFrame(uint64_t frameID)
 {
     WebFrame* frame = WebProcess::shared().webFrame(frameID);
@@ -1350,7 +1372,7 @@ void WebPage::setPageAndTextZoomFactors(double pageZoomFactor, double textZoomFa
     return frame->setPageAndTextZoomFactors(static_cast<float>(pageZoomFactor), static_cast<float>(textZoomFactor));
 }
 
-void WebPage::windowScreenDidChange(uint64_t displayID)
+void WebPage::windowScreenDidChange(uint32_t displayID)
 {
     m_page->chrome().windowScreenDidChange(static_cast<PlatformDisplayID>(displayID));
 }
@@ -1712,6 +1734,8 @@ PassRefPtr<WebImage> WebPage::snapshotNode(WebCore::Node& node, SnapshotOptions 
 
     LayoutRect topLevelRect;
     IntRect snapshotRect = pixelSnappedIntRect(node.renderer()->paintingRootRect(topLevelRect));
+    if (snapshotRect.isEmpty())
+        return nullptr;
 
     double scaleFactor = 1;
     IntSize snapshotSize = snapshotRect.size();
@@ -2661,6 +2685,7 @@ void WebPage::updatePreferences(const WebPreferencesStore& store)
     settings.setJavaScriptCanOpenWindowsAutomatically(store.getBoolValueForKey(WebPreferencesKey::javaScriptCanOpenWindowsAutomaticallyKey()));
     settings.setForceFTPDirectoryListings(store.getBoolValueForKey(WebPreferencesKey::forceFTPDirectoryListingsKey()));
     settings.setDNSPrefetchingEnabled(store.getBoolValueForKey(WebPreferencesKey::dnsPrefetchingEnabledKey()));
+    settings.setFeatureCounterEnabled(store.getBoolValueForKey(WebPreferencesKey::featureCounterEnabledKey()));
 #if ENABLE(WEB_ARCHIVE)
     settings.setWebArchiveDebugModeEnabled(store.getBoolValueForKey(WebPreferencesKey::webArchiveDebugModeEnabledKey()));
 #endif
@@ -3904,19 +3929,22 @@ void WebPage::addResourceRequest(unsigned long identifier, const WebCore::Resour
     if (!request.url().protocolIsInHTTPFamily())
         return;
 
-    ASSERT(!m_networkResourceRequestIdentifiers.contains(identifier));
-    bool wasEmpty = m_networkResourceRequestIdentifiers.isEmpty();
-    m_networkResourceRequestIdentifiers.add(identifier);
+    if (m_mainFrameProgressCompleted && !ScriptController::processingUserGesture())
+        return;
+
+    ASSERT(!m_trackedNetworkResourceRequestIdentifiers.contains(identifier));
+    bool wasEmpty = m_trackedNetworkResourceRequestIdentifiers.isEmpty();
+    m_trackedNetworkResourceRequestIdentifiers.add(identifier);
     if (wasEmpty)
         send(Messages::WebPageProxy::SetNetworkRequestsInProgress(true));
 }
 
 void WebPage::removeResourceRequest(unsigned long identifier)
 {
-    if (!m_networkResourceRequestIdentifiers.remove(identifier))
+    if (!m_trackedNetworkResourceRequestIdentifiers.remove(identifier))
         return;
 
-    if (m_networkResourceRequestIdentifiers.isEmpty())
+    if (m_trackedNetworkResourceRequestIdentifiers.isEmpty())
         send(Messages::WebPageProxy::SetNetworkRequestsInProgress(false));
 }
 
@@ -4470,6 +4498,7 @@ void WebPage::didCommitLoad(WebFrame* frame)
     m_firstLayerTreeTransactionIDAfterDidCommitLoad = toRemoteLayerTreeDrawingArea(*m_drawingArea).nextTransactionID();
     m_userHasChangedPageScaleFactor = false;
     m_estimatedLatency = std::chrono::milliseconds(1000 / 60);
+    cancelPotentialTap();
 
     WebProcess::shared().eventDispatcher().clearQueuedTouchEventsForPage(*this);
 
@@ -4577,7 +4606,7 @@ void WebPage::determinePrimarySnapshottedPlugIn()
     HTMLPlugInImageElement* candidatePlugIn = nullptr;
     unsigned candidatePlugInArea = 0;
 
-    for (Frame* frame = &mainFrame; frame; frame = frame->tree().traverseNext()) {
+    for (Frame* frame = &mainFrame; frame; frame = frame->tree().traverseNextRendered()) {
         if (!frame->loader().subframeLoader().containsPlugins())
             continue;
         if (!frame->document() || !frame->view())

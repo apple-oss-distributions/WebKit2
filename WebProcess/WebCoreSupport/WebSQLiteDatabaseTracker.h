@@ -23,15 +23,46 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import <WebKit/WKFoundation.h>
+#ifndef WebSQLiteDatabaseTracker_h
+#define WebSQLiteDatabaseTracker_h
 
-#if WK_API_ENABLED
+#include "WebProcessSupplement.h"
+#include <WebCore/HysteresisActivity.h>
+#include <WebCore/SQLiteDatabaseTrackerClient.h>
+#include <wtf/Noncopyable.h>
 
-typedef NS_OPTIONS(NSUInteger, WKRenderingProgressEvents)
-{
-    WKRenderingProgressEventFirstLayout = 1 << 0,
-    WKRenderingProgressEventFirstVisuallyNonEmptyLayout = 1 << 1,
-    WKRenderingProgressEventFirstPaintWithSignificantArea = 1 << 2,
+#if ENABLE(SQL_DATABASE)
+
+namespace WebKit {
+
+class WebProcess;
+
+class WebSQLiteDatabaseTracker : public WebCore::SQLiteDatabaseTrackerClient, public WebProcessSupplement {
+    WTF_MAKE_NONCOPYABLE(WebSQLiteDatabaseTracker);
+public:
+    explicit WebSQLiteDatabaseTracker(WebProcess*);
+
+    static const char* supplementName();
+
+    // WebSupplement
+    virtual void initialize(const WebProcessCreationParameters&) override;
+
+    // WebCore::SQLiteDatabaseTrackerClient
+    virtual void willBeginFirstTransaction() override;
+    virtual void didFinishLastTransaction() override;
+
+private:
+    // WebCore::HysteresisActivity
+    friend class WebCore::HysteresisActivity<WebSQLiteDatabaseTracker>;
+    void started();
+    void stopped();
+
+    WebProcess* m_process;
+    WebCore::HysteresisActivity<WebSQLiteDatabaseTracker> m_hysteresis;
 };
 
-#endif
+} // namespace WebKit
+
+#endif // ENABLE(SQL_DATABASE)
+
+#endif // WebSQLiteDatabaseTracker_h

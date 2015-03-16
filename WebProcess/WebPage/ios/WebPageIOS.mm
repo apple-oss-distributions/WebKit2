@@ -52,6 +52,7 @@
 #import <WebCore/DNS.h>
 #import <WebCore/Element.h>
 #import <WebCore/EventHandler.h>
+#import <WebCore/FeatureCounter.h>
 #import <WebCore/FloatQuad.h>
 #import <WebCore/FocusController.h>
 #import <WebCore/Frame.h>
@@ -498,8 +499,13 @@ void WebPage::completeSyntheticClick(Node* nodeRespondingToClick, const WebCore:
         send(Messages::WebPageProxy::DidNotHandleTapAsClick(roundedIntPoint(location)));
 }
 
-void WebPage::handleTap(const IntPoint& point)
+void WebPage::handleTap(const IntPoint& point, uint64_t lastLayerTreeTranscationId)
 {
+    if (lastLayerTreeTranscationId < m_firstLayerTreeTransactionIDAfterDidCommitLoad) {
+        send(Messages::WebPageProxy::DidNotHandleTapAsClick(roundedIntPoint(m_potentialTapLocation)));
+        return;
+    }
+
     FloatPoint adjustedPoint;
     Node* nodeRespondingToClick = m_page->mainFrame().nodeRespondingToClickEvents(point, adjustedPoint);
     handleSyntheticClick(nodeRespondingToClick, adjustedPoint);
@@ -544,9 +550,9 @@ void WebPage::potentialTapAtPosition(uint64_t requestID, const WebCore::FloatPoi
     sendTapHighlightForNodeIfNecessary(requestID, m_potentialTapNode.get());
 }
 
-void WebPage::commitPotentialTap()
+void WebPage::commitPotentialTap(uint64_t lastLayerTreeTranscationId)
 {
-    if (!m_potentialTapNode || !m_potentialTapNode->renderer()) {
+    if (!m_potentialTapNode || !m_potentialTapNode->renderer() || lastLayerTreeTranscationId < m_firstLayerTreeTransactionIDAfterDidCommitLoad) {
         commitPotentialTapFailed();
         return;
     }
@@ -688,6 +694,7 @@ static FloatQuad innerFrameQuad(Frame* frame, Node* assistedNode)
 
 static IntPoint constrainPoint(const IntPoint& point, Frame* frame, Node* assistedNode)
 {
+    ASSERT(!assistedNode || &assistedNode->document() == frame->document());
     const int DEFAULT_CONSTRAIN_INSET = 2;
     IntRect innerFrame = innerFrameQuad(frame, assistedNode).enclosingBoundingBox();
     IntPoint constrainedPoint = point;
@@ -891,9 +898,11 @@ void WebPage::selectWithGesture(const IntPoint& point, uint32_t granularity, uin
         switch (wkGestureState) {
         case GestureRecognizerState::Began:
             range = wordRangeFromPosition(position);
-            m_currentWordRange = Range::create(*frame.document(), range->startPosition(), range->endPosition());
+            m_currentWordRange = range ? Range::create(*frame.document(), range->startPosition(), range->endPosition()) : nullptr;
             break;
         case GestureRecognizerState::Changed:
+            if (!m_currentWordRange)
+                break;
             range = Range::create(*frame.document(), m_currentWordRange->startPosition(), m_currentWordRange->endPosition());
             if (position < range->startPosition())
                 range->setStart(position.deepEquivalent(), ASSERT_NO_EXCEPTION);
@@ -1268,8 +1277,10 @@ PassRefPtr<Range> WebPage::contractedRangeFromHandle(Range* currentRange, Select
 
         IntRect copyRect = selectionBoxForRange(newRange.get());
         if (copyRect.isEmpty()) {
-            bestRange = rangeForBlockAtPoint(testPoint);
-            break;
+            // If the new range is an empty rectangle, we try the block at the current point
+            // and see if that has a rectangle that is a better choice.
+            newRange = rangeForBlockAtPoint(testPoint);
+            copyRect = selectionBoxForRange(newRange.get());
         }
         bool isBetterChoice;
         switch (handlePosition) {
@@ -1703,6 +1714,8 @@ void WebPage::applyAutocorrection(const String& correction, const String& origin
 void WebPage::executeEditCommandWithCallback(const String& commandName, uint64_t callbackID)
 {
     executeEditCommand(commandName);
+    if (commandName == "toggleBold" || commandName == "toggleItalic" || commandName == "toggleUnderline")
+        send(Messages::WebPageProxy::EditorStateChanged(editorState()));
     send(Messages::WebPageProxy::VoidCallback(callbackID));
 }
 
@@ -1997,6 +2010,9 @@ static inline bool isAssistableNode(Node* node)
 
 static inline Element* nextFocusableElement(Node* startNode, Page* page, bool isForward)
 {
+    if (!startNode || !startNode->isElementNode())
+        return nullptr;
+
     RefPtr<KeyboardEvent> key = KeyboardEvent::create();
 
     Element* nextElement = toElement(startNode);
@@ -2139,6 +2155,16 @@ void WebPage::getAssistedNodeInformation(AssistedNodeInformation& information)
         information.isAutocorrect = true;   // FIXME: Should we look at the attribute?
         information.autocapitalizeType = WebAutocapitalizeTypeSentences; // FIXME: Should we look at the attribute?
         information.isReadOnly = false;
+    }
+}
+
+void WebPage::resetAssistedNodeForFrame(WebFrame* frame)
+{
+    if (!m_assistedNode)
+        return;
+    if (m_assistedNode->document().frame() == frame->coreFrame()) {
+        send(Messages::WebPageProxy::StopAssistingNode());
+        m_assistedNode = nullptr;
     }
 }
 
@@ -2587,6 +2613,7 @@ void WebPage::updateVisibleContentRects(const VisibleContentRectUpdateInfo& visi
 
 void WebPage::willStartUserTriggeredZooming()
 {
+    FEATURE_COUNTER_INCREMENT_KEY(m_page.get(), FeatureCounterWebViewUserZoomedKey);
     m_userHasChangedPageScaleFactor = true;
 }
 

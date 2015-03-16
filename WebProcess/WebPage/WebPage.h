@@ -348,7 +348,7 @@ public:
     double pageZoomFactor() const;
     void setPageZoomFactor(double);
     void setPageAndTextZoomFactors(double pageZoomFactor, double textZoomFactor);
-    void windowScreenDidChange(uint64_t);
+    void windowScreenDidChange(uint32_t);
 
     void scalePage(double scale, const WebCore::IntPoint& origin);
     void scalePageInViewCoordinates(double scale, WebCore::IntPoint centerInViewCoordinates);
@@ -468,9 +468,9 @@ public:
     bool allowsUserScaling() const;
     bool hasStablePageScaleFactor() const { return m_hasStablePageScaleFactor; }
 
-    void handleTap(const WebCore::IntPoint&);
+    void handleTap(const WebCore::IntPoint&, uint64_t lastLayerTreeTranscationId);
     void potentialTapAtPosition(uint64_t requestID, const WebCore::FloatPoint&);
-    void commitPotentialTap();
+    void commitPotentialTap(uint64_t lastLayerTreeTranscationId);
     void commitPotentialTapFailed();
     void cancelPotentialTap();
     void tapHighlightAtPosition(uint64_t requestID, const WebCore::FloatPoint&);
@@ -505,6 +505,7 @@ public:
     void setAssistedNodeValue(const String&);
     void setAssistedNodeValueAsNumber(double);
     void setAssistedNodeSelectedIndex(uint32_t index, bool allowMultipleSelection);
+    void resetAssistedNodeForFrame(WebFrame*);
     WebCore::IntRect rectForElementAtInteractionLocation();
     void updateSelectionAppearance();
 
@@ -845,6 +846,7 @@ public:
 
     void willChangeCurrentHistoryItemForMainFrame();
 
+    void setMainFrameProgressCompleted(bool completed) { m_mainFrameProgressCompleted = completed; }
 private:
     WebPage(uint64_t pageID, const WebPageCreationParameters&);
 
@@ -900,6 +902,7 @@ private:
     void loadAlternateHTMLString(const String& htmlString, const String& baseURL, const String& unreachableURL, IPC::MessageDecoder&);
     void loadPlainTextString(const String&, IPC::MessageDecoder&);
     void loadWebArchiveData(const IPC::DataReference&, IPC::MessageDecoder&);
+    void navigateToURLWithSimulatedClick(const String& url, WebCore::IntPoint documentPoint, WebCore::IntPoint screenPoint);
     void reload(uint64_t navigationID, bool reloadFromOrigin, const SandboxExtension::Handle&);
     void goForward(uint64_t navigationID, uint64_t);
     void goBack(uint64_t navigationID, uint64_t);
@@ -1212,7 +1215,7 @@ private:
 
     unsigned m_cachedPageCount;
 
-    HashSet<unsigned long> m_networkResourceRequestIdentifiers;
+    HashSet<unsigned long> m_trackedNetworkResourceRequestIdentifiers;
 
     WebCore::IntSize m_minimumLayoutSize;
     bool m_autoSizingShouldExpandToViewHeight;
@@ -1285,6 +1288,8 @@ private:
 #endif
 
     PageOverlayController m_pageOverlayController;
+
+    bool m_mainFrameProgressCompleted;
 };
 
 } // namespace WebKit

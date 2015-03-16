@@ -23,15 +23,60 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import <WebKit/WKFoundation.h>
+#include "config.h"
+#include "WebSQLiteDatabaseTracker.h"
 
-#if WK_API_ENABLED
+#if ENABLE(SQL_DATABASE)
 
-typedef NS_OPTIONS(NSUInteger, WKRenderingProgressEvents)
+#include "WebProcess.h"
+#include "WebProcessProxyMessages.h"
+#include <WebCore/SQLiteDatabaseTracker.h>
+#include <wtf/MainThread.h>
+
+using namespace WebCore;
+
+namespace WebKit {
+
+const char* WebSQLiteDatabaseTracker::supplementName()
 {
-    WKRenderingProgressEventFirstLayout = 1 << 0,
-    WKRenderingProgressEventFirstVisuallyNonEmptyLayout = 1 << 1,
-    WKRenderingProgressEventFirstPaintWithSignificantArea = 1 << 2,
-};
+    return "WebSQLiteDatabaseTracker";
+}
 
-#endif
+WebSQLiteDatabaseTracker::WebSQLiteDatabaseTracker(WebProcess* process)
+    : m_process(process)
+    , m_hysteresis(*this)
+{
+}
+
+void WebSQLiteDatabaseTracker::initialize(const WebProcessCreationParameters&)
+{
+    SQLiteDatabaseTracker::setClient(this);
+}
+
+void WebSQLiteDatabaseTracker::willBeginFirstTransaction()
+{
+    callOnMainThread([this] {
+        m_hysteresis.start();
+    });
+}
+
+void WebSQLiteDatabaseTracker::didFinishLastTransaction()
+{
+    callOnMainThread([this] {
+        m_hysteresis.stop();
+    });
+}
+
+void WebSQLiteDatabaseTracker::started()
+{
+    m_process->parentProcessConnection()->send(Messages::WebProcessProxy::SetIsHoldingLockedFiles(true), 0);
+}
+
+void WebSQLiteDatabaseTracker::stopped()
+{
+    m_process->parentProcessConnection()->send(Messages::WebProcessProxy::SetIsHoldingLockedFiles(false), 0);
+}
+
+} // namespace WebKit
+
+#endif // ENABLE(SQL_DATABASE)

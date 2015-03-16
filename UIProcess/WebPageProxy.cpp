@@ -280,6 +280,7 @@ WebPageProxy::WebPageProxy(PageClient& pageClient, WebProcessProxy& process, uin
     , m_dynamicViewportSizeUpdateWaitingForTarget(false)
     , m_dynamicViewportSizeUpdateWaitingForLayerTreeCommit(false)
     , m_dynamicViewportSizeUpdateLayerTreeTransactionID(0)
+    , m_layerTreeTransactionIdAtLastTouchStart(0)
 #endif
     , m_geolocationPermissionRequestManager(*this)
     , m_notificationPermissionRequestManager(*this)
@@ -842,6 +843,18 @@ void WebPageProxy::loadWebArchiveData(API::Data* webArchiveData, API::Object* us
         reattachToWebProcess();
 
     m_process->send(Messages::WebPage::LoadWebArchiveData(webArchiveData->dataReference(), WebContextUserMessageEncoder(userData, process())), m_pageID);
+    m_process->responsivenessTimer()->start();
+}
+
+void WebPageProxy::navigateToURLWithSimulatedClick(const String& url, IntPoint documentPoint, IntPoint screenPoint)
+{
+    if (m_isClosed)
+        return;
+
+    if (!isValid())
+        reattachToWebProcess();
+
+    m_process->send(Messages::WebPage::NavigateToURLWithSimulatedClick(url, documentPoint, screenPoint), m_pageID);
     m_process->responsivenessTimer()->start();
 }
 
@@ -1663,8 +1676,10 @@ void WebPageProxy::handleTouchEventSynchronously(const NativeWebTouchEvent& even
     if (!isValid())
         return;
 
-    if (event.type() == WebEvent::TouchStart)
+    if (event.type() == WebEvent::TouchStart) {
         m_isTrackingTouchEvents = shouldStartTrackingTouchEvents(event);
+        m_layerTreeTransactionIdAtLastTouchStart = toRemoteLayerTreeDrawingAreaProxy(*drawingArea()).lastCommittedLayerTreeTransactionID();
+    }
 
     if (!m_isTrackingTouchEvents)
         return;
@@ -2708,14 +2723,20 @@ void WebPageProxy::didSameDocumentNavigationForFrame(uint64_t frameID, uint64_t 
 
     auto transaction = m_pageLoadState.transaction();
 
-    if (frame->isMainFrame())
+    bool isMainFrame = frame->isMainFrame();
+    if (isMainFrame)
         m_pageLoadState.didSameDocumentNavigation(transaction, url);
 
     m_pageLoadState.clearPendingAPIRequestURL(transaction);
     frame->didSameDocumentNavigation(url);
 
     m_pageLoadState.commitChanges();
-    m_loaderClient->didSameDocumentNavigationForFrame(this, frame, navigationID, static_cast<SameDocumentNavigationType>(opaqueSameDocumentNavigationType), userData.get());
+
+    SameDocumentNavigationType navigationType = static_cast<SameDocumentNavigationType>(opaqueSameDocumentNavigationType);
+    m_loaderClient->didSameDocumentNavigationForFrame(this, frame, navigationID, navigationType, userData.get());
+
+    if (isMainFrame)
+        m_pageClient.didSameDocumentNavigationForMainFrame(navigationType);
 }
 
 void WebPageProxy::didReceiveTitleForFrame(uint64_t frameID, const String& title, IPC::MessageDecoder& decoder)
@@ -3003,6 +3024,16 @@ void WebPageProxy::createNewPage(uint64_t frameID, const ResourceRequest& reques
 void WebPageProxy::showPage()
 {
     m_uiClient->showPage(this);
+}
+
+void WebPageProxy::didEnterFullscreen()
+{
+    m_uiClient->didEnterFullscreen(this);
+}
+
+void WebPageProxy::didExitFullscreen()
+{
+    m_uiClient->didExitFullscreen(this);
 }
 
 void WebPageProxy::closePage(bool stopResponsivenessTimer)
@@ -4375,6 +4406,7 @@ void WebPageProxy::resetState(ResetStateReason resetStateReason)
     m_dynamicViewportSizeUpdateWaitingForTarget = false;
     m_dynamicViewportSizeUpdateWaitingForLayerTreeCommit = false;
     m_dynamicViewportSizeUpdateLayerTreeTransactionID = 0;
+    m_layerTreeTransactionIdAtLastTouchStart = 0;
 #endif
 
     CallbackBase::Error error;
