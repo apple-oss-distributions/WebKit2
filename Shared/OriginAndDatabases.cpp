@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011, 2013 Apple Inc. All rights reserved.
+ * Copyright (C) 2010 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,39 +23,39 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef WebOriginDataManager_h
-#define WebOriginDataManager_h
+#include "config.h"
+#include "OriginAndDatabases.h"
 
-#include "MessageReceiver.h"
-#include "WKOriginDataManager.h"
-#include <wtf/HashMap.h>
-#include <wtf/Noncopyable.h>
-#include <wtf/text/WTFString.h>
+#if ENABLE(SQL_DATABASE)
+
+#include "WebCoreArgumentCoders.h"
+
+using namespace WebCore;
 
 namespace WebKit {
 
-class ChildProcess;
-class WebOriginDataManagerSupplement;
-struct SecurityOriginData;
+void OriginAndDatabases::encode(IPC::ArgumentEncoder& encoder) const
+{
+    encoder << originIdentifier;
+    encoder << originQuota;
+    encoder << originUsage;
+    encoder << databases;
+}
 
-class WebOriginDataManager : public IPC::MessageReceiver {
-    WTF_MAKE_NONCOPYABLE(WebOriginDataManager);
-public:
-    WebOriginDataManager(ChildProcess&, WebOriginDataManagerSupplement&);
+bool OriginAndDatabases::decode(IPC::ArgumentDecoder& decoder, OriginAndDatabases& originAndDatabases)
+{
+    if (!decoder.decode(originAndDatabases.originIdentifier))
+        return false;
+    if (!decoder.decode(originAndDatabases.originQuota))
+        return false;
+    if (!decoder.decode(originAndDatabases.originUsage))
+        return false;
+    if (!decoder.decode(originAndDatabases.databases))
+        return false;
 
-private:
-    void getOrigins(WKOriginDataTypes, uint64_t callbackID);
-    void deleteEntriesForOrigin(WKOriginDataTypes, const SecurityOriginData&, uint64_t callbackID);
-    void deleteEntriesModifiedBetweenDates(WKOriginDataTypes, double startDate, double endDate, uint64_t callbackID);
-    void deleteAllEntries(WKOriginDataTypes, uint64_t callbackID);
-
-    // IPC::MessageReceiver
-    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
-
-    ChildProcess& m_childProcess;
-    WebOriginDataManagerSupplement& m_supplement;
-};
+    return true;
+}
 
 } // namespace WebKit
 
-#endif // WebOriginDataManager_h
+#endif // ENABLE(SQL_DATABASE)
