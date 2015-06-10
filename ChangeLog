@@ -1,18 +1,201 @@
-2015-03-16  Babak Shafiei  <bshafiei@apple.com>
+2015-06-08  Babak Shafiei  <bshafiei@apple.com>
 
-        Merge patch for rdar://problem/20155503.
+        Merge r183682.
 
-    2015-03-13  Enrica Casucci  <enrica@apple.com>
+    2015-05-01  Brady Eidson  <beidson@apple.com>
 
-            Webkit crash in WebKit::nextFocusableElement() when typing TAB on external keyboard
-            rdar://problem/20155503
+            Add API to disable meta refreshes.
+            <rdar://problem/20333198> and https://bugs.webkit.org/show_bug.cgi?id=144269
 
-            Reviewed by David Kilzer.
+            Reviewed by Alexey Proskuryakov.
 
-            Adding null check!
+            Add a preference to enable/disable meta refreshes, enabled by default.
+
+            * Shared/WebPreferencesDefinitions.h:
+            * UIProcess/API/C/WKPreferences.cpp:
+            (WKPreferencesSetMetaRefreshEnabled):
+            (WKPreferencesGetMetaRefreshEnabled):
+            (WKPreferencesGetIgnoreViewportScalingConstraints): Deleted.
+            * UIProcess/API/C/WKPreferencesRefPrivate.h:
+            * WebProcess/InjectedBundle/InjectedBundle.cpp:
+            (WebKit::InjectedBundle::overrideBoolPreferenceForTestRunner):
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::updatePreferences):
+
+2015-04-21  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r182162
+
+    2015-03-30  Enrica Casucci  <enrica@apple.com> 
+
+        [iOS] WebContent crashing at WebCore: WebCore::Range::collectSelectionRects. 
+        https://bugs.webkit.org/show_bug.cgi?id=143234 
+        <rdar://problem/18571345> 
+
+        Reviewed by Tim Horton. 
+
+        This is a speculative fix that adds a null check before referencing the range. 
+        In both places where the check has been added the range returned by the call 
+        that should create it could be null. 
+
+        * WebProcess/WebPage/WebPage.cpp: 
+        (WebKit::WebPage::editorState):
+
+2015-04-21  Babak Shafiei  <bshafiei@apple.com>
+
+        Merge r182285
+
+    2015-04-02  Alexey Proskuryakov  <ap@apple.com>
+
+            Make checkURLReceivedFromWebProcess not rely on details of platform URL implementation.
+            https://bugs.webkit.org/show_bug.cgi?id=143222
+            rdar://problem/19978997
+
+            Reviewed by Sam Weinig.
+
+            * UIProcess/WebProcessProxy.cpp:
+            (WebKit::WebProcessProxy::checkURLReceivedFromWebProcess):
+
+2015-04-20  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r181991
+
+    2015-03-25  Chris Dumez  <cdumez@apple.com>
+
+            [WK2] WebFrameLoaderClient::dispatchDecidePolicyForResponse() should always call the FramePolicyFunction
+            https://bugs.webkit.org/show_bug.cgi?id=143036
+            <rdar://problem/20252438>
+            <rdar://problem/13811738>
+
+            Reviewed by Alexey Proskuryakov.
+
+            WebFrameLoaderClient::dispatchDecidePolicyForResponse() should always
+            call the FramePolicyFunction. Previously, it would fail to do in 2
+            cases:
+            - m_frame->page() returns null
+            or
+            - webPage->sendSync() returns false
+
+            If the FramePolicyFunction is not called, we will fail to clear the
+            callback in the PolicyChecker and
+            DocumentLoader::continueAfterContentPolicy() will not be called.
+
+            DocumentLoader::continueAfterContentPolicy() is in charge of resetting
+            m_waitingForContentPolicy flag to false. This could therefore explain
+            the following assertion being hit in DocumentLoader::detachFromFrame()
+            (see <rdar://problem/20252438>):
+            RELEASE_ASSERT(!m_waitingForContentPolicy)
+
+            Also, as the PolicyChecker callback is not cleared, it could make it
+            possible for DocumentLoader::continueAfterContentPolicy() to be called
+            *after* the load is finished, when later canceling the PolicyCallback:
+            FrameLoader::stopAllLoaders()
+             -> PolicyChecker::stopCheck()
+              -> PolicyCallback::cancel()
+               -> DocumentLoader::continueAfterContentPolicy(PolicyIgnore)
+
+            Calling continueAfterContentPolicy(PolicyIgnore) after the load is
+            finished would be bad and could explain some of the crashes we've seen
+            in DocumentLoader::continueAfterContentPolicy() ->
+            DocumentLoader:: stopLoadingForPolicyChange() (see
+            <rdar://problem/13811738>).
+
+            This patch also applies the same fix to
+            dispatchDecidePolicyForNewWindowAction() and
+            dispatchDecidePolicyForNavigationAction() as they use the same pattern.
+
+            * WebProcess/WebCoreSupport/WebFrameLoaderClient.cpp:
+            (WebKit::WebFrameLoaderClient::dispatchDecidePolicyForResponse):
+            (WebKit::WebFrameLoaderClient::dispatchDecidePolicyForNewWindowAction):
+            (WebKit::WebFrameLoaderClient::dispatchDecidePolicyForNavigationAction):
+
+2015-04-20  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r181919
+
+    2015-03-24  Enrica Casucci  <enrica@apple.com>
+
+            [iOS] Remove unused keyboard code in WKSelectPopover class.
+            https://bugs.webkit.org/show_bug.cgi?id=143021
+
+            Reviewed by Joseph Pecoraro.
+
+            WKSelectPopover created an instance of UIKeyboard that was
+            initialized in initWithView but never used. Removing the
+            obsolete code.
+
+            * UIProcess/ios/forms/WKFormSelectPopover.mm:
+            (-[WKSelectPopover initWithView:hasGroups:]):
+
+2015-04-20  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r181869
+
+    2015-03-23  Enrica Casucci  <enrica@apple.com>
+
+            [iOS] WebContent crash attempting to select text with a gesture at RenderObject::absoluteBoundingBoxRect.
+            https://bugs.webkit.org/show_bug.cgi?id=142913
+            rdar://problem/16400033
+
+            Reviewed by Sam Weinig.
+
+            When looking for the best candidate range at the given position,
+            we should skip nodes that don't have a renderer.
+            This is a speculative fix.
 
             * WebProcess/WebPage/ios/WebPageIOS.mm:
-            (WebKit::nextFocusableElement):
+            (WebKit::WebPage::rangeForWebSelectionAtPosition):
+
+2015-04-20  Lucas Forschler  <lforschler@apple.com>
+
+        Merge r181656 & r182985.
+
+    2015-04-18  Simon Fraser  <simon.fraser@apple.com>
+
+            REGRESSION (r181656): Animated tiled layers are missing content
+            https://bugs.webkit.org/show_bug.cgi?id=143911
+            rdar://problem/20596328
+
+            Reviewed by Darin Adler.
+        
+            After r181656, all requestAnimationFrame was falling back to timers, and not
+            using the platform's DisplayRefreshMonitor, because of a Nullopt vs nullptr
+            fumble.
+        
+            Replace this confusing Optional<> code with simpler code that just forces the
+            clients to make a DisplayRefreshMonitor if they can, first asking
+            ChromeClient, and then falling back to createDefaultDisplayRefreshMonitor().
+        
+            Make lots of things into references, and use C++11 initialization in some places.
+
+            * WebProcess/WebCoreSupport/WebChromeClient.cpp:
+            (WebKit::WebChromeClient::createDisplayRefreshMonitor):
+            * WebProcess/WebCoreSupport/WebChromeClient.h:
+
+    2015-03-17  Timothy Horton  <timothy_horton@apple.com>
+
+            Reproducible null deref under ScriptedAnimationController::createDisplayRefreshMonitor
+            https://bugs.webkit.org/show_bug.cgi?id=142776
+            <rdar://problem/18921338>
+
+            Reviewed by Alexey Proskuryakov.
+
+            * WebProcess/WebCoreSupport/WebChromeClient.cpp:
+            (WebKit::WebChromeClient::createDisplayRefreshMonitor):
+            * WebProcess/WebCoreSupport/WebChromeClient.h:
+            Adjust to the new signature.
+
+2015-03-13  Enrica Casucci  <enrica@apple.com>
+
+        Webkit crash in WebKit::nextFocusableElement() when typing TAB on external keyboard
+        rdar://problem/20155503
+
+        Reviewed by David Kilzer.
+
+        Adding null check!
+
+        * WebProcess/WebPage/ios/WebPageIOS.mm:
+        (WebKit::nextFocusableElement):
 
 2015-03-12  Babak Shafiei  <bshafiei@apple.com>
 
