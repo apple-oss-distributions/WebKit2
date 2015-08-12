@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -38,10 +38,19 @@
 #include <wtf/text/CString.h>
 #include <wtf/text/StringHash.h>
 
+#if PLATFORM(COCOA)
+#include "WebHitTestResult.h"
+#endif
+
+#if PLUGIN_ARCHITECTURE(X11)
+#include <WebCore/XUniqueResource.h>
+#endif
+
 namespace WebCore {
-    class HTTPHeaderMap;
-    class ProtectionSpace;
-    class SharedBuffer;
+class MachSendRight;
+class HTTPHeaderMap;
+class ProtectionSpace;
+class SharedBuffer;
 }
 
 OBJC_CLASS WKNPAPIPlugInContainer;
@@ -52,13 +61,13 @@ class NetscapePluginStream;
     
 class NetscapePlugin : public Plugin {
 public:
-    static PassRefPtr<NetscapePlugin> create(PassRefPtr<NetscapePluginModule> pluginModule);
+    static RefPtr<NetscapePlugin> create(PassRefPtr<NetscapePluginModule>);
     virtual ~NetscapePlugin();
 
     static PassRefPtr<NetscapePlugin> fromNPP(NPP);
 
     // In-process NetscapePlugins don't support asynchronous initialization.
-    virtual bool isBeingAsynchronouslyInitialized() const { return false; }
+    virtual bool isBeingAsynchronouslyInitialized() const override { return false; }
 
 #if PLATFORM(COCOA)
     NPError setDrawingModel(NPDrawingModel);
@@ -71,7 +80,7 @@ public:
 
     bool hasHandledAKeyDownEvent() const { return m_hasHandledAKeyDownEvent; }
 
-    mach_port_t compositingRenderServerPort();
+    const WebCore::MachSendRight& compositingRenderServerPort();
     void openPluginPreferencePane();
 
     // Computes an affine transform from the given coordinate space to the screen coordinate space.
@@ -103,6 +112,7 @@ public:
     static void setException(const String&);
     bool evaluate(NPObject*, const String&scriptString, NPVariant* result);
     bool isPrivateBrowsingEnabled();
+    bool isMuted() const;
 
     static void setSetExceptionFunction(void (*)(const String&));
 
@@ -128,6 +138,8 @@ public:
     String cookiesForURL(const String& urlString);
     void setCookiesForURL(const String& urlString, const String& cookieString);
     bool getAuthenticationInfo(const WebCore::ProtectionSpace&, String& username, String& password);
+
+    void setIsPlayingAudio(bool);
 
     // Member functions for calling into the plug-in.
     NPError NPP_New(NPMIMEType pluginType, uint16_t mode, int16_t argc, char* argn[], char* argv[], NPSavedData*);
@@ -173,38 +185,38 @@ private:
     static bool wantsPluginRelativeNPWindowCoordinates();
 
     // Plugin
-    virtual bool initialize(const Parameters&);
-    virtual void destroy();
-    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect& dirtyRect);
-    virtual PassRefPtr<ShareableBitmap> snapshot();
+    virtual bool initialize(const Parameters&) override;
+    virtual void destroy() override;
+    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect& dirtyRect) override;
+    virtual PassRefPtr<ShareableBitmap> snapshot() override;
 #if PLATFORM(COCOA)
-    virtual PlatformLayer* pluginLayer();
+    virtual PlatformLayer* pluginLayer() override;
 #endif
-    virtual bool isTransparent();
+    virtual bool isTransparent() override;
     virtual bool wantsWheelEvents() override;
-    virtual void geometryDidChange(const WebCore::IntSize& pluginSize, const WebCore::IntRect& clipRect, const WebCore::AffineTransform& pluginToRootViewTransform);
-    virtual void visibilityDidChange(bool isVisible);
-    virtual void frameDidFinishLoading(uint64_t requestID);
-    virtual void frameDidFail(uint64_t requestID, bool wasCancelled);
-    virtual void didEvaluateJavaScript(uint64_t requestID, const String& result);
+    virtual void geometryDidChange(const WebCore::IntSize& pluginSize, const WebCore::IntRect& clipRect, const WebCore::AffineTransform& pluginToRootViewTransform) override;
+    virtual void visibilityDidChange(bool isVisible) override;
+    virtual void frameDidFinishLoading(uint64_t requestID) override;
+    virtual void frameDidFail(uint64_t requestID, bool wasCancelled) override;
+    virtual void didEvaluateJavaScript(uint64_t requestID, const String& result) override;
     virtual void streamDidReceiveResponse(uint64_t streamID, const WebCore::URL& responseURL, uint32_t streamLength, 
-                                          uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName);
-    virtual void streamDidReceiveData(uint64_t streamID, const char* bytes, int length);
-    virtual void streamDidFinishLoading(uint64_t streamID);
-    virtual void streamDidFail(uint64_t streamID, bool wasCancelled);
+                                          uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName) override;
+    virtual void streamDidReceiveData(uint64_t streamID, const char* bytes, int length) override;
+    virtual void streamDidFinishLoading(uint64_t streamID) override;
+    virtual void streamDidFail(uint64_t streamID, bool wasCancelled) override;
     virtual void manualStreamDidReceiveResponse(const WebCore::URL& responseURL, uint32_t streamLength, 
-                                                uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName);
-    virtual void manualStreamDidReceiveData(const char* bytes, int length);
-    virtual void manualStreamDidFinishLoading();
-    virtual void manualStreamDidFail(bool wasCancelled);
+                                                uint32_t lastModifiedTime, const String& mimeType, const String& headers, const String& suggestedFileName) override;
+    virtual void manualStreamDidReceiveData(const char* bytes, int length) override;
+    virtual void manualStreamDidFinishLoading() override;
+    virtual void manualStreamDidFail(bool wasCancelled) override;
     
-    virtual bool handleMouseEvent(const WebMouseEvent&);
-    virtual bool handleWheelEvent(const WebWheelEvent&);
-    virtual bool handleMouseEnterEvent(const WebMouseEvent&);
-    virtual bool handleMouseLeaveEvent(const WebMouseEvent&);
-    virtual bool handleContextMenuEvent(const WebMouseEvent&);
-    virtual bool handleKeyboardEvent(const WebKeyboardEvent&);
-    virtual void setFocus(bool);
+    virtual bool handleMouseEvent(const WebMouseEvent&) override;
+    virtual bool handleWheelEvent(const WebWheelEvent&) override;
+    virtual bool handleMouseEnterEvent(const WebMouseEvent&) override;
+    virtual bool handleMouseLeaveEvent(const WebMouseEvent&) override;
+    virtual bool handleContextMenuEvent(const WebMouseEvent&) override;
+    virtual bool handleKeyboardEvent(const WebKeyboardEvent&) override;
+    virtual void setFocus(bool) override;
 
     virtual bool handleEditingCommand(const String& commandName, const String& argument) override;
     virtual bool isEditingCommandEnabled(const String&) override;
@@ -214,18 +226,19 @@ private:
     
     virtual bool handlesPageScaleFactor() override;
 
-    virtual NPObject* pluginScriptableNPObject();
+    virtual NPObject* pluginScriptableNPObject() override;
     
     virtual unsigned countFindMatches(const String&, WebCore::FindOptions, unsigned maxMatchCount) override;
     virtual bool findString(const String&, WebCore::FindOptions, unsigned maxMatchCount) override;
 
-#if PLATFORM(COCOA)
-    virtual void windowFocusChanged(bool);
-    virtual void windowAndViewFramesChanged(const WebCore::IntRect& windowFrameInScreenCoordinates, const WebCore::IntRect& viewFrameInWindowCoordinates);
-    virtual void windowVisibilityChanged(bool);
+    virtual void windowFocusChanged(bool) override;
+    virtual void windowVisibilityChanged(bool) override;
 
-    virtual uint64_t pluginComplexTextInputIdentifier() const;
-    virtual void sendComplexTextInput(const String& textInput);
+#if PLATFORM(COCOA)
+    virtual void windowAndViewFramesChanged(const WebCore::IntRect& windowFrameInScreenCoordinates, const WebCore::IntRect& viewFrameInWindowCoordinates) override;
+
+    virtual uint64_t pluginComplexTextInputIdentifier() const override;
+    virtual void sendComplexTextInput(const String& textInput) override;
     virtual void setLayerHostingMode(LayerHostingMode) override;
 
     void pluginFocusOrWindowFocusChanged();
@@ -234,15 +247,15 @@ private:
     void updatePluginLayer();
 #endif
 
-    virtual void contentsScaleFactorChanged(float);
-    virtual void storageBlockingStateChanged(bool);
-    virtual void privateBrowsingStateChanged(bool);
-    virtual bool getFormValue(String& formValue);
-    virtual bool handleScroll(WebCore::ScrollDirection, WebCore::ScrollGranularity);
-    virtual WebCore::Scrollbar* horizontalScrollbar();
-    virtual WebCore::Scrollbar* verticalScrollbar();
+    virtual void contentsScaleFactorChanged(float) override;
+    virtual void storageBlockingStateChanged(bool) override;
+    virtual void privateBrowsingStateChanged(bool) override;
+    virtual bool getFormValue(String& formValue) override;
+    virtual bool handleScroll(WebCore::ScrollDirection, WebCore::ScrollGranularity) override;
+    virtual WebCore::Scrollbar* horizontalScrollbar() override;
+    virtual WebCore::Scrollbar* verticalScrollbar() override;
 
-    virtual bool supportsSnapshotting() const;
+    virtual bool supportsSnapshotting() const override;
 
     // Convert the given point from plug-in coordinates to root view coordinates.
     virtual WebCore::IntPoint convertToRootView(const WebCore::IntPoint&) const override;
@@ -255,14 +268,13 @@ private:
 
     virtual bool performDictionaryLookupAtLocation(const WebCore::FloatPoint&) override { return false; }
 
-    virtual String getSelectionString() const override { return String(); }
+    String getSelectionString() const override { return String(); }
+    String getSelectionForWordAtPoint(const WebCore::FloatPoint&) const override { return String(); }
+    bool existingSelectionContainsPoint(const WebCore::FloatPoint&) const override { return false; }
+
+    virtual void mutedStateChanged(bool) override;
 
     void updateNPNPrivateMode();
-
-#if PLUGIN_ARCHITECTURE(WIN)
-    static BOOL WINAPI hookedTrackPopupMenu(HMENU, UINT uFlags, int x, int y, int nReserved, HWND, const RECT*);
-    void scheduleWindowedGeometryUpdate();
-#endif
 
 #if PLUGIN_ARCHITECTURE(X11)
     bool platformPostInitializeWindowed(bool needsXEmbed, uint64_t windowID);
@@ -289,8 +301,9 @@ private:
     // A transform that can be used to convert from root view coordinates to plug-in coordinates.
     WebCore::AffineTransform m_pluginToRootViewTransform;
 
-    // FIXME: Get rid of these.
+#if PLUGIN_ARCHITECTURE(X11)
     WebCore::IntRect m_frameRectInWindowCoordinates;
+#endif
 
     CString m_userAgent;
 
@@ -378,11 +391,8 @@ private:
     RunLoop::Timer<NetscapePlugin> m_nullEventTimer;
     NP_CGContext m_npCGContext;
 #endif
-#elif PLUGIN_ARCHITECTURE(WIN)
-    HWND m_window;
-    HWND m_contextMenuOwnerWindow;
 #elif PLUGIN_ARCHITECTURE(X11)
-    Pixmap m_drawable;
+    WebCore::XUniquePixmap m_drawable;
     Display* m_pluginDisplay;
 #if PLATFORM(GTK)
     GtkWidget* m_platformPluginWidget;
@@ -394,6 +404,8 @@ public: // Need to call it in the NPN_GetValue browser callback.
 };
 
 } // namespace WebKit
+
+SPECIALIZE_TYPE_TRAITS_PLUGIN(NetscapePlugin, NetscapePluginType)
 
 #endif // ENABLE(NETSCAPE_PLUGIN_API)
 

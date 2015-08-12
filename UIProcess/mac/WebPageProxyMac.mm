@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2011, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -43,7 +43,8 @@
 #import "StringUtilities.h"
 #import "TextChecker.h"
 #import "WKBrowsingContextControllerInternal.h"
-#import "WebContext.h"
+#import "WKSharingServicePickerDelegate.h"
+#import "WebContextMenuProxyMac.h"
 #import "WebPageMessages.h"
 #import "WebProcessProxy.h"
 #import <WebCore/DictationAlternative.h>
@@ -61,6 +62,7 @@
 @end
 
 #define MESSAGE_CHECK(assertion) MESSAGE_CHECK_BASE(assertion, process().connection())
+#define MESSAGE_CHECK_URL(url) MESSAGE_CHECK_BASE(m_process->checkURLReceivedFromWebProcess(url), m_process->connection())
 
 using namespace WebCore;
 
@@ -312,7 +314,7 @@ void WebPageProxy::attributedSubstringForCharacterRangeAsync(const EditingRange&
         return;
     }
 
-    uint64_t callbackID = m_callbacks.put(WTF::move(callbackFunction), std::make_unique<ProcessThrottler::BackgroundActivityToken>(m_process->throttler()));
+    uint64_t callbackID = m_callbacks.put(WTF::move(callbackFunction), m_process->throttler().backgroundActivityToken());
 
     process().send(Messages::WebPage::AttributedSubstringForCharacterRangeAsync(range, callbackID), m_pageID);
 }
@@ -329,6 +331,30 @@ void WebPageProxy::attributedStringForCharacterRangeCallback(const AttributedStr
     }
 
     callback->performCallbackWithReturnValue(string, actualRange);
+}
+
+void WebPageProxy::fontAtSelection(std::function<void (const String&, double, bool, CallbackBase::Error)>callbackFunction)
+{
+    if (!isValid()) {
+        callbackFunction(String(), 0, false, CallbackBase::Error::Unknown);
+        return;
+    }
+    
+    uint64_t callbackID = m_callbacks.put(WTF::move(callbackFunction), m_process->throttler().backgroundActivityToken());
+    
+    process().send(Messages::WebPage::FontAtSelection(callbackID), m_pageID);
+}
+
+void WebPageProxy::fontAtSelectionCallback(const String& fontName, double fontSize, bool selectionHasMultipleFonts, uint64_t callbackID)
+{
+    auto callback = m_callbacks.take<FontAtSelectionCallback>(callbackID);
+    if (!callback) {
+        // FIXME: Log error or assert.
+        // this can validly happen if a load invalidated the callback, though
+        return;
+    }
+    
+    callback->performCallbackWithReturnValue(fontName, fontSize, selectionHasMultipleFonts);
 }
 
 String WebPageProxy::stringSelectionForPasteboard()
@@ -353,7 +379,7 @@ PassRefPtr<WebCore::SharedBuffer> WebPageProxy::dataSelectionForPasteboard(const
                                                 Messages::WebPage::GetDataSelectionForPasteboard::Reply(handle, size), m_pageID, messageTimeout);
     if (handle.isNull())
         return 0;
-    RefPtr<SharedMemory> sharedMemoryBuffer = SharedMemory::create(handle, SharedMemory::ReadOnly);
+    RefPtr<SharedMemory> sharedMemoryBuffer = SharedMemory::map(handle, SharedMemory::Protection::ReadOnly);
     return SharedBuffer::create(static_cast<unsigned char *>(sharedMemoryBuffer->data()), size);
 }
 
@@ -378,26 +404,36 @@ void WebPageProxy::replaceSelectionWithPasteboardData(const Vector<String>& type
 #if ENABLE(DRAG_SUPPORT)
 void WebPageProxy::setDragImage(const WebCore::IntPoint& clientPosition, const ShareableBitmap::Handle& dragImageHandle, bool isLinkDrag)
 {
-    RefPtr<ShareableBitmap> dragImage = ShareableBitmap::create(dragImageHandle);
-    if (!dragImage)
-        return;
-    
-    m_pageClient.setDragImage(clientPosition, dragImage.release(), isLinkDrag);
+    if (RefPtr<ShareableBitmap> dragImage = ShareableBitmap::create(dragImageHandle))
+        m_pageClient.setDragImage(clientPosition, dragImage.release(), isLinkDrag);
+
+    process().send(Messages::WebPage::DidStartDrag(), m_pageID);
 }
 
-void WebPageProxy::setPromisedData(const String& pasteboardName, const SharedMemory::Handle& imageHandle, uint64_t imageSize, const String& filename, const String& extension,
+void WebPageProxy::setPromisedDataForImage(const String& pasteboardName, const SharedMemory::Handle& imageHandle, uint64_t imageSize, const String& filename, const String& extension,
                                    const String& title, const String& url, const String& visibleURL, const SharedMemory::Handle& archiveHandle, uint64_t archiveSize)
 {
-    RefPtr<SharedMemory> sharedMemoryImage = SharedMemory::create(imageHandle, SharedMemory::ReadOnly);
+    MESSAGE_CHECK_URL(url);
+    MESSAGE_CHECK_URL(visibleURL);
+    RefPtr<SharedMemory> sharedMemoryImage = SharedMemory::map(imageHandle, SharedMemory::Protection::ReadOnly);
     RefPtr<SharedBuffer> imageBuffer = SharedBuffer::create(static_cast<unsigned char*>(sharedMemoryImage->data()), imageSize);
     RefPtr<SharedBuffer> archiveBuffer;
     
     if (!archiveHandle.isNull()) {
-        RefPtr<SharedMemory> sharedMemoryArchive = SharedMemory::create(archiveHandle, SharedMemory::ReadOnly);;
+        RefPtr<SharedMemory> sharedMemoryArchive = SharedMemory::map(archiveHandle, SharedMemory::Protection::ReadOnly);
         archiveBuffer = SharedBuffer::create(static_cast<unsigned char*>(sharedMemoryArchive->data()), archiveSize);
     }
-    m_pageClient.setPromisedData(pasteboardName, imageBuffer, filename, extension, title, url, visibleURL, archiveBuffer);
+    m_pageClient.setPromisedDataForImage(pasteboardName, imageBuffer, filename, extension, title, url, visibleURL, archiveBuffer);
 }
+
+#if ENABLE(ATTACHMENT_ELEMENT)
+void WebPageProxy::setPromisedDataForAttachment(const String& pasteboardName, const String& filename, const String& extension, const String& title, const String& url, const String& visibleURL)
+{
+    MESSAGE_CHECK_URL(url);
+    MESSAGE_CHECK_URL(visibleURL);
+    m_pageClient.setPromisedDataForAttachment(pasteboardName, filename, extension, title, url, visibleURL);
+}
+#endif
 #endif
 
 void WebPageProxy::performDictionaryLookupAtLocation(const WebCore::FloatPoint& point)
@@ -406,6 +442,14 @@ void WebPageProxy::performDictionaryLookupAtLocation(const WebCore::FloatPoint& 
         return;
 
     process().send(Messages::WebPage::PerformDictionaryLookupAtLocation(point), m_pageID);
+}
+
+void WebPageProxy::performDictionaryLookupOfCurrentSelection()
+{
+    if (!isValid())
+        return;
+
+    process().send(Messages::WebPage::PerformDictionaryLookupOfCurrentSelection(), m_pageID);
 }
 
 // Complex text input support for plug-ins.
@@ -442,9 +486,9 @@ void WebPageProxy::setSmartInsertDeleteEnabled(bool isSmartInsertDeleteEnabled)
     process().send(Messages::WebPage::SetSmartInsertDeleteEnabled(isSmartInsertDeleteEnabled), m_pageID);
 }
 
-void WebPageProxy::didPerformDictionaryLookup(const AttributedString& text, const DictionaryPopupInfo& dictionaryPopupInfo)
+void WebPageProxy::didPerformDictionaryLookup(const DictionaryPopupInfo& dictionaryPopupInfo)
 {
-    m_pageClient.didPerformDictionaryLookup(text, dictionaryPopupInfo);
+    m_pageClient.didPerformDictionaryLookup(dictionaryPopupInfo);
 }
     
 void WebPageProxy::registerWebProcessAccessibilityToken(const IPC::DataReference& data)
@@ -635,21 +679,8 @@ void WebPageProxy::openPDFFromTemporaryFolderWithNativeApplication(const String&
 #if ENABLE(TELEPHONE_NUMBER_DETECTION)
 void WebPageProxy::showTelephoneNumberMenu(const String& telephoneNumber, const WebCore::IntPoint& point)
 {
-    NSArray *menuItems = menuItemsForTelephoneNumber(telephoneNumber);
-
-    Vector<WebContextMenuItemData> items;
-    for (NSMenuItem *item in menuItems) {
-        RetainPtr<NSMenuItem> retainedItem = item;
-        std::function<void()> handler = [retainedItem]() {
-            NSMenuItem *item = retainedItem.get();
-            [[item target] performSelector:[item action] withObject:item];
-        };
-        
-        items.append(WebContextMenuItemData(ContextMenuItem(item), handler));
-    }
-    
-    ContextMenuContextData contextData(TelephoneNumberContext);
-    internalShowContextMenu(point, contextData, items, ContextMenuClientEligibility::NotEligibleForClient, nullptr);
+    RetainPtr<NSMenu> menu = menuForTelephoneNumber(telephoneNumber);
+    m_pageClient.showPlatformContextMenu(menu.get(), point);
 }
 #endif
 
@@ -659,10 +690,81 @@ void WebPageProxy::showSelectionServiceMenu(const IPC::DataReference& selectionA
     Vector<WebContextMenuItemData> items;
     ContextMenuContextData contextData(selectionAsRTFD.vector(), telephoneNumbers, isEditable);
 
-    internalShowContextMenu(point, contextData, items, ContextMenuClientEligibility::NotEligibleForClient, nullptr);
+    internalShowContextMenu(point, contextData, items, ContextMenuClientEligibility::NotEligibleForClient, UserData());
 }
 #endif
 
+CGRect WebPageProxy::boundsOfLayerInLayerBackedWindowCoordinates(CALayer *layer) const
+{
+    return m_pageClient.boundsOfLayerInLayerBackedWindowCoordinates(layer);
+}
+
+bool WebPageProxy::appleMailPaginationQuirkEnabled()
+{
+    return applicationIsAppleMail();
+}
+
+void WebPageProxy::setFont(const String& fontFamily, double fontSize, uint64_t fontTraits)
+{
+    if (!isValid())
+        return;
+
+    process().send(Messages::WebPage::SetFont(fontFamily, fontSize, fontTraits), m_pageID);
+}
+
+void WebPageProxy::editorStateChanged(const EditorState& editorState)
+{
+    bool couldChangeSecureInputState = m_editorState.isInPasswordField != editorState.isInPasswordField || m_editorState.selectionIsNone;
+#if !USE(ASYNC_NSTEXTINPUTCLIENT)
+    bool closedComposition = !editorState.shouldIgnoreCompositionSelectionChange && !editorState.hasComposition && (m_editorState.hasComposition || m_temporarilyClosedComposition);
+    m_temporarilyClosedComposition = editorState.shouldIgnoreCompositionSelectionChange && (m_temporarilyClosedComposition || m_editorState.hasComposition) && !editorState.hasComposition;
+    bool editabilityChanged = m_editorState.isContentEditable != editorState.isContentEditable;
+#endif
+    
+    m_editorState = editorState;
+    
+    // Selection being none is a temporary state when editing. Flipping secure input state too quickly was causing trouble (not fully understood).
+    if (couldChangeSecureInputState && !editorState.selectionIsNone)
+        m_pageClient.updateSecureInputState();
+    
+    if (editorState.shouldIgnoreCompositionSelectionChange)
+        return;
+    
+    m_pageClient.selectionDidChange();
+
+#if !USE(ASYNC_NSTEXTINPUTCLIENT)
+    if (closedComposition)
+        m_pageClient.notifyInputContextAboutDiscardedComposition();
+    if (editabilityChanged) {
+        // This is only needed in sync code path, because AppKit automatically refreshes input context for async clients (<rdar://problem/18604360>).
+        m_pageClient.notifyApplicationAboutInputContextChange();
+    }
+    if (editorState.hasComposition) {
+        // Abandon the current inline input session if selection changed for any other reason but an input method changing the composition.
+        // FIXME: This logic should be in WebCore, no need to round-trip to UI process to cancel the composition.
+        cancelComposition();
+        m_pageClient.notifyInputContextAboutDiscardedComposition();
+    }
+#endif
+}
+
+void WebPageProxy::platformInitializeShareMenuItem(ContextMenuItem& item)
+{
+#if ENABLE(SERVICE_CONTROLS)
+    NSMenuItem *nsItem = item.platformDescription();
+
+    NSSharingServicePicker *sharingServicePicker = [nsItem representedObject];
+    sharingServicePicker.delegate = [WKSharingServicePickerDelegate sharedSharingServicePickerDelegate];
+    
+    [[WKSharingServicePickerDelegate sharedSharingServicePickerDelegate] setFiltersEditingServices:NO];
+    [[WKSharingServicePickerDelegate sharedSharingServicePickerDelegate] setHandlesEditingReplacement:NO];
+    [[WKSharingServicePickerDelegate sharedSharingServicePickerDelegate] setMenuProxy:static_cast<WebContextMenuProxyMac*>(m_activeContextMenu.get())];
+
+    // Setting the picker lets the delegate retain it to keep it alive, but this picker is kept alive by the menu item.
+    [[WKSharingServicePickerDelegate sharedSharingServicePickerDelegate] setPicker:nil];
+#endif
+}
+    
 } // namespace WebKit
 
 #endif // PLATFORM(MAC)

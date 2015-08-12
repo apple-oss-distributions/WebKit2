@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010, 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2010, 2011, 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -66,6 +66,7 @@ struct WebPageCreationParameters {
 
     bool drawsBackground;
     bool drawsTransparentBackground;
+    bool isEditable;
 
     WebCore::Color underlayColor;
 
@@ -87,20 +88,27 @@ struct WebPageCreationParameters {
 
     uint64_t userContentControllerID;
     uint64_t visitedLinkTableID;
+    uint64_t websiteDataStoreID;
     bool canRunBeforeUnloadConfirmPanel;
     bool canRunModal;
 
     float deviceScaleFactor;
+    float viewScaleFactor;
 
     float topContentInset;
     
     float mediaVolume;
+    bool muted;
     bool mayStartMediaWhenInWindow;
 
     WebCore::IntSize minimumLayoutSize;
     bool autoSizingShouldExpandToViewHeight;
     
     WebCore::ScrollPinningBehavior scrollPinningBehavior;
+
+    // FIXME: This should be WTF::Optional<WebCore::ScrollbarOverlayStyle>, but we would need to
+    // correctly handle enums inside Optionals when encoding and decoding. 
+    WTF::Optional<uint32_t> scrollbarOverlayStyle;
 
     bool backgroundExtendsBeyondPage;
 
@@ -120,6 +128,9 @@ struct WebPageCreationParameters {
     WebCore::FloatSize availableScreenSize;
     float textAutosizingWidth;
 #endif
+    bool appleMailPaginationQuirkEnabled;
+    bool shouldScaleViewToFitDocument;
+    bool userContentExtensionsEnabled;
 };
 
 } // namespace WebKit

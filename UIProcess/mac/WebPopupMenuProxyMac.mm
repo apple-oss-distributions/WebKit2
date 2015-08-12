@@ -43,6 +43,7 @@ namespace WebKit {
 WebPopupMenuProxyMac::WebPopupMenuProxyMac(WKView *webView, WebPopupMenuProxy::Client* client)
     : WebPopupMenuProxy(client)
     , m_webView(webView)
+    , m_wasCanceled(false)
 {
 }
 
@@ -80,7 +81,10 @@ void WebPopupMenuProxyMac::populate(const Vector<WebPopupItem>& items, NSFont *f
                 font, NSFontAttributeName,
             nil]);
             if (items[i].m_hasTextDirectionOverride) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 RetainPtr<NSNumber> writingDirectionValue = adoptNS([[NSNumber alloc] initWithInteger:writingDirection + NSTextWritingDirectionOverride]);
+#pragma clang diagnostic pop
                 RetainPtr<NSArray> writingDirectionArray = adoptNS([[NSArray alloc] initWithObjects:writingDirectionValue.get(), nil]);
                 [attributes setObject:writingDirectionArray.get() forKey:NSWritingDirectionAttributeName];
             }
@@ -147,12 +151,13 @@ void WebPopupMenuProxyMac::showPopupMenu(const IntRect& rect, TextDirection text
         break;
     }
 
+    Ref<WebPopupMenuProxyMac> protect(*this);
     WKPopupMenu(menu, location, roundf(NSWidth(rect)), dummyView.get(), selectedIndex, font, controlSize, data.hideArrows);
 
     [m_popup dismissPopUp];
     [dummyView removeFromSuperview];
     
-    if (!m_client)
+    if (!m_client || m_wasCanceled)
         return;
     
     m_client->valueChangedForPopupMenu(this, [m_popup indexOfSelectedItem]);
@@ -194,6 +199,12 @@ void WebPopupMenuProxyMac::showPopupMenu(const IntRect& rect, TextDirection text
 void WebPopupMenuProxyMac::hidePopupMenu()
 {
     [m_popup dismissPopUp];
+}
+
+void WebPopupMenuProxyMac::cancelTracking()
+{
+    [[m_popup menu] cancelTracking];
+    m_wasCanceled = true;
 }
 
 } // namespace WebKit

@@ -30,8 +30,8 @@
 
 #include "TextCheckerEnchant.h"
 #include "Timer.h"
+#include "ewk_text_checker_private.h"
 #include <WebKit/WKTextChecker.h>
-#include <WebKit/ewk_text_checker_private.h>
 
 namespace WebKit {
 
@@ -55,14 +55,14 @@ private:
     TextCheckerClientEfl();
 
     // To set languages on timer.
-    void languagesUpdateTimerFired(WebCore::Timer<TextCheckerClientEfl>*);
-    WebCore::Timer<TextCheckerClientEfl> m_languagesUpdateTimer;
+    void languagesUpdateTimerFired();
+    WebCore::Timer m_languagesUpdateTimer;
     Vector<String> m_spellCheckingLanguages;
 
     // To notify the client about the setting change on timer.
-    void spellCheckingSettingChangeTimerFired(WebCore::Timer<TextCheckerClientEfl>*);
+    void spellCheckingSettingChangeTimerFired();
     void callContinuousSpellCheckingChangeCallbackAsync();
-    WebCore::Timer<TextCheckerClientEfl> m_spellCheckingSettingChangeTimer;
+    WebCore::Timer m_spellCheckingSettingChangeTimer;
 
     // WKTextCheckerClient callbacks.
     static bool isContinuousSpellCheckingEnabledCallback(const void*);
@@ -75,7 +75,7 @@ private:
     static void ignoreWordCallback(uint64_t, WKStringRef word, const void*);
 
     ClientCallbacks m_clientCallbacks;
-    OwnPtr<WebCore::TextCheckerEnchant> m_textCheckerEnchant;
+    std::unique_ptr<WebCore::TextCheckerEnchant> m_textCheckerEnchant;
 };
 
 } // namespace WebKit

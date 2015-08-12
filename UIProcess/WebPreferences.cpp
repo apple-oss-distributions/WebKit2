@@ -26,9 +26,9 @@
 #include "config.h"
 #include "WebPreferences.h"
 
-#include "WebContext.h"
 #include "WebPageGroup.h"
 #include "WebPreferencesKeys.h"
+#include "WebProcessPool.h"
 #include <wtf/ThreadingPrimitives.h>
 
 namespace WebKit {
@@ -37,9 +37,9 @@ namespace WebKit {
 // Instead of tracking private browsing state as a boolean preference, we should let the client provide storage sessions explicitly.
 static unsigned privateBrowsingPageCount;
 
-PassRefPtr<WebPreferences> WebPreferences::create(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix)
+Ref<WebPreferences> WebPreferences::create(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix)
 {
-    return adoptRef(new WebPreferences(identifier, keyPrefix, globalDebugKeyPrefix));
+    return adoptRef(*new WebPreferences(identifier, keyPrefix, globalDebugKeyPrefix));
 }
 
 PassRefPtr<WebPreferences> WebPreferences::createWithLegacyDefaults(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix)
@@ -47,10 +47,10 @@ PassRefPtr<WebPreferences> WebPreferences::createWithLegacyDefaults(const String
     RefPtr<WebPreferences> preferences = adoptRef(new WebPreferences(identifier, keyPrefix, globalDebugKeyPrefix));
     // FIXME: The registerDefault...ValueForKey machinery is unnecessarily heavyweight and complicated.
     // We can just compute different defaults for modern and legacy APIs in WebPreferencesDefinitions.h macros.
-    preferences->m_store.setOverrideDefaultsBoolValueForKey(WebPreferencesKey::javaEnabledKey(), true);
-    preferences->m_store.setOverrideDefaultsBoolValueForKey(WebPreferencesKey::javaEnabledForLocalFilesKey(), true);
-    preferences->m_store.setOverrideDefaultsBoolValueForKey(WebPreferencesKey::pluginsEnabledKey(), true);
-    preferences->m_store.setOverrideDefaultsUInt32ValueForKey(WebPreferencesKey::storageBlockingPolicyKey(), WebCore::SecurityOrigin::AllowAllStorage);
+    preferences->registerDefaultBoolValueForKey(WebPreferencesKey::javaEnabledKey(), true);
+    preferences->registerDefaultBoolValueForKey(WebPreferencesKey::javaEnabledForLocalFilesKey(), true);
+    preferences->registerDefaultBoolValueForKey(WebPreferencesKey::pluginsEnabledKey(), true);
+    preferences->registerDefaultUInt32ValueForKey(WebPreferencesKey::storageBlockingPolicyKey(), WebCore::SecurityOrigin::AllowAllStorage);
     return preferences.release();
 }
 
@@ -87,7 +87,7 @@ void WebPreferences::addPage(WebPageProxy& webPageProxy)
 
     if (privateBrowsingEnabled()) {
         if (!privateBrowsingPageCount)
-            WebContext::willStartUsingPrivateBrowsing();
+            WebProcessPool::willStartUsingPrivateBrowsing();
 
         ++privateBrowsingPageCount;
     }
@@ -101,7 +101,7 @@ void WebPreferences::removePage(WebPageProxy& webPageProxy)
     if (privateBrowsingEnabled()) {
         --privateBrowsingPageCount;
         if (!privateBrowsingPageCount)
-            WebContext::willStopUsingPrivateBrowsing();
+            WebProcessPool::willStopUsingPrivateBrowsing();
     }
 }
 
@@ -156,7 +156,7 @@ void WebPreferences::updatePrivateBrowsingValue(bool value)
 
     if (value) {
         if (!privateBrowsingPageCount)
-            WebContext::willStartUsingPrivateBrowsing();
+            WebProcessPool::willStartUsingPrivateBrowsing();
         privateBrowsingPageCount += pagesChanged;
     }
 
@@ -166,7 +166,7 @@ void WebPreferences::updatePrivateBrowsingValue(bool value)
         ASSERT(privateBrowsingPageCount >= pagesChanged);
         privateBrowsingPageCount -= pagesChanged;
         if (!privateBrowsingPageCount)
-            WebContext::willStopUsingPrivateBrowsing();
+            WebProcessPool::willStopUsingPrivateBrowsing();
     }
 }
 
@@ -192,6 +192,22 @@ FOR_EACH_WEBKIT_DEBUG_PREFERENCE(DEFINE_PREFERENCE_GETTER_AND_SETTERS)
 bool WebPreferences::anyPagesAreUsingPrivateBrowsing()
 {
     return privateBrowsingPageCount;
+}
+
+void WebPreferences::registerDefaultBoolValueForKey(const String& key, bool value)
+{
+    m_store.setOverrideDefaultsBoolValueForKey(key, value);
+    bool userValue;
+    if (platformGetBoolUserValueForKey(key, userValue))
+        m_store.setBoolValueForKey(key, userValue);
+}
+
+void WebPreferences::registerDefaultUInt32ValueForKey(const String& key, uint32_t value)
+{
+    m_store.setOverrideDefaultsUInt32ValueForKey(key, value);
+    uint32_t userValue;
+    if (platformGetUInt32UserValueForKey(key, userValue))
+        m_store.setUInt32ValueForKey(key, userValue);
 }
 
 } // namespace WebKit

@@ -35,14 +35,14 @@
 
 namespace WebKit {
 
-PassRefPtr<DatabaseToWebProcessConnection> DatabaseToWebProcessConnection::create(IPC::Connection::Identifier connectionIdentifier)
+Ref<DatabaseToWebProcessConnection> DatabaseToWebProcessConnection::create(IPC::Connection::Identifier connectionIdentifier)
 {
-    return adoptRef(new DatabaseToWebProcessConnection(connectionIdentifier));
+    return adoptRef(*new DatabaseToWebProcessConnection(connectionIdentifier));
 }
 
 DatabaseToWebProcessConnection::DatabaseToWebProcessConnection(IPC::Connection::Identifier connectionIdentifier)
 {
-    m_connection = IPC::Connection::createServerConnection(connectionIdentifier, this, RunLoop::main());
+    m_connection = IPC::Connection::createServerConnection(connectionIdentifier, *this);
     m_connection->setOnlySendMessagesAsDispatchWhenWaitingForSyncReplyWhenProcessingSuchAMessage(true);
     m_connection->open();
 }
@@ -52,7 +52,7 @@ DatabaseToWebProcessConnection::~DatabaseToWebProcessConnection()
 
 }
 
-void DatabaseToWebProcessConnection::didReceiveMessage(IPC::Connection* connection, IPC::MessageDecoder& decoder)
+void DatabaseToWebProcessConnection::didReceiveMessage(IPC::Connection& connection, IPC::MessageDecoder& decoder)
 {
     if (decoder.messageReceiverName() == Messages::DatabaseToWebProcessConnection::messageReceiverName()) {
         didReceiveDatabaseToWebProcessConnectionMessage(connection, decoder);
@@ -65,16 +65,30 @@ void DatabaseToWebProcessConnection::didReceiveMessage(IPC::Connection* connecti
             backendIterator->value->didReceiveDatabaseProcessIDBConnectionMessage(connection, decoder);
         return;
     }
-    
+
     ASSERT_NOT_REACHED();
 }
 
-void DatabaseToWebProcessConnection::didClose(IPC::Connection*)
+void DatabaseToWebProcessConnection::didReceiveSyncMessage(IPC::Connection& connection, IPC::MessageDecoder& decoder, std::unique_ptr<IPC::MessageEncoder>& reply)
 {
+    if (decoder.messageReceiverName() == Messages::DatabaseProcessIDBConnection::messageReceiverName()) {
+        IDBConnectionMap::iterator backendIterator = m_idbConnections.find(decoder.destinationID());
+        if (backendIterator != m_idbConnections.end())
+            backendIterator->value->didReceiveSyncDatabaseProcessIDBConnectionMessage(connection, decoder, reply);
+        return;
+    }
 
+    ASSERT_NOT_REACHED();
 }
 
-void DatabaseToWebProcessConnection::didReceiveInvalidMessage(IPC::Connection*, IPC::StringReference messageReceiverName, IPC::StringReference messageName)
+void DatabaseToWebProcessConnection::didClose(IPC::Connection&)
+{
+    // The WebProcess has disconnected, close all of the connections associated with it
+    while (!m_idbConnections.isEmpty())
+        removeDatabaseProcessIDBConnection(m_idbConnections.begin()->key);
+}
+
+void DatabaseToWebProcessConnection::didReceiveInvalidMessage(IPC::Connection&, IPC::StringReference messageReceiverName, IPC::StringReference messageName)
 {
 
 }

@@ -34,6 +34,12 @@ extern "C" {
 
 WK_EXPORT WKContextConfigurationRef WKContextConfigurationCreate();
 
+WK_EXPORT WKStringRef WKContextConfigurationCopyApplicationCacheDirectory(WKContextConfigurationRef configuration);
+WK_EXPORT void WKContextConfigurationSetApplicationCacheDirectory(WKContextConfigurationRef configuration, WKStringRef applicationCacheDirectory);
+
+WK_EXPORT WKStringRef WKContextConfigurationCopyDiskCacheDirectory(WKContextConfigurationRef configuration);
+WK_EXPORT void WKContextConfigurationSetDiskCacheDirectory(WKContextConfigurationRef configuration, WKStringRef diskCacheDirectory);
+
 WK_EXPORT WKStringRef WKContextConfigurationCopyIndexedDBDatabaseDirectory(WKContextConfigurationRef configuration);
 WK_EXPORT void WKContextConfigurationSetIndexedDBDatabaseDirectory(WKContextConfigurationRef configuration, WKStringRef indexedDBDatabaseDirectory);
 
@@ -45,6 +51,9 @@ WK_EXPORT void WKContextConfigurationSetLocalStorageDirectory(WKContextConfigura
 
 WK_EXPORT WKStringRef WKContextConfigurationCopyWebSQLDatabaseDirectory(WKContextConfigurationRef configuration);
 WK_EXPORT void WKContextConfigurationSetWebSQLDatabaseDirectory(WKContextConfigurationRef configuration, WKStringRef webSQLDatabaseDirectory);
+
+WK_EXPORT WKStringRef WKContextConfigurationCopyMediaKeysStorageDirectory(WKContextConfigurationRef configuration);
+WK_EXPORT void WKContextConfigurationSetMediaKeysStorageDirectory(WKContextConfigurationRef configuration, WKStringRef mediaKeysStorageDirectory);
 
 #ifdef __cplusplus
 }

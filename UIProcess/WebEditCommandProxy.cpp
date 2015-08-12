@@ -70,8 +70,11 @@ void WebEditCommandProxy::reapply()
 
 String WebEditCommandProxy::nameForEditAction(EditAction editAction)
 {
+    // FIXME: This is identical to code in WebKit's WebEditorClient class; would be nice to share the strings instead of having two copies.
     switch (editAction) {
     case EditActionUnspecified:
+        return String();
+    case EditActionInsert:
         return String();
     case EditActionSetColor:
         return WEB_UI_STRING_KEY("Set Color", "Set Color (Undo action name)", "Undo action name");
@@ -129,12 +132,10 @@ String WebEditCommandProxy::nameForEditAction(EditAction editAction)
         return WEB_UI_STRING_KEY("Bold", "Bold (Undo action name)", "Undo action name");
     case EditActionItalics:
         return WEB_UI_STRING_KEY("Italics", "Italics (Undo action name)", "Undo action name");
-#if PLATFORM(IOS)
     case EditActionDelete:
         return WEB_UI_STRING_KEY("Delete", "Delete (Undo action name)", "Undo action name");
     case EditActionDictation:
         return WEB_UI_STRING_KEY("Dictation", "Dictation (Undo action name)", "Undo action name");
-#endif
     case EditActionPaste:
         return WEB_UI_STRING_KEY("Paste", "Paste (Undo action name)", "Undo action name");
     case EditActionPasteFont:

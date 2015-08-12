@@ -67,7 +67,17 @@ WKStringRef WKHitTestResultCopyLinkTitle(WKHitTestResultRef hitTestResultRef)
     return toCopiedAPI(toImpl(hitTestResultRef)->linkTitle());
 }
 
+WKStringRef WKHitTestResultCopyLookupText(WKHitTestResultRef hitTestResult)
+{
+    return toCopiedAPI(toImpl(hitTestResult)->lookupText());
+}
+
 bool WKHitTestResultIsContentEditable(WKHitTestResultRef hitTestResultRef)
 {
     return toImpl(hitTestResultRef)->isContentEditable();
+}
+
+WKRect WKHitTestResultGetElementBoundingBox(WKHitTestResultRef hitTestResultRef)
+{
+    return toAPI(toImpl(hitTestResultRef)->elementBoundingBox());
 }

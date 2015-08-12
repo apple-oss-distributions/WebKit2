@@ -1,4 +1,4 @@
-/*
+ /*
  * Copyright (C) 2011 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,21 +27,28 @@
 #define SecurityOriginData_h
 
 #include "APIObject.h"
-#include "GenericCallback.h" // FIXME: This is a UIProcess file, and may not be included from Shared directory files.
 #include <wtf/text/WTFString.h>
 
 namespace IPC {
-    class ArgumentDecoder;
-    class ArgumentEncoder;
+class ArgumentDecoder;
+class ArgumentEncoder;
+}
+
+namespace WebCore {
+class Frame;
+class SecurityOrigin;
 }
 
 namespace WebKit {
 
-typedef GenericCallback<API::Array*> ArrayCallback;
+class WebFrame;
 
 struct SecurityOriginData {
-    static SecurityOriginData fromSecurityOrigin(const WebCore::SecurityOrigin*);
-    PassRefPtr<WebCore::SecurityOrigin> securityOrigin() const;
+    static SecurityOriginData fromSecurityOrigin(const WebCore::SecurityOrigin&);
+    static SecurityOriginData fromFrame(WebFrame*);
+    static SecurityOriginData fromFrame(WebCore::Frame*);
+
+    Ref<WebCore::SecurityOrigin> securityOrigin() const;
 
     void encode(IPC::ArgumentEncoder&) const;
     static bool decode(IPC::ArgumentDecoder&, SecurityOriginData&);
@@ -55,8 +62,6 @@ struct SecurityOriginData {
 
     SecurityOriginData isolatedCopy() const;
 };
-
-void performAPICallbackWithSecurityOriginDataVector(const Vector<SecurityOriginData>&, ArrayCallback*);
 
 bool operator==(const SecurityOriginData&, const SecurityOriginData&);
 

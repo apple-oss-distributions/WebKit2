@@ -81,19 +81,26 @@ private:
 
     virtual bool shouldUseTiledBackingForFrameView(const WebCore::FrameView*) override;
 
-    virtual void viewStateDidChange(WebCore::ViewState::Flags changed, bool wantsDidUpdateViewState) override;
+    virtual void viewStateDidChange(WebCore::ViewState::Flags changed, bool wantsDidUpdateViewState, const Vector<uint64_t>&) override;
     void didUpdateViewStateTimerFired();
+
+    virtual void attachViewOverlayGraphicsLayer(WebCore::Frame*, WebCore::GraphicsLayer*) override;
+
+    virtual void replyWithFenceAfterNextFlush(uint64_t callbackID) override;
 
     // WebCore::LayerFlushSchedulerClient
     virtual bool flushLayers() override;
 
     // Message handlers.
-    virtual void updateGeometry(const WebCore::IntSize& viewSize, const WebCore::IntSize& layerPosition) override;
+    virtual void updateGeometry(const WebCore::IntSize& viewSize, const WebCore::IntSize& layerPosition, bool flushSynchronously, const WebCore::MachSendRight& fencePort) override;
     virtual void setDeviceScaleFactor(float) override;
     void suspendPainting();
     void resumePainting();
     void setLayerHostingMode(LayerHostingMode) override;
     virtual void setColorSpace(const ColorSpaceData&) override;
+    virtual void addFence(const WebCore::MachSendRight&) override;
+
+    virtual void setShouldScaleViewToFitDocument(bool) override;
 
     virtual void adjustTransientZoom(double scale, WebCore::FloatPoint origin) override;
     virtual void commitTransientZoom(double scale, WebCore::FloatPoint origin) override;
@@ -103,18 +110,17 @@ private:
 
     void applyTransientZoomToLayers(double scale, WebCore::FloatPoint origin);
 
-    virtual WebCore::TransformationMatrix rootLayerTransform() const override {  return m_transform; }
-    virtual void setRootLayerTransform(const WebCore::TransformationMatrix&) override;
-
     void updateLayerHostingContext();
 
     void setRootCompositingLayer(CALayer *);
+    void updateRootLayers();
 
     WebCore::TiledBacking* mainFrameTiledBacking() const;
     void updateDebugInfoLayer(bool showLayer);
 
     void updateIntrinsicContentSizeIfNeeded();
     void updateScrolledExposedRect();
+    void scaleViewToFitDocumentIfNeeded();
 
     bool m_layerTreeStateIsFrozen;
     WebCore::LayerFlushScheduler m_layerFlushScheduler;
@@ -141,11 +147,21 @@ private:
     WebCore::TransformationMatrix m_transform;
 
     RunLoop::Timer<TiledCoreAnimationDrawingArea> m_sendDidUpdateViewStateTimer;
+    Vector<uint64_t> m_nextViewStateChangeCallbackIDs;
+    bool m_wantsDidUpdateViewState;
+
+    WebCore::GraphicsLayer* m_viewOverlayRootLayer;
+
+    Vector<uint64_t> m_fenceCallbacksForAfterNextFlush;
+    bool m_shouldScaleViewToFitDocument { false };
+    bool m_isScalingViewToFitDocument { false };
+    WebCore::IntSize m_lastViewSizeForScaleToFit;
+    WebCore::IntSize m_lastDocumentSizeForScaleToFit;
 };
 
-DRAWING_AREA_TYPE_CASTS(TiledCoreAnimationDrawingArea, type() == DrawingAreaTypeTiledCoreAnimation);
-
 } // namespace WebKit
+
+SPECIALIZE_TYPE_TRAITS_DRAWING_AREA(TiledCoreAnimationDrawingArea, DrawingAreaTypeTiledCoreAnimation)
 
 #endif // !PLATFORM(IOS)
 

@@ -28,6 +28,7 @@
 
 #include "APIArray.h"
 #include "DownloadManager.h"
+#include "InjectedBundleFileHandle.h"
 #include "InjectedBundleHitTestResult.h"
 #include "InjectedBundleNodeHandle.h"
 #include "InjectedBundleRangeHandle.h"
@@ -49,15 +50,19 @@
 #include <WebCore/Chrome.h>
 #include <WebCore/DocumentLoader.h>
 #include <WebCore/EventHandler.h>
+#include <WebCore/File.h>
 #include <WebCore/Frame.h>
+#include <WebCore/FrameSnapshotting.h>
 #include <WebCore/FrameView.h>
 #include <WebCore/HTMLFormElement.h>
 #include <WebCore/HTMLFrameOwnerElement.h>
 #include <WebCore/HTMLInputElement.h>
 #include <WebCore/HTMLNames.h>
 #include <WebCore/HTMLTextAreaElement.h>
+#include <WebCore/ImageBuffer.h>
 #include <WebCore/JSCSSStyleDeclaration.h>
 #include <WebCore/JSElement.h>
+#include <WebCore/JSFile.h>
 #include <WebCore/JSRange.h>
 #include <WebCore/MainFrame.h>
 #include <WebCore/NetworkingContext.h>
@@ -65,7 +70,6 @@
 #include <WebCore/Page.h>
 #include <WebCore/PluginDocument.h>
 #include <WebCore/RenderTreeAsText.h>
-#include <WebCore/ResourceBuffer.h>
 #include <WebCore/ResourceLoader.h>
 #include <WebCore/ScriptController.h>
 #include <WebCore/SecurityOrigin.h>
@@ -122,12 +126,12 @@ PassRefPtr<WebFrame> WebFrame::createSubframe(WebPage* page, const String& frame
     RefPtr<WebFrame> frame = create(std::make_unique<WebFrameLoaderClient>());
     page->send(Messages::WebPageProxy::DidCreateSubframe(frame->frameID()), page->pageID(), IPC::DispatchMessageEvenWhenWaitingForSyncReply);
 
-    RefPtr<Frame> coreFrame = Frame::create(page->corePage(), ownerElement, frame->m_frameLoaderClient.get());
-    frame->m_coreFrame = coreFrame.get();
+    Ref<WebCore::Frame> coreFrame = Frame::create(page->corePage(), ownerElement, frame->m_frameLoaderClient.get());
+    frame->m_coreFrame = coreFrame.ptr();
     frame->m_coreFrame->tree().setName(frameName);
     if (ownerElement) {
         ASSERT(ownerElement->document().frame());
-        ownerElement->document().frame()->tree().appendChild(coreFrame.release());
+        ownerElement->document().frame()->tree().appendChild(WTF::move(coreFrame));
     }
     frame->m_coreFrame->init();
     return frame.release();
@@ -151,9 +155,12 @@ WebFrame::WebFrame(std::unique_ptr<WebFrameLoaderClient> frameLoaderClient)
     , m_frameLoaderClient(WTF::move(frameLoaderClient))
     , m_loadListener(0)
     , m_frameID(generateFrameID())
+#if PLATFORM(IOS)
+    , m_firstLayerTreeTransactionIDAfterDidCommitLoad(0)
+#endif
 {
     m_frameLoaderClient->setWebFrame(this);
-    WebProcess::shared().addWebFrame(m_frameID, this);
+    WebProcess::singleton().addWebFrame(m_frameID, this);
 
 #ifndef NDEBUG
     webFrameCounter.increment();
@@ -191,7 +198,7 @@ WebFrame* WebFrame::fromCoreFrame(Frame& frame)
 
 void WebFrame::invalidate()
 {
-    WebProcess::shared().removeWebFrame(m_frameID);
+    WebProcess::singleton().removeWebFrame(m_frameID);
     m_coreFrame = 0;
 }
 
@@ -249,14 +256,15 @@ void WebFrame::startDownload(const WebCore::ResourceRequest& request)
     uint64_t policyDownloadID = m_policyDownloadID;
     m_policyDownloadID = 0;
 
+    auto& webProcess = WebProcess::singleton();
 #if ENABLE(NETWORK_PROCESS)
-    if (WebProcess::shared().usesNetworkProcess()) {
-        WebProcess::shared().networkConnection()->connection()->send(Messages::NetworkConnectionToWebProcess::StartDownload(page()->sessionID(), policyDownloadID, request), 0);
+    if (webProcess.usesNetworkProcess()) {
+        webProcess.networkConnection()->connection()->send(Messages::NetworkConnectionToWebProcess::StartDownload(page()->sessionID(), policyDownloadID, request), 0);
         return;
     }
 #endif
 
-    WebProcess::shared().downloadManager().startDownload(policyDownloadID, request);
+    webProcess.downloadManager().startDownload(policyDownloadID, request);
 }
 
 void WebFrame::convertMainResourceLoadToDownload(DocumentLoader* documentLoader, const ResourceRequest& request, const ResourceResponse& response)
@@ -268,8 +276,9 @@ void WebFrame::convertMainResourceLoadToDownload(DocumentLoader* documentLoader,
 
     ResourceLoader* mainResourceLoader = documentLoader->mainResourceLoader();
 
+    auto& webProcess = WebProcess::singleton();
 #if ENABLE(NETWORK_PROCESS)
-    if (WebProcess::shared().usesNetworkProcess()) {
+    if (webProcess.usesNetworkProcess()) {
         // Use 0 to indicate that there is no main resource loader.
         // This can happen if the main resource is in the WebCore memory cache.
         uint64_t mainResourceLoadIdentifier;
@@ -278,18 +287,18 @@ void WebFrame::convertMainResourceLoadToDownload(DocumentLoader* documentLoader,
         else
             mainResourceLoadIdentifier = 0;
 
-        WebProcess::shared().networkConnection()->connection()->send(Messages::NetworkConnectionToWebProcess::ConvertMainResourceLoadToDownload(mainResourceLoadIdentifier, policyDownloadID, request, response), 0);
+        webProcess.networkConnection()->connection()->send(Messages::NetworkConnectionToWebProcess::ConvertMainResourceLoadToDownload(mainResourceLoadIdentifier, policyDownloadID, request, response), 0);
         return;
     }
 #endif
 
     if (!mainResourceLoader) {
         // The main resource has already been loaded. Start a new download instead.
-        WebProcess::shared().downloadManager().startDownload(policyDownloadID, request);
+        webProcess.downloadManager().startDownload(policyDownloadID, request);
         return;
     }
 
-    WebProcess::shared().downloadManager().convertHandleToDownload(policyDownloadID, documentLoader->mainResourceLoader()->handle(), request, response);
+    webProcess.downloadManager().convertHandleToDownload(policyDownloadID, documentLoader->mainResourceLoader()->handle(), request, response);
 }
 
 String WebFrame::source() const 
@@ -305,7 +314,7 @@ String WebFrame::source() const
     DocumentLoader* documentLoader = m_coreFrame->loader().activeDocumentLoader();
     if (!documentLoader)
         return String();
-    RefPtr<ResourceBuffer> mainResourceData = documentLoader->mainResourceData();
+    RefPtr<SharedBuffer> mainResourceData = documentLoader->mainResourceData();
     if (!mainResourceData)
         return String();
     return decoder->encoding().decode(mainResourceData->data(), mainResourceData->size());
@@ -417,7 +426,7 @@ WebCore::CertificateInfo WebFrame::certificateInfo() const
     if (!documentLoader)
         return CertificateInfo();
 
-    return CertificateInfo(documentLoader->response());
+    return documentLoader->response().certificateInfo();
 }
 
 String WebFrame::innerText() const
@@ -439,7 +448,7 @@ WebFrame* WebFrame::parentFrame() const
     return WebFrame::fromCoreFrame(*m_coreFrame->ownerElement()->document().frame());
 }
 
-PassRefPtr<API::Array> WebFrame::childFrames()
+Ref<API::Array> WebFrame::childFrames()
 {
     if (!m_coreFrame)
         return API::Array::create();
@@ -502,6 +511,25 @@ bool WebFrame::handlesPageScaleGesture() const
     PluginDocument* pluginDocument = static_cast<PluginDocument*>(m_coreFrame->document());
     PluginView* pluginView = static_cast<PluginView*>(pluginDocument->pluginWidget());
     return pluginView && pluginView->handlesPageScaleFactor();
+}
+
+void WebFrame::setAccessibleName(const String& accessibleName)
+{
+    if (!AXObjectCache::accessibilityEnabled())
+        return;
+    
+    if (!m_coreFrame)
+        return;
+
+    auto* document = m_coreFrame->document();
+    if (!document)
+        return;
+    
+    auto* rootObject = document->axObjectCache()->rootObject();
+    if (!rootObject)
+        return;
+
+    rootObject->setAccessibleName(accessibleName);
 }
 
 IntRect WebFrame::contentBounds() const
@@ -612,10 +640,10 @@ bool WebFrame::containsAnyFormElements() const
     if (!document)
         return false;
 
-    for (Node* node = document->documentElement(); node; node = NodeTraversal::next(node)) {
-        if (!node->isElementNode())
+    for (Node* node = document->documentElement(); node; node = NodeTraversal::next(*node)) {
+        if (!is<Element>(*node))
             continue;
-        if (isHTMLFormElement(node))
+        if (is<HTMLFormElement>(*node))
             return true;
     }
     return false;
@@ -630,10 +658,10 @@ bool WebFrame::containsAnyFormControls() const
     if (!document)
         return false;
 
-    for (Node* node = document->documentElement(); node; node = NodeTraversal::next(node)) {
-        if (!node->isElementNode())
+    for (Node* node = document->documentElement(); node; node = NodeTraversal::next(*node)) {
+        if (!is<Element>(*node))
             continue;
-        if (isHTMLInputElement(node) || isHTMLSelectElement(node) || isHTMLTextAreaElement(node))
+        if (is<HTMLInputElement>(*node) || is<HTMLSelectElement>(*node) || is<HTMLTextAreaElement>(*node))
             return true;
     }
     return false;
@@ -680,6 +708,18 @@ JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleRangeHandle* rangeHandle, I
 
     JSLockHolder lock(exec);
     return toRef(exec, toJS(exec, globalObject, rangeHandle->coreRange()));
+}
+
+JSValueRef WebFrame::jsWrapperForWorld(InjectedBundleFileHandle* fileHandle, InjectedBundleScriptWorld* world)
+{
+    if (!m_coreFrame)
+        return nullptr;
+
+    JSDOMWindow* globalObject = m_coreFrame->script().globalObject(world->coreWorld());
+    ExecState* exec = globalObject->globalExec();
+
+    JSLockHolder lock(exec);
+    return toRef(exec, toJS(exec, globalObject, fileHandle->coreFile()));
 }
 
 String WebFrame::counterValue(JSObjectRef element)
@@ -781,5 +821,25 @@ RetainPtr<CFDataRef> WebFrame::webArchiveData(FrameFilterFunction callback, void
     return archive->rawDataRepresentation();
 }
 #endif
+
+PassRefPtr<ShareableBitmap> WebFrame::createSelectionSnapshot() const
+{
+    std::unique_ptr<ImageBuffer> snapshot = snapshotSelection(*coreFrame(), WebCore::SnapshotOptionsForceBlackText);
+    if (!snapshot)
+        return nullptr;
+
+    RefPtr<ShareableBitmap> sharedSnapshot = ShareableBitmap::createShareable(snapshot->internalSize(), ShareableBitmap::SupportsAlpha);
+    if (!sharedSnapshot)
+        return nullptr;
+
+    // FIXME: We should consider providing a way to use subpixel antialiasing for the snapshot
+    // if we're compositing this image onto a solid color (e.g. the modern find indicator style).
+    auto graphicsContext = sharedSnapshot->createGraphicsContext();
+    float deviceScaleFactor = coreFrame()->page()->deviceScaleFactor();
+    graphicsContext->scale(FloatSize(deviceScaleFactor, deviceScaleFactor));
+    graphicsContext->drawImageBuffer(snapshot.get(), ColorSpaceDeviceRGB, FloatPoint());
+
+    return sharedSnapshot.release();
+}
     
 } // namespace WebKit

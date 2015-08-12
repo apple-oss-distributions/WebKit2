@@ -44,8 +44,11 @@ class WebPageProxy;
 
 class WebPreferences : public API::ObjectImpl<API::Object::Type::Preferences> {
 public:
-    static PassRefPtr<WebPreferences> create(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix);
+    static Ref<WebPreferences> create(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix);
     static PassRefPtr<WebPreferences> createWithLegacyDefaults(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix);
+
+    explicit WebPreferences(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix);
+    WebPreferences(const WebPreferences&);
 
     virtual ~WebPreferences();
 
@@ -71,9 +74,6 @@ public:
     static bool anyPagesAreUsingPrivateBrowsing();
 
 private:
-    explicit WebPreferences(const String& identifier, const String& keyPrefix, const String& globalDebugKeyPrefix);
-    WebPreferences(const WebPreferences&);
-
     void platformInitializeStore();
 
     void update();
@@ -90,6 +90,14 @@ private:
     void platformUpdateFloatValueForKey(const String& key, float value);
 
     void updatePrivateBrowsingValue(bool value);
+
+    void registerDefaultBoolValueForKey(const String&, bool);
+    void registerDefaultUInt32ValueForKey(const String&, uint32_t);
+
+    bool platformGetStringUserValueForKey(const String& key, String& userValue);
+    bool platformGetBoolUserValueForKey(const String&, bool&);
+    bool platformGetUInt32UserValueForKey(const String&, uint32_t&);
+    bool platformGetDoubleUserValueForKey(const String&, double&);
 
     const String m_identifier;
     const String m_keyPrefix;

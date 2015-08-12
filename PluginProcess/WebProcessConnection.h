@@ -44,7 +44,7 @@ struct PluginCreationParameters;
 
 class WebProcessConnection : public RefCounted<WebProcessConnection>, IPC::Connection::Client {
 public:
-    static PassRefPtr<WebProcessConnection> create(IPC::Connection::Identifier);
+    static RefPtr<WebProcessConnection> create(IPC::Connection::Identifier);
     virtual ~WebProcessConnection();
 
     IPC::Connection* connection() const { return m_connection.get(); }
@@ -54,9 +54,6 @@ public:
 
     static void setGlobalException(const String&);
     
-    void pluginDidBecomeVisible(unsigned pluginInstanceID);
-    void pluginDidBecomeHidden(unsigned pluginInstanceID);
-
     void audioHardwareDidBecomeActive();
     void audioHardwareDidBecomeInactive();
 
@@ -68,14 +65,16 @@ private:
     void destroyPluginControllerProxy(PluginControllerProxy*);
 
     // IPC::Connection::Client
-    virtual void didReceiveMessage(IPC::Connection*, IPC::MessageDecoder&) override;
-    virtual void didReceiveSyncMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&) override;
-    virtual void didClose(IPC::Connection*);
-    virtual void didReceiveInvalidMessage(IPC::Connection*, IPC::StringReference messageReceiverName, IPC::StringReference messageName);
+    virtual void didReceiveMessage(IPC::Connection&, IPC::MessageDecoder&) override;
+    virtual void didReceiveSyncMessage(IPC::Connection&, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&) override;
+    virtual void didClose(IPC::Connection&) override;
+    virtual void didReceiveInvalidMessage(IPC::Connection&, IPC::StringReference messageReceiverName, IPC::StringReference messageName) override;
+    virtual IPC::ProcessType localProcessType() override { return IPC::ProcessType::Plugin; }
+    virtual IPC::ProcessType remoteProcessType() override { return IPC::ProcessType::Web; }
 
     // Message handlers.
-    void didReceiveWebProcessConnectionMessage(IPC::Connection*, IPC::MessageDecoder&);
-    void didReceiveSyncWebProcessConnectionMessage(IPC::Connection*, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&);
+    void didReceiveWebProcessConnectionMessage(IPC::Connection&, IPC::MessageDecoder&);
+    void didReceiveSyncWebProcessConnectionMessage(IPC::Connection&, IPC::MessageDecoder&, std::unique_ptr<IPC::MessageEncoder>&);
     void createPlugin(const PluginCreationParameters&, PassRefPtr<Messages::WebProcessConnection::CreatePlugin::DelayedReply>);
     void createPluginAsynchronously(const PluginCreationParameters&);
     void destroyPlugin(uint64_t pluginInstanceID, bool asynchronousCreationIncomplete, PassRefPtr<Messages::WebProcessConnection::DestroyPlugin::DelayedReply>);
@@ -87,7 +86,6 @@ private:
     HashMap<uint64_t, std::unique_ptr<PluginControllerProxy>> m_pluginControllers;
     RefPtr<NPRemoteObjectMap> m_npRemoteObjectMap;
     HashSet<uint64_t> m_asynchronousInstanceIDsToIgnore;
-    HashSet<uint64_t> m_visiblePluginInstanceIDs;
 };
 
 } // namespace WebKit

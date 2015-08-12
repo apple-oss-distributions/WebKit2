@@ -44,6 +44,7 @@
 #import <WebCore/FocusController.h>
 #import <WebCore/Frame.h>
 #import <WebCore/KeyboardEvent.h>
+#import <WebCore/MainFrame.h>
 #import <WebCore/NotImplemented.h>
 #import <WebCore/Page.h>
 #import <WebCore/WebCoreNSURLExtras.h>
@@ -184,7 +185,7 @@ void WebEditorClient::toggleSmartInsertDelete()
 
 bool WebEditorClient::isAutomaticQuoteSubstitutionEnabled()
 {
-    return WebProcess::shared().textCheckerState().isAutomaticQuoteSubstitutionEnabled;
+    return WebProcess::singleton().textCheckerState().isAutomaticQuoteSubstitutionEnabled;
 }
 
 void WebEditorClient::toggleAutomaticQuoteSubstitution()
@@ -195,7 +196,7 @@ void WebEditorClient::toggleAutomaticQuoteSubstitution()
 
 bool WebEditorClient::isAutomaticLinkDetectionEnabled()
 {
-    return WebProcess::shared().textCheckerState().isAutomaticLinkDetectionEnabled;
+    return WebProcess::singleton().textCheckerState().isAutomaticLinkDetectionEnabled;
 }
 
 void WebEditorClient::toggleAutomaticLinkDetection()
@@ -206,7 +207,7 @@ void WebEditorClient::toggleAutomaticLinkDetection()
 
 bool WebEditorClient::isAutomaticDashSubstitutionEnabled()
 {
-    return WebProcess::shared().textCheckerState().isAutomaticDashSubstitutionEnabled;
+    return WebProcess::singleton().textCheckerState().isAutomaticDashSubstitutionEnabled;
 }
 
 void WebEditorClient::toggleAutomaticDashSubstitution()
@@ -217,7 +218,7 @@ void WebEditorClient::toggleAutomaticDashSubstitution()
 
 bool WebEditorClient::isAutomaticTextReplacementEnabled()
 {
-    return WebProcess::shared().textCheckerState().isAutomaticTextReplacementEnabled;
+    return WebProcess::singleton().textCheckerState().isAutomaticTextReplacementEnabled;
 }
 
 void WebEditorClient::toggleAutomaticTextReplacement()
@@ -228,7 +229,7 @@ void WebEditorClient::toggleAutomaticTextReplacement()
 
 bool WebEditorClient::isAutomaticSpellingCorrectionEnabled()
 {
-    return WebProcess::shared().textCheckerState().isAutomaticSpellingCorrectionEnabled;
+    return WebProcess::singleton().textCheckerState().isAutomaticSpellingCorrectionEnabled;
 }
 
 void WebEditorClient::toggleAutomaticSpellingCorrection()

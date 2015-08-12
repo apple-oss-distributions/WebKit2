@@ -35,6 +35,7 @@
 #import "PluginProxyMessages.h"
 #import "WebProcessConnection.h"
 #import <QuartzCore/QuartzCore.h>
+#import <WebCore/GraphicsContextCG.h>
 
 using namespace WebCore;
 
@@ -50,14 +51,14 @@ void PluginControllerProxy::setComplexTextInputState(PluginComplexTextInputState
     m_connection->connection()->send(Messages::PluginProxy::SetComplexTextInputState(pluginComplexTextInputState), m_pluginInstanceID, IPC::DispatchMessageEvenWhenWaitingForSyncReply);
 }
 
-mach_port_t PluginControllerProxy::compositingRenderServerPort()
+const MachSendRight& PluginControllerProxy::compositingRenderServerPort()
 {
-    return PluginProcess::shared().compositingRenderServerPort();
+    return PluginProcess::singleton().compositingRenderServerPort();
 }
 
 void PluginControllerProxy::openPluginPreferencePane()
 {
-    PluginProcess::shared().parentProcessConnection()->send(Messages::PluginProcessProxy::OpenPluginPreferencePane(), 0);
+    PluginProcess::singleton().parentProcessConnection()->send(Messages::PluginProcessProxy::OpenPluginPreferencePane(), 0);
 }
 
 void PluginControllerProxy::platformInitialize(const PluginCreationParameters& creationParameters)
@@ -94,23 +95,9 @@ void PluginControllerProxy::platformGeometryDidChange()
     [CATransaction commit];
 }
 
-void PluginControllerProxy::windowFocusChanged(bool hasFocus)
-{
-    m_plugin->windowFocusChanged(hasFocus);
-}
-
 void PluginControllerProxy::windowAndViewFramesChanged(const IntRect& windowFrameInScreenCoordinates, const IntRect& viewFrameInWindowCoordinates)
 {
     m_plugin->windowAndViewFramesChanged(windowFrameInScreenCoordinates, viewFrameInWindowCoordinates);
-}
-
-void PluginControllerProxy::windowVisibilityChanged(bool isVisible)
-{
-    m_plugin->windowVisibilityChanged(isVisible);
-    if (isVisible)
-        m_connection->pluginDidBecomeVisible(m_pluginInstanceID);
-    else
-        m_connection->pluginDidBecomeHidden(m_pluginInstanceID);
 }
 
 void PluginControllerProxy::sendComplexTextInput(const String& textInput)
@@ -144,7 +131,7 @@ void PluginControllerProxy::updateLayerHostingContext(LayerHostingMode layerHost
 
     switch (layerHostingMode) {
         case LayerHostingMode::InProcess:
-            m_layerHostingContext = LayerHostingContext::createForPort(PluginProcess::shared().compositingRenderServerPort());
+            m_layerHostingContext = LayerHostingContext::createForPort(PluginProcess::singleton().compositingRenderServerPort());
             break;
 #if HAVE(OUT_OF_PROCESS_LAYER_HOSTING)
         case LayerHostingMode::OutOfProcess:
@@ -152,6 +139,11 @@ void PluginControllerProxy::updateLayerHostingContext(LayerHostingMode layerHost
             break;
 #endif
     }
+
+#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 101100
+    m_layerHostingContext->setColorSpace(sRGBColorSpaceRef());
+    m_layerHostingContext->setColorMatchUntaggedContent(true);
+#endif
 
     m_layerHostingContext->setRootLayer(platformLayer);
 }

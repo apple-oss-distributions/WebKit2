@@ -49,16 +49,17 @@ namespace WebKit {
 // The plug-in that we're currently calling NPP_New for.
 static NetscapePlugin* currentNPPNewPlugin;
 
-PassRefPtr<NetscapePlugin> NetscapePlugin::create(PassRefPtr<NetscapePluginModule> pluginModule)
+RefPtr<NetscapePlugin> NetscapePlugin::create(PassRefPtr<NetscapePluginModule> pluginModule)
 {
     if (!pluginModule)
-        return 0;
+        return nullptr;
 
-    return adoptRef(new NetscapePlugin(pluginModule));
+    return adoptRef(*new NetscapePlugin(pluginModule));
 }
     
 NetscapePlugin::NetscapePlugin(PassRefPtr<NetscapePluginModule> pluginModule)
-    : m_nextRequestID(0)
+    : Plugin(NetscapePluginType)
+    , m_nextRequestID(0)
     , m_pluginModule(pluginModule)
     , m_npWindow()
     , m_isStarted(false)
@@ -147,13 +148,6 @@ const char* NetscapePlugin::userAgent(NPP npp)
 
 const char* NetscapePlugin::userAgent()
 {
-#if PLUGIN_ARCHITECTURE(WIN)
-    static const char* MozillaUserAgent = "Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1) Gecko/20061010 Firefox/2.0";
-    
-    if (quirks().contains(PluginQuirks::WantsMozillaUserAgent))
-        return MozillaUserAgent;
-#endif
-
     if (m_userAgent.isNull()) {
         String userAgent = controller()->userAgent();
         ASSERT(!userAgent.isNull());
@@ -254,6 +248,11 @@ bool NetscapePlugin::isPrivateBrowsingEnabled()
     return controller()->isPrivateBrowsingEnabled();
 }
 
+bool NetscapePlugin::isMuted() const
+{
+    return controller()->isMuted();
+}
+
 NPObject* NetscapePlugin::windowScriptNPObject()
 {
     return controller()->windowScriptNPObject();
@@ -278,7 +277,7 @@ void NetscapePlugin::cancelStreamLoad(NetscapePluginStream* pluginStream)
 void NetscapePlugin::removePluginStream(NetscapePluginStream* pluginStream)
 {
     if (pluginStream == m_manualStream) {
-        m_manualStream = 0;
+        m_manualStream = nullptr;
         return;
     }
 
@@ -399,6 +398,11 @@ bool NetscapePlugin::getAuthenticationInfo(const ProtectionSpace& protectionSpac
     return controller()->getAuthenticationInfo(protectionSpace, username, password);
 }    
 
+void NetscapePlugin::setIsPlayingAudio(bool isPlayingAudio)
+{
+    controller()->setPluginIsPlayingAudio(isPlayingAudio);
+}
+
 NPError NetscapePlugin::NPP_New(NPMIMEType pluginType, uint16_t mode, int16_t argc, char* argn[], char* argv[], NPSavedData* savedData)
 {
     return m_pluginModule->pluginFuncs().newp(pluginType, &m_npp, mode, argc, argn, argv, savedData);
@@ -507,6 +511,12 @@ void NetscapePlugin::callSetWindowInvisible()
 
 bool NetscapePlugin::shouldLoadSrcURL()
 {
+#if PLUGIN_ARCHITECTURE(X11)
+    // Flash crashes when NPP_GetValue is called for NPPVpluginCancelSrcStream in windowed mode.
+    if (m_isWindowed && m_pluginModule->pluginQuirks().contains(PluginQuirks::DoNotCancelSrcStreamInWindowedMode))
+        return true;
+#endif
+
     // Check if we should cancel the load
     NPBool cancelSrcStream = false;
 
@@ -560,7 +570,7 @@ static bool isTransparentSilverlightBackgroundValue(const String& lowercaseBackg
         }
     } else if (lowercaseBackgroundValue.startsWith("sc#")) {
         Vector<String> components;
-        lowercaseBackgroundValue.substring(3).split(",", components);
+        lowercaseBackgroundValue.substring(3).split(',', components);
 
         // An ScRGB value with alpha transparency, in the form sc#A,R,G,B.
         if (components.size() == 4) {
@@ -750,8 +760,10 @@ void NetscapePlugin::geometryDidChange(const IntSize& pluginSize, const IntRect&
     m_clipRect = clipRect;
     m_pluginToRootViewTransform = pluginToRootViewTransform;
 
+#if PLUGIN_ARCHITECTURE(X11)
     IntPoint frameRectLocationInWindowCoordinates = m_pluginToRootViewTransform.mapPoint(IntPoint());
     m_frameRectInWindowCoordinates = IntRect(frameRectLocationInWindowCoordinates, m_pluginSize);
+#endif
 
     platformGeometryDidChange();
 
@@ -1070,6 +1082,24 @@ bool NetscapePlugin::convertFromRootView(const IntPoint& pointInRootViewCoordina
     pointInPluginCoordinates = m_pluginToRootViewTransform.inverse().mapPoint(pointInRootViewCoordinates);
     return true;
 }
+
+void NetscapePlugin::mutedStateChanged(bool muted)
+{
+    NPBool value = muted;
+    NPP_SetValue(NPNVmuteAudioBool, &value);
+}
+
+#if !PLATFORM(COCOA)
+    
+void NetscapePlugin::windowFocusChanged(bool)
+{
+}
+
+void NetscapePlugin::windowVisibilityChanged(bool)
+{
+}
+
+#endif
 
 } // namespace WebKit
 

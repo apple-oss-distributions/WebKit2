@@ -52,8 +52,6 @@ using namespace WebKit;
     BOOL _originalMayStartMediaWhenInWindow;
     BOOL _originalSourceViewIsInWindow;
 
-    BOOL _shouldApplyThumbnailScale;
-
     BOOL _snapshotWasDeferred;
     double _lastSnapshotScale;
 }
@@ -76,17 +74,13 @@ using namespace WebKit;
     _originalMayStartMediaWhenInWindow = _webPageProxy->mayStartMediaWhenInWindow();
     _originalSourceViewIsInWindow = !![_wkView window];
 
-    _shouldApplyThumbnailScale = !_originalSourceViewIsInWindow;
-
     return self;
 }
 
 - (void)_viewWasUnparented
 {
-    if (_shouldApplyThumbnailScale)
-        _webPageProxy->setThumbnailScale(1);
-
     [_wkView _setThumbnailView:nil];
+    [_wkView _setIgnoresAllEvents:NO];
 
     self.layer.contents = nil;
     _lastSnapshotScale = NAN;
@@ -99,21 +93,16 @@ using namespace WebKit;
     if ([_wkView _thumbnailView])
         return;
 
-    if (_shouldApplyThumbnailScale)
-        _webPageProxy->setThumbnailScale(_scale);
-
     if (!_originalSourceViewIsInWindow)
         _webPageProxy->setMayStartMediaWhenInWindow(false);
 
     [self _requestSnapshotIfNeeded];
     [_wkView _setThumbnailView:self];
+    [_wkView _setIgnoresAllEvents:YES];
 }
 
 - (void)_requestSnapshotIfNeeded
 {
-    if (!_usesSnapshot)
-        return;
-
     if (self.layer.contents && _lastSnapshotScale == _scale)
         return;
 
@@ -126,12 +115,12 @@ using namespace WebKit;
 
     RetainPtr<_WKThumbnailView> thumbnailView = self;
     IntRect snapshotRect(IntPoint(), _webPageProxy->viewSize() - IntSize(0, _webPageProxy->topContentInset()));
-    SnapshotOptions options = SnapshotOptionsRespectDrawingAreaTransform | SnapshotOptionsInViewCoordinates;
+    SnapshotOptions options = SnapshotOptionsInViewCoordinates;
     IntSize bitmapSize = snapshotRect.size();
     bitmapSize.scale(_scale * _webPageProxy->deviceScaleFactor());
     _lastSnapshotScale = _scale;
-    _webPageProxy->takeSnapshot(snapshotRect, bitmapSize, options, [thumbnailView](const ShareableBitmap::Handle& imageHandle, CallbackBase::Error) {
-        RefPtr<ShareableBitmap> bitmap = ShareableBitmap::create(imageHandle, SharedMemory::ReadOnly);
+    _webPageProxy->takeSnapshot(snapshotRect, bitmapSize, options, [thumbnailView](const ShareableBitmap::Handle& imageHandle, WebKit::CallbackBase::Error) {
+        RefPtr<ShareableBitmap> bitmap = ShareableBitmap::create(imageHandle, SharedMemory::Protection::ReadOnly);
         RetainPtr<CGImageRef> cgImage = bitmap ? bitmap->makeCGImage() : nullptr;
         [thumbnailView _didTakeSnapshot:cgImage.get()];
     });
@@ -166,31 +155,19 @@ using namespace WebKit;
 
     _scale = scale;
 
-    if (self.window && _shouldApplyThumbnailScale)
-        _webPageProxy->setThumbnailScale(_scale);
-
-    if (_usesSnapshot)
-        [self _requestSnapshotIfNeeded];
+    [self _requestSnapshotIfNeeded];
 
     self.layer.sublayerTransform = CATransform3DMakeScale(_scale, _scale, 1);
 }
 
+// This should be removed when all clients go away; it is always YES now.
 - (void)setUsesSnapshot:(BOOL)usesSnapshot
 {
-    if (_usesSnapshot == usesSnapshot)
-        return;
+}
 
-    _usesSnapshot = usesSnapshot;
-
-    if (!self.window)
-        return;
-
-    if (usesSnapshot)
-        [self _requestSnapshotIfNeeded];
-    else {
-        _webPageProxy->setThumbnailScale(_scale);
-        [_wkView _reparentLayerTreeInThumbnailView];
-    }
+- (BOOL)usesSnapshot
+{
+    return YES;
 }
 
 - (void)_setThumbnailLayer:(CALayer *)layer

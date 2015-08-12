@@ -59,11 +59,14 @@ private:
     virtual bool shouldChangeSelectedRange(WebCore::Range* fromRange, WebCore::Range* toRange, WebCore::EAffinity, bool stillSelecting) override;
     
     virtual bool shouldApplyStyle(WebCore::StyleProperties*, WebCore::Range*) override;
+    virtual void didApplyStyle() override;
     virtual bool shouldMoveRangeAfterDelete(WebCore::Range*, WebCore::Range*) override;
 
     virtual void didBeginEditing() override;
     virtual void respondToChangedContents() override;
     virtual void respondToChangedSelection(WebCore::Frame*) override;
+    virtual void didChangeSelectionAndUpdateLayout() override;
+    virtual void discardedComposition(WebCore::Frame*) override;
     virtual void didEndEditing() override;
     virtual void willWriteSelectionToPasteboard(WebCore::Range*) override;
     virtual void didWriteSelectionToPasteboard() override;
@@ -121,10 +124,6 @@ private:
     virtual void toggleAutomaticSpellingCorrection() override;
 #endif
 
-#if ENABLE(DELETION_UI)
-    virtual bool shouldShowDeleteInterface(WebCore::HTMLElement*) override;
-#endif
-
 #if PLATFORM(GTK)
     bool executePendingEditorCommands(WebCore::Frame*, const Vector<WTF::String>&, bool);
     void getEditorCommandsForKeyEvent(const WebCore::KeyboardEvent*, Vector<WTF::String>&);
@@ -167,11 +166,6 @@ private:
 #endif
 
     virtual bool supportsGlobalSelection() override;
-
-#if ENABLE(TELEPHONE_NUMBER_DETECTION) || ENABLE(SERVICE_CONTROLS)
-    virtual void selectedTelephoneNumberRangesChanged(const Vector<RefPtr<WebCore::Range>>&) override;
-    virtual void selectionRectsDidChange(const Vector<WebCore::LayoutRect>&, const Vector<WebCore::GapRects>&) override;
-#endif
 
     WebPage* m_page;
 };

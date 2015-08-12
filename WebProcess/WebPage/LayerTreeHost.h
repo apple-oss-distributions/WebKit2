@@ -43,11 +43,13 @@ class IntRect;
 class IntSize;
 class GraphicsLayer;
 class GraphicsLayerFactory;
+#if USE(COORDINATED_GRAPHICS_THREADED)
+class ViewportAttributes;
+#endif
 }
 
 namespace WebKit {
 
-class PageOverlay;
 class UpdateInfo;
 class WebPage;
 
@@ -72,24 +74,29 @@ public:
     virtual void deviceOrPageScaleFactorChanged() = 0;
     virtual void pageBackgroundTransparencyChanged() = 0;
 
-    virtual void didInstallPageOverlay(PageOverlay*) { }
-    virtual void didUninstallPageOverlay(PageOverlay*) { }
-    virtual void setPageOverlayNeedsDisplay(PageOverlay*, const WebCore::IntRect&) { }
-    virtual void setPageOverlayOpacity(PageOverlay*, float) { }
-
     virtual void pauseRendering() { }
     virtual void resumeRendering() { }
 
     virtual WebCore::GraphicsLayerFactory* graphicsLayerFactory() { return 0; }
-    virtual void setBackgroundColor(const WebCore::Color&) { }
 
-#if USE(COORDINATED_GRAPHICS)
-    virtual void didReceiveCoordinatedLayerTreeHostMessage(IPC::Connection*, IPC::MessageDecoder&) = 0;
+#if USE(COORDINATED_GRAPHICS_MULTIPROCESS)
+    virtual void didReceiveCoordinatedLayerTreeHostMessage(IPC::Connection&, IPC::MessageDecoder&) = 0;
+#endif
+
+#if USE(COORDINATED_GRAPHICS_THREADED)
+    virtual void viewportSizeChanged(const WebCore::IntSize&) = 0;
+    virtual void didChangeViewportProperties(const WebCore::ViewportAttributes&) = 0;
 #endif
 
 #if USE(COORDINATED_GRAPHICS) && ENABLE(REQUEST_ANIMATION_FRAME)
     virtual void scheduleAnimation() = 0;
 #endif
+
+#if USE(TEXTURE_MAPPER_GL) && PLATFORM(GTK)
+    virtual void setNativeSurfaceHandleForCompositing(uint64_t) = 0;
+#endif
+
+    virtual void setViewOverlayRootLayer(WebCore::GraphicsLayer*) = 0;
 
 protected:
     explicit LayerTreeHost(WebPage*);

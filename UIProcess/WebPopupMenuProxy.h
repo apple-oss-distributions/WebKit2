@@ -26,7 +26,7 @@
 #ifndef WebPopupMenuProxy_h
 #define WebPopupMenuProxy_h
 
-#include <WebCore/TextDirection.h>
+#include <WebCore/WritingMode.h>
 #include <wtf/PassRefPtr.h>
 #include <wtf/RefCounted.h>
 #include <wtf/Vector.h>
@@ -66,6 +66,7 @@ public:
     virtual void showPopupMenu(const WebCore::IntRect& rect, WebCore::TextDirection, double pageScaleFactor, const Vector<WebPopupItem>& items, const PlatformPopupMenuData&, int32_t selectedIndex) = 0;
     virtual void hidePopupMenu() = 0;
 #endif
+    virtual void cancelTracking() { }
 
     void invalidate() { m_client = 0; }
 
