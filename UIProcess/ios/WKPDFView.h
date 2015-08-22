@@ -34,7 +34,6 @@
 
 @property (nonatomic, readonly) NSString *suggestedFilename;
 @property (nonatomic, readonly) CGPDFDocumentRef pdfDocument;
-@property (nonatomic, readonly) BOOL isBackground;
 
 @end
 

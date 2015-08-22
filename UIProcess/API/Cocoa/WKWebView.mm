@@ -133,24 +133,7 @@ enum class DynamicViewportUpdateMode {
     ResizingWithDocumentHidden,
 };
 
-#if __has_include(<WebKitAdditions/RemoteLayerBackingStoreAdditions.mm>)
-#import <WebKitAdditions/RemoteLayerBackingStoreAdditions.mm>
-#else
-
-namespace WebKit {
-
-#if USE(IOSURFACE)
-static WebCore::IOSurface::Format bufferFormat(bool)
-{
-    return WebCore::IOSurface::Format::RGBA;
-}
-#endif // USE(IOSURFACE)
-
-} // namespace WebKit
-
 #endif
-
-#endif // PLATFORM(IOS)
 
 #if PLATFORM(MAC)
 #import "WKViewInternal.h"
@@ -188,11 +171,6 @@ WKWebView* fromWebPageProxy(WebKit::WebPageProxy& page)
     CGSize _maximumUnobscuredSizeOverride;
     CGRect _inputViewBounds;
     CGFloat _viewportMetaTagWidth;
-    BOOL _viewportMetaTagWidthWasExplicit;
-    BOOL _viewportMetaTagCameFromImageDocument;
-    CGFloat _initialScaleFactor;
-    BOOL _fastClickingIsDisabled;
-
     BOOL _allowsLinkPreview;
 
     UIEdgeInsets _obscuredInsets;
@@ -201,8 +179,6 @@ WKWebView* fromWebPageProxy(WebKit::WebPageProxy& page)
 
     UIInterfaceOrientation _interfaceOrientationOverride;
     BOOL _overridesInterfaceOrientation;
-    
-    BOOL _allowsViewportShrinkToFit;
 
     BOOL _hasCommittedLoadForMainFrame;
     BOOL _needsResetViewStateAfterCommitLoadForMainFrame;
@@ -374,9 +350,7 @@ static bool shouldAllowPictureInPictureMediaPlayback()
     [_scrollView addSubview:[_contentView unscaledView]];
     [self _updateScrollViewBackground];
 
-    _viewportMetaTagWidth = WebCore::ViewportArguments::ValueAuto;
-    _initialScaleFactor = 1;
-    _fastClickingIsDisabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"WebKitFastClickingDisabled"];
+    _viewportMetaTagWidth = -1;
 
     [self _frameOrBoundsChanged];
 
@@ -425,10 +399,6 @@ static bool shouldAllowPictureInPictureMediaPlayback()
 
 - (void)dealloc
 {
-#if PLATFORM(IOS)
-    [_contentView _webViewDestroyed];
-#endif
-
     if (_remoteObjectRegistry)
         _page->process().processPool().removeMessageReceiver(Messages::RemoteObjectRegistry::messageReceiverName(), _page->pageID());
 
@@ -591,9 +561,7 @@ static bool shouldAllowPictureInPictureMediaPlayback()
 
 - (WKNavigation *)reload
 {
-    const bool reloadFromOrigin = false;
-    const bool contentBlockersEnabled = true;
-    auto navigation = _page->reload(reloadFromOrigin, contentBlockersEnabled);
+    auto navigation = _page->reload(false);
     if (!navigation)
         return nil;
 
@@ -602,9 +570,7 @@ static bool shouldAllowPictureInPictureMediaPlayback()
 
 - (WKNavigation *)reloadFromOrigin
 {
-    const bool reloadFromOrigin = true;
-    const bool contentBlockersEnabled = true;
-    auto navigation = _page->reload(reloadFromOrigin, contentBlockersEnabled);
+    auto navigation = _page->reload(true);
     if (!navigation)
         return nil;
 
@@ -724,15 +690,6 @@ static WKErrorCode callbackErrorCode(WebKit::CallbackBase::Error error)
 #pragma mark iOS-specific methods
 
 #if PLATFORM(IOS)
-
-- (BOOL)_isBackground
-{
-    if ([self _isDisplayingPDF])
-        return [(WKPDFView *)_customContentView isBackground];
-
-    return [_contentView isBackground];
-}
-
 - (void)setFrame:(CGRect)frame
 {
     CGRect oldFrame = self.frame;
@@ -764,14 +721,7 @@ static WKErrorCode callbackErrorCode(WebKit::CallbackBase::Error error)
 
 - (BOOL)becomeFirstResponder
 {
-    return [self._currentContentView becomeFirstResponder] || [super becomeFirstResponder];
-}
-
-- (BOOL)canBecomeFirstResponder
-{
-    if (self._currentContentView == _contentView && [_contentView isResigningFirstResponder])
-        return NO;
-    return YES;
+    return [_contentView becomeFirstResponder] || [super becomeFirstResponder];
 }
 
 static inline CGFloat floorToDevicePixel(CGFloat input, float deviceScaleFactor)
@@ -829,9 +779,6 @@ static CGSize roundScrollViewContentSize(const WebKit::WebPageProxy& page, CGSiz
         [_customContentFixedOverlayView setFrame:self.bounds];
         [self addSubview:_customContentFixedOverlayView.get()];
     }
-
-    if (self.isFirstResponder && self._currentContentView.canBecomeFirstResponder)
-        [self._currentContentView becomeFirstResponder];
 }
 
 - (void)_didFinishLoadingDataForCustomContentProviderWithSuggestedFilename:(const String&)suggestedFilename data:(NSData *)data
@@ -842,6 +789,11 @@ static CGSize roundScrollViewContentSize(const WebKit::WebPageProxy& page, CGSiz
     // FIXME: It may make more sense for custom content providers to invoke this when they're ready,
     // because there's no guarantee that all custom content providers will lay out synchronously.
     _page->didLayoutForCustomContentProvider();
+}
+
+- (void)_setViewportMetaTagWidth:(float)newWidth
+{
+    _viewportMetaTagWidth = newWidth;
 }
 
 - (void)_willInvokeUIScrollViewDelegateCallback
@@ -956,8 +908,7 @@ static WebCore::Color scrollViewBackgroundColor(WKWebView *webView)
     [_scrollView setContentOffset:[self _adjustedContentOffset:CGPointZero]];
     [_scrollView setZoomScale:1];
 
-    _viewportMetaTagWidth = WebCore::ViewportArguments::ValueAuto;
-    _initialScaleFactor = 1;
+    _viewportMetaTagWidth = -1;
     _hasCommittedLoadForMainFrame = NO;
     _needsResetViewStateAfterCommitLoadForMainFrame = NO;
     _dynamicViewportUpdateMode = DynamicViewportUpdateMode::NotResizing;
@@ -1036,15 +987,23 @@ static inline bool areEssentiallyEqualAsFloat(float a, float b)
     [_scrollView setMinimumZoomScale:layerTreeTransaction.minimumScaleFactor()];
     [_scrollView setMaximumZoomScale:layerTreeTransaction.maximumScaleFactor()];
     [_scrollView setZoomEnabled:layerTreeTransaction.allowsUserScaling()];
-    if (!layerTreeTransaction.scaleWasSetByUIProcess() && ![_scrollView isZooming] && ![_scrollView isZoomBouncing] && ![_scrollView _isAnimatingZoom])
-        [_scrollView setZoomScale:layerTreeTransaction.pageScaleFactor()];
+    if (!layerTreeTransaction.scaleWasSetByUIProcess() && ![_scrollView isZooming] && ![_scrollView isZoomBouncing] && ![_scrollView _isAnimatingZoom]) {
+        float newPageScaleFactor = layerTreeTransaction.pageScaleFactor();
 
-    _viewportMetaTagWidth = layerTreeTransaction.viewportMetaTagWidth();
-    _viewportMetaTagWidthWasExplicit = layerTreeTransaction.viewportMetaTagWidthWasExplicit();
-    _viewportMetaTagCameFromImageDocument = layerTreeTransaction.viewportMetaTagCameFromImageDocument();
-    _initialScaleFactor = layerTreeTransaction.initialScaleFactor();
-    if (![_contentView _mayDisableDoubleTapGesturesDuringSingleTap])
-        [_contentView _setDoubleTapGesturesEnabled:self._allowsDoubleTapGestures];
+        if (!areEssentiallyEqualAsFloat(contentZoomScale(self), newPageScaleFactor)) {
+            // FIXME: We need to handle stick to bottom.
+            WebCore::FloatRect oldUnobscuredContentRect = _page->unobscuredContentRect();
+            if (!oldUnobscuredContentRect.isEmpty() && oldUnobscuredContentRect.y() < 1) {
+                CGFloat relativeHorizontalPosition = oldUnobscuredContentRect.x() / oldUnobscuredContentRect.width();
+                CGPoint newTopLeft = { relativeHorizontalPosition * newContentSize.width, 0 };
+                CGSize scrollViewSize = [_scrollView bounds].size;
+                CGSize rectToZoomSize = CGSizeMake(scrollViewSize.width / newPageScaleFactor, scrollViewSize.height / newPageScaleFactor);
+                [_scrollView zoomToRect: { newTopLeft, rectToZoomSize } animated:NO];
+                ASSERT(areEssentiallyEqualAsFloat(newPageScaleFactor, contentZoomScale(self)));
+            } else
+                [_scrollView setZoomScale:newPageScaleFactor];
+        }
+    }
 
     [self _updateScrollViewBackground];
 
@@ -1157,26 +1116,20 @@ static inline bool areEssentiallyEqualAsFloat(float a, float b)
 - (PassRefPtr<WebKit::ViewSnapshot>)_takeViewSnapshot
 {
     float deviceScale = WKGetScreenScaleFactor();
-    WebCore::FloatSize snapshotSize(self.bounds.size);
-    snapshotSize.scale(deviceScale, deviceScale);
+    CGSize snapshotSize = self.bounds.size;
+    snapshotSize.width *= deviceScale;
+    snapshotSize.height *= deviceScale;
 
-    CATransform3D transform = CATransform3DMakeScale(deviceScale, deviceScale, 1);
-
-#if USE(IOSURFACE)
-    WebCore::IOSurface::Format snapshotFormat = WebKit::bufferFormat(true /* is opaque */);
-    auto surface = WebCore::IOSurface::create(WebCore::expandedIntSize(snapshotSize), WebCore::ColorSpaceSRGB, snapshotFormat);
-    CARenderServerRenderLayerWithTransform(MACH_PORT_NULL, self.layer.context.contextId, reinterpret_cast<uint64_t>(self.layer), surface->surface(), 0, 0, &transform);
-    return WebKit::ViewSnapshot::create(WTF::move(surface));
-#else
     uint32_t slotID = [WebKit::ViewSnapshotStore::snapshottingContext() createImageSlot:snapshotSize hasAlpha:YES];
 
     if (!slotID)
         return nullptr;
 
+    CATransform3D transform = CATransform3DMakeScale(deviceScale, deviceScale, 1);
     CARenderServerCaptureLayerWithTransform(MACH_PORT_NULL, self.layer.context.contextId, (uint64_t)self.layer, slotID, 0, 0, &transform);
+
     WebCore::IntSize imageSize = WebCore::expandedIntSize(WebCore::FloatSize(snapshotSize));
     return WebKit::ViewSnapshot::create(slotID, imageSize, imageSize.width() * imageSize.height() * 4);
-#endif
 }
 
 - (void)_zoomToPoint:(WebCore::FloatPoint)point atScale:(double)scale animated:(BOOL)animated
@@ -1301,15 +1254,12 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     return true;
 }
 
-- (void)_scrollByContentOffset:(WebCore::FloatPoint)contentOffsetDelta
+- (void)_scrollByOffset:(WebCore::FloatPoint)offset
 {
-    WebCore::FloatPoint scaledOffsetDelta = contentOffsetDelta;
-    CGFloat zoomScale = contentZoomScale(self);
-    scaledOffsetDelta.scale(zoomScale, zoomScale);
+    CGPoint currentOffset = ([_scrollView _isAnimatingScroll]) ? [_scrollView _animatedTargetOffset] : [_scrollView contentOffset];
 
-    CGPoint currentOffset = [_scrollView _isAnimatingScroll] ? [_scrollView _animatedTargetOffset] : [_scrollView contentOffset];
-    CGPoint boundedOffset = contentOffsetBoundedInValidRange(_scrollView.get(), currentOffset + scaledOffsetDelta);
-
+    CGPoint boundedOffset = contentOffsetBoundedInValidRange(_scrollView.get(), currentOffset + offset);
+    
     if (CGPointEqualToPoint(boundedOffset, currentOffset))
         return;
     [_contentView willStartZoomOrScroll];
@@ -1319,12 +1269,6 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
 - (void)_zoomOutWithOrigin:(WebCore::FloatPoint)origin animated:(BOOL)animated
 {
     [self _zoomToPoint:origin atScale:[_scrollView minimumZoomScale] animated:animated];
-}
-
-- (void)_zoomToInitialScaleWithOrigin:(WebCore::FloatPoint)origin animated:(BOOL)animated
-{
-    ASSERT(_initialScaleFactor > 0);
-    [self _zoomToPoint:origin atScale:_initialScaleFactor animated:animated];
 }
 
 // focusedElementRect and selectionRect are both in document coordinates.
@@ -1446,8 +1390,12 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
                         force:YES];
 }
 
-- (CGFloat)_targetContentZoomScaleForRect:(const WebCore::FloatRect&)targetRect currentScale:(double)currentScale fitEntireRect:(BOOL)fitEntireRect minimumScale:(double)minimumScale maximumScale:(double)maximumScale
+- (BOOL)_zoomToRect:(WebCore::FloatRect)targetRect withOrigin:(WebCore::FloatPoint)origin fitEntireRect:(BOOL)fitEntireRect minimumScale:(double)minimumScale maximumScale:(double)maximumScale minimumScrollDistance:(float)minimumScrollDistance
 {
+    const float maximumScaleFactorDeltaForPanScroll = 0.02;
+
+    double currentScale = contentZoomScale(self);
+
     WebCore::FloatSize unobscuredContentSize([self _contentRectForUserInteraction].size);
     double horizontalScale = unobscuredContentSize.width() * currentScale / targetRect.width();
     double verticalScale = unobscuredContentSize.height() * currentScale / targetRect.height();
@@ -1455,16 +1403,7 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     horizontalScale = std::min(std::max(horizontalScale, minimumScale), maximumScale);
     verticalScale = std::min(std::max(verticalScale, minimumScale), maximumScale);
 
-    return fitEntireRect ? std::min(horizontalScale, verticalScale) : horizontalScale;
-}
-
-- (BOOL)_zoomToRect:(WebCore::FloatRect)targetRect withOrigin:(WebCore::FloatPoint)origin fitEntireRect:(BOOL)fitEntireRect minimumScale:(double)minimumScale maximumScale:(double)maximumScale minimumScrollDistance:(float)minimumScrollDistance
-{
-    const float maximumScaleFactorDeltaForPanScroll = 0.02;
-
-    double currentScale = contentZoomScale(self);
-    double targetScale = [self _targetContentZoomScaleForRect:targetRect currentScale:currentScale fitEntireRect:fitEntireRect minimumScale:minimumScale maximumScale:maximumScale];
-
+    double targetScale = fitEntireRect ? std::min(horizontalScale, verticalScale) : horizontalScale;
     if (fabs(targetScale - currentScale) < maximumScaleFactorDeltaForPanScroll) {
         if ([self _scrollToRect:targetRect origin:origin minimumScrollDistance:minimumScrollDistance])
             return true;
@@ -1548,9 +1487,7 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     // FIXME: We will want to detect whether snapping will occur before beginning to drag. See WebPageProxy::didCommitLayerTree.
     WebKit::RemoteScrollingCoordinatorProxy* coordinator = _page->scrollingCoordinatorProxy();
     ASSERT(scrollView == _scrollView.get());
-    CGFloat scrollDecelerationFactor = (coordinator && coordinator->shouldSetScrollViewDecelerationRateFast()) ? UIScrollViewDecelerationRateFast : [_scrollView preferredScrollDecelerationFactor];
-    scrollView.horizontalScrollDecelerationFactor = scrollDecelerationFactor;
-    scrollView.verticalScrollDecelerationFactor = scrollDecelerationFactor;
+    scrollView.decelerationRate = (coordinator && coordinator->shouldSetScrollViewDecelerationRateFast()) ? UIScrollViewDecelerationRateFast : [_scrollView preferredScrollDecelerationFactor];
 #endif
 }
 
@@ -1743,8 +1680,7 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
         unobscuredRect:unobscuredRectInContentCoordinates
         unobscuredRectInScrollViewCoordinates:unobscuredRect
         scale:scaleFactor minimumScale:[_scrollView minimumZoomScale]
-        inStableState:isStableState
-        isChangingObscuredInsetsInteractively:_isChangingObscuredInsetsInteractively];
+        inStableState:isStableState isChangingObscuredInsetsInteractively:_isChangingObscuredInsetsInteractively];
 }
 
 - (void)_didFinishLoadForMainFrame
@@ -2094,13 +2030,12 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
 
 - (void)_setUserContentExtensionsEnabled:(BOOL)userContentExtensionsEnabled
 {
-    // This is kept for binary compatibility with iOS 9.
+    _page->setUserContentExtensionsEnabled(userContentExtensionsEnabled);
 }
 
 - (BOOL)_userContentExtensionsEnabled
 {
-    // This is kept for binary compatibility with iOS 9.
-    return true;
+    return _page->userContentExtensionsEnabled();
 }
 
 - (pid_t)_webProcessIdentifier
@@ -2114,17 +2049,6 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
         return;
 
     _page->process().terminate();
-}
-
-- (WKNavigation *)_reloadWithoutContentBlockers
-{
-    const bool reloadFromOrigin = false;
-    const bool contentBlockersEnabled = false;
-    auto navigation = _page->reload(reloadFromOrigin, contentBlockersEnabled);
-    if (!navigation)
-        return nil;
-    
-    return [wrapper(*navigation.release().leakRef()) autorelease];
 }
 
 - (void)_killWebContentProcessAndResetState
@@ -2825,16 +2749,6 @@ static inline WebKit::FindOptions toFindOptions(_WKFindOptions wkFindOptions)
     return _page->backgroundExtendsBeyondPage();
 }
 
-- (void)_setAllowsViewportShrinkToFit:(BOOL)allowShrinkToFit
-{
-    _allowsViewportShrinkToFit = allowShrinkToFit;
-}
-
-- (BOOL)_allowsViewportShrinkToFit
-{
-    return _allowsViewportShrinkToFit;
-}
-
 - (void)_beginInteractiveObscuredInsetsChange
 {
     ASSERT(!_isChangingObscuredInsetsInteractively);
@@ -3045,7 +2959,7 @@ static inline WebKit::FindOptions toFindOptions(_WKFindOptions wkFindOptions)
 #if USE(IOSURFACE)
     // If we are parented and thus won't incur a significant penalty from paging in tiles, snapshot the view hierarchy directly.
     if (CADisplay *display = self.window.screen._display) {
-        auto surface = WebCore::IOSurface::create(WebCore::expandedIntSize(WebCore::FloatSize(imageSize)), WebCore::ColorSpaceSRGB);
+        auto surface = WebCore::IOSurface::create(WebCore::expandedIntSize(WebCore::FloatSize(imageSize)), WebCore::ColorSpaceDeviceRGB);
         CGFloat imageScaleInViewCoordinates = imageWidth / rectInViewCoordinates.size.width;
         CATransform3D transform = CATransform3DMakeScale(imageScaleInViewCoordinates, imageScaleInViewCoordinates, 1);
         transform = CATransform3DTranslate(transform, -rectInViewCoordinates.origin.x, -rectInViewCoordinates.origin.y, 0);
@@ -3133,24 +3047,9 @@ static inline WebKit::FindOptions toFindOptions(_WKFindOptions wkFindOptions)
     return [(WKPDFView *)_customContentView.get() suggestedFilename];
 }
 
-- (BOOL)_allowsDoubleTapGestures
+- (CGFloat)_viewportMetaTagWidth
 {
-    if (_fastClickingIsDisabled)
-        return YES;
-
-    // If the page is not user scalable, we don't allow double tap gestures.
-    if (![_scrollView isZoomEnabled] || [_scrollView minimumZoomScale] >= [_scrollView maximumZoomScale])
-        return NO;
-
-    // If the viewport width was not explicit, we allow double tap gestures.
-    if (!_viewportMetaTagWidthWasExplicit || _viewportMetaTagCameFromImageDocument)
-        return YES;
-
-    // For scalable viewports, only disable double tap gestures if the viewport width is device width.
-    if (_viewportMetaTagWidth != WebCore::ViewportArguments::ValueDeviceWidth)
-        return YES;
-
-    return !areEssentiallyEqualAsFloat(contentZoomScale(self), _initialScaleFactor);
+    return _viewportMetaTagWidth;
 }
 
 - (_WKWebViewPrintFormatter *)_webViewPrintFormatter

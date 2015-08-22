@@ -243,7 +243,6 @@ private:
 #if PLATFORM(IOS)
     virtual void elementDidFocus(const WebCore::Node*) override;
     virtual void elementDidBlur(const WebCore::Node*) override;
-    virtual void elementDidRefocus(const WebCore::Node*) override;
 #endif
 
 #if PLATFORM(IOS)

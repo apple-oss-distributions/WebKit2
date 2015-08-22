@@ -182,7 +182,7 @@ bool PageClientImpl::isViewFocused()
 
 bool PageClientImpl::isViewVisible()
 {
-    if (isViewInWindow() && !m_webView._isBackground)
+    if (isViewInWindow() && !m_contentView.isBackground)
         return true;
     
     if ([m_webView _isShowingVideoPictureInPicture])
@@ -265,9 +265,9 @@ void PageClientImpl::didChangeContentSize(const WebCore::IntSize&)
     notImplemented();
 }
 
-void PageClientImpl::disableDoubleTapGesturesDuringTapIfNecessary(uint64_t requestID)
+void PageClientImpl::didChangeViewportMetaTagWidth(float newWidth)
 {
-    [m_contentView _disableDoubleTapGesturesDuringTapIfNecessary:requestID];
+    [m_webView _setViewportMetaTagWidth:newWidth];
 }
 
 double PageClientImpl::minimumZoomScale() const
@@ -429,9 +429,9 @@ IntRect PageClientImpl::rootViewToAccessibilityScreen(const IntRect& rect)
     return enclosingIntRect(rootViewRect);
 }
     
-void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool eventWasHandled)
+void PageClientImpl::doneWithKeyEvent(const NativeWebKeyboardEvent& event, bool)
 {
-    [m_contentView _didHandleKeyEvent:event.nativeEvent() eventWasHandled:eventWasHandled];
+    [m_contentView _didHandleKeyEvent:event.nativeEvent()];
 }
 
 #if ENABLE(TOUCH_EVENTS)
@@ -502,11 +502,6 @@ void PageClientImpl::wheelEventWasNotHandledByWebCore(const NativeWebWheelEvent&
 void PageClientImpl::commitPotentialTapFailed()
 {
     [m_contentView _commitPotentialTapFailed];
-}
-
-void PageClientImpl::didNotHandleTapAsClick()
-{
-    [m_contentView _didNotHandleTapAsClick];
 }
 
 void PageClientImpl::didGetTapHighlightGeometries(uint64_t requestID, const WebCore::Color& color, const Vector<WebCore::FloatQuad>& highlightedQuads, const WebCore::IntSize& topLeftRadius, const WebCore::IntSize& topRightRadius, const WebCore::IntSize& bottomLeftRadius, const WebCore::IntSize& bottomRightRadius)

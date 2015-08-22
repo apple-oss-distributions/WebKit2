@@ -97,9 +97,6 @@ private:
         virtual bool canAuthenticateAgainstProtectionSpace(WebPageProxy&, WebProtectionSpace*) override;
         virtual void didReceiveAuthenticationChallenge(WebPageProxy&, AuthenticationChallengeProxy*) override;
         virtual void processDidCrash(WebPageProxy&) override;
-        virtual void processDidBecomeResponsive(WebPageProxy&) override;
-        virtual void processDidBecomeUnresponsive(WebPageProxy&) override;
-
         virtual PassRefPtr<API::Data> webCryptoMasterKey(WebPageProxy&) override;
 
 #if USE(QUICK_LOOK)
@@ -170,8 +167,6 @@ private:
         bool webViewCanAuthenticateAgainstProtectionSpace : 1;
         bool webViewDidReceiveAuthenticationChallenge : 1;
         bool webViewWebProcessDidCrash : 1;
-        bool webViewWebProcessDidBecomeResponsive : 1;
-        bool webViewWebProcessDidBecomeUnresponsive : 1;
         bool webCryptoMasterKeyForWebView : 1;
         bool webViewDidBeginNavigationGesture : 1;
         bool webViewWillEndNavigationGestureWithNavigationToBackForwardListItem : 1;

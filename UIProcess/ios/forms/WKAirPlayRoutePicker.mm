@@ -43,14 +43,11 @@ SOFT_LINK_CLASS(MediaPlayer, MPAudioVideoRoutingActionSheet)
 
 using namespace WebKit;
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
 @implementation WKAirPlayRoutePicker {
     RetainPtr<MPAVRoutingController> _routingController;
-    RetainPtr<MPAudioVideoRoutingPopoverController> _popoverController; // iPad
-    RetainPtr<MPAudioVideoRoutingActionSheet> _actionSheet; // iPhone
-    __weak WKContentView* _view; // Weak reference.
+    RetainPtr<MPAudioVideoRoutingPopoverController> _popoverController;  // iPad
+    RetainPtr<MPAudioVideoRoutingActionSheet> _actionSheet;              // iPhone
+    __weak WKContentView* _view;   // Weak reference.
 }
 
 - (instancetype)initWithView:(WKContentView *)view
@@ -161,7 +158,5 @@ using namespace WebKit;
 }
 
 @end
-
-#pragma clang diagnostic pop
 
 #endif // PLATFORM(IOS)

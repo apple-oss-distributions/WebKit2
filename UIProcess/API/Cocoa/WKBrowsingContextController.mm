@@ -262,16 +262,12 @@ static HashMap<WebPageProxy*, WKBrowsingContextController *>& browsingContextCon
 
 - (void)reload
 {
-    const bool reloadFromOrigin = false;
-    const bool contentBlockersEnabled = true;
-    _page->reload(reloadFromOrigin, contentBlockersEnabled);
+    _page->reload(false);
 }
 
 - (void)reloadFromOrigin
 {
-    const bool reloadFromOrigin = true;
-    const bool contentBlockersEnabled = true;
-    _page->reload(reloadFromOrigin, contentBlockersEnabled);
+    _page->reload(true);
 }
 
 - (NSString *)applicationNameForUserAgent

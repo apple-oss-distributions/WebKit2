@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -230,8 +230,16 @@ FloatSize WebPage::availableScreenSize() const
 
 void WebPage::viewportPropertiesDidChange(const ViewportArguments& viewportArguments)
 {
-    if (m_viewportConfiguration.setViewportArguments(viewportArguments))
-        viewportConfigurationChanged();
+    if (m_viewportConfiguration.viewportArguments() == viewportArguments)
+        return;
+
+    float oldWidth = m_viewportConfiguration.viewportArguments().width;
+
+    m_viewportConfiguration.setViewportArguments(viewportArguments);
+    viewportConfigurationChanged();
+
+    if (oldWidth != viewportArguments.width)
+        send(Messages::WebPageProxy::ViewportMetaTagWidthDidChange(viewportArguments.width));
 }
 
 void WebPage::didReceiveMobileDocType(bool isMobileDoctype)
@@ -654,10 +662,6 @@ void WebPage::potentialTapAtPosition(uint64_t requestID, const WebCore::FloatPoi
 {
     m_potentialTapNode = m_page->mainFrame().nodeRespondingToClickEvents(position, m_potentialTapLocation);
     sendTapHighlightForNodeIfNecessary(requestID, m_potentialTapNode.get());
-#if ENABLE(TOUCH_EVENTS)
-    if (m_potentialTapNode && !m_potentialTapNode->allowsDoubleTapGesture())
-        send(Messages::WebPageProxy::DisableDoubleTapGesturesDuringTapIfNecessary(requestID));
-#endif
 }
 
 void WebPage::commitPotentialTap(uint64_t lastLayerTreeTransactionId)
@@ -947,10 +951,10 @@ PassRefPtr<Range> WebPage::rangeForBlockAtPoint(const IntPoint& point)
     return range;
 }
 
-void WebPage::selectWithGesture(const IntPoint& point, uint32_t granularity, uint32_t gestureType, uint32_t gestureState, bool isInteractingWithAssistedNode, uint64_t callbackID)
+void WebPage::selectWithGesture(const IntPoint& point, uint32_t granularity, uint32_t gestureType, uint32_t gestureState, uint64_t callbackID)
 {
     const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
+    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point);
 
     if (position.isNull()) {
         send(Messages::WebPageProxy::GestureCallback(point, gestureType, gestureState, 0, callbackID));
@@ -1688,27 +1692,27 @@ void WebPage::moveSelectionByOffset(int32_t offset, uint64_t callbackID)
     send(Messages::WebPageProxy::VoidCallback(callbackID));
 }
 
-VisiblePosition WebPage::visiblePositionInFocusedNodeForPoint(const Frame& frame, const IntPoint& point, bool isInteractingWithAssistedNode)
+VisiblePosition WebPage::visiblePositionInFocusedNodeForPoint(const Frame& frame, const IntPoint& point)
 {
     IntPoint adjustedPoint(frame.view()->rootViewToContents(point));
-    IntPoint constrainedPoint = m_assistedNode && isInteractingWithAssistedNode ? constrainPoint(adjustedPoint, frame, *m_assistedNode) : adjustedPoint;
+    IntPoint constrainedPoint = m_assistedNode ? constrainPoint(adjustedPoint, frame, *m_assistedNode) : adjustedPoint;
     return frame.visiblePositionForPoint(constrainedPoint);
 }
 
-void WebPage::selectPositionAtPoint(const WebCore::IntPoint& point, bool isInteractingWithAssistedNode, uint64_t callbackID)
+void WebPage::selectPositionAtPoint(const WebCore::IntPoint& point, uint64_t callbackID)
 {
     const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
+    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point);
     
     if (position.isNotNull())
         frame.selection().setSelectedRange(Range::create(*frame.document(), position, position).ptr(), position.affinity(), true);
     send(Messages::WebPageProxy::VoidCallback(callbackID));
 }
 
-void WebPage::selectPositionAtBoundaryWithDirection(const WebCore::IntPoint& point, uint32_t granularity, uint32_t direction, bool isInteractingWithAssistedNode, uint64_t callbackID)
+void WebPage::selectPositionAtBoundaryWithDirection(const WebCore::IntPoint& point, uint32_t granularity, uint32_t direction, uint64_t callbackID)
 {
     const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
+    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point);
 
     if (position.isNotNull()) {
         position = positionOfNextBoundaryOfGranularity(position, static_cast<WebCore::TextGranularity>(granularity), static_cast<SelectionDirection>(direction));
@@ -1732,9 +1736,10 @@ void WebPage::moveSelectionAtBoundaryWithDirection(uint32_t granularity, uint32_
     send(Messages::WebPageProxy::VoidCallback(callbackID));
 }
 
-PassRefPtr<Range> WebPage::rangeForGranularityAtPoint(const Frame& frame, const WebCore::IntPoint& point, uint32_t granularity, bool isInteractingWithAssistedNode)
+void WebPage::selectTextWithGranularityAtPoint(const WebCore::IntPoint& point, uint32_t granularity, uint64_t callbackID)
 {
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
+    const Frame& frame = m_page->focusController().focusedOrMainFrame();
+    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point);
 
     RefPtr<Range> range;
     switch (static_cast<WebCore::TextGranularity>(granularity)) {
@@ -1753,17 +1758,8 @@ PassRefPtr<Range> WebPage::rangeForGranularityAtPoint(const Frame& frame, const 
     default:
         break;
     }
-    return range;
-}
-
-void WebPage::selectTextWithGranularityAtPoint(const WebCore::IntPoint& point, uint32_t granularity, bool isInteractingWithAssistedNode, uint64_t callbackID)
-{
-    const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    RefPtr<Range> range = rangeForGranularityAtPoint(frame, point, granularity, isInteractingWithAssistedNode);
-
     if (range)
         frame.selection().setSelectedRange(range.get(), UPSTREAM, true);
-    m_initialSelection = range;
     send(Messages::WebPageProxy::VoidCallback(callbackID));
 }
 
@@ -1772,40 +1768,11 @@ void WebPage::beginSelectionInDirection(uint32_t direction, uint64_t callbackID)
     m_selectionAnchor = (static_cast<SelectionDirection>(direction) == DirectionLeft) ? Start : End;
     send(Messages::WebPageProxy::UnsignedCallback(m_selectionAnchor == Start, callbackID));
 }
-
-void WebPage::updateSelectionWithExtentPointAndBoundary(const WebCore::IntPoint& point, uint32_t granularity, bool isInteractingWithAssistedNode, uint64_t callbackID)
+    
+void WebPage::updateSelectionWithExtentPoint(const WebCore::IntPoint& point, uint64_t callbackID)
 {
     const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
-    RefPtr<Range> newRange = rangeForGranularityAtPoint(frame, point, granularity, isInteractingWithAssistedNode);
-    
-    if (position.isNull() || !m_initialSelection || !newRange) {
-        send(Messages::WebPageProxy::UnsignedCallback(false, callbackID));
-        return;
-    }
-    
-    RefPtr<Range> range;
-    VisiblePosition selectionStart = m_initialSelection->startPosition();
-    VisiblePosition selectionEnd = m_initialSelection->endPosition();
-
-    if (position > m_initialSelection->endPosition())
-        selectionEnd = newRange->endPosition();
-    else if (position < m_initialSelection->startPosition())
-        selectionStart = newRange->startPosition();
-    
-    if (selectionStart.isNotNull() && selectionEnd.isNotNull())
-        range = Range::create(*frame.document(), selectionStart, selectionEnd);
-    
-    if (range)
-        frame.selection().setSelectedRange(range.get(), UPSTREAM, true);
-    
-    send(Messages::WebPageProxy::UnsignedCallback(selectionStart == m_initialSelection->startPosition(), callbackID));
-}
-
-void WebPage::updateSelectionWithExtentPoint(const WebCore::IntPoint& point, bool isInteractingWithAssistedNode, uint64_t callbackID)
-{
-    const Frame& frame = m_page->focusController().focusedOrMainFrame();
-    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point, isInteractingWithAssistedNode);
+    VisiblePosition position = visiblePositionInFocusedNodeForPoint(frame, point);
 
     if (position.isNull()) {
         send(Messages::WebPageProxy::UnsignedCallback(false, callbackID));
@@ -2547,9 +2514,8 @@ void WebPage::elementDidBlur(WebCore::Node* node)
 void WebPage::setViewportConfigurationMinimumLayoutSize(const FloatSize& size)
 {
     resetTextAutosizingBeforeLayoutIfNeeded(m_viewportConfiguration.minimumLayoutSize(), size);
-    
-    if (m_viewportConfiguration.setMinimumLayoutSize(size))
-        viewportConfigurationChanged();
+    m_viewportConfiguration.setMinimumLayoutSize(size);
+    viewportConfigurationChanged();
 }
 
 void WebPage::setMaximumUnobscuredSize(const FloatSize& maximumUnobscuredSize)
@@ -2854,12 +2820,12 @@ void WebPage::applicationDidEnterBackground(bool isSuspendedUnderLock)
     m_volatilityTimer.startRepeating(std::chrono::milliseconds(200));
 }
 
-void WebPage::applicationWillEnterForeground(bool isSuspendedUnderLock)
+void WebPage::applicationWillEnterForeground()
 {
     m_volatilityTimer.stop();
     setLayerTreeStateIsFrozen(false);
 
-    [[NSNotificationCenter defaultCenter] postNotificationName:WebUIApplicationWillEnterForegroundNotification object:nil userInfo:@{@"isSuspendedUnderLock": @(isSuspendedUnderLock)}];
+    [[NSNotificationCenter defaultCenter] postNotificationName:WebUIApplicationWillEnterForegroundNotification object:nil];
 }
 
 void WebPage::applicationDidBecomeActive()
@@ -2947,9 +2913,6 @@ void WebPage::updateVisibleContentRects(const VisibleContentRectUpdateInfo& visi
     FrameView& frameView = *m_page->mainFrame().view();
     if (scrollPosition != frameView.scrollPosition())
         m_dynamicSizeUpdateHistory.clear();
-
-    if (m_viewportConfiguration.setCanIgnoreScalingConstraints(m_ignoreViewportScalingConstraints && visibleContentRectUpdateInfo.allowShrinkToFit()))
-        viewportConfigurationChanged();
 
     frameView.setUnobscuredContentSize(visibleContentRectUpdateInfo.unobscuredRect().size());
 

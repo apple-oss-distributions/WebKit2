@@ -348,9 +348,6 @@ void NetworkResourceLoader::didFinishLoading(ResourceHandle* handle, double fini
                 loader->send(Messages::NetworkProcessConnection::DidCacheResource(loader->originalRequest(), mappedBody.shareableResourceHandle, loader->sessionID()));
 #endif
             });
-        } else if (!hasCacheableRedirect) {
-            // Make sure we don't keep a stale entry in the cache.
-            NetworkCache::singleton().remove(originalRequest());
         }
     }
 #endif
@@ -557,14 +554,6 @@ void NetworkResourceLoader::didRetrieveCacheEntry(std::unique_ptr<NetworkCache::
         m_synchronousLoadData->response = entry->response();
         sendReplyToSynchronousRequest(*m_synchronousLoadData, entry->buffer());
     } else {
-        if (entry->response().url() != originalRequest().url()) {
-            // This is a cached redirect. Synthesize a minimal redirect so we get things like referer header right.
-            // FIXME: We should cache the actual redirects.
-            ResourceRequest syntheticRedirectRequest(entry->response().url());
-            ResourceResponse syntheticRedirectResponse(originalRequest().url(), { }, 0, { });
-            sendAbortingOnFailure(Messages::WebResourceLoader::WillSendRequest(syntheticRedirectRequest, syntheticRedirectResponse));
-        }
-
         bool needsContinueDidReceiveResponseMessage = originalRequest().requester() == ResourceRequest::Requester::Main;
         sendAbortingOnFailure(Messages::WebResourceLoader::DidReceiveResponse(entry->response(), needsContinueDidReceiveResponseMessage));
 

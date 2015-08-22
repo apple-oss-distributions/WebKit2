@@ -660,8 +660,7 @@ void WebProcess::didClose(IPC::Connection&)
 #endif    
 
     // FIXME(146657): This explicit media stop command should not be necessary
-    if (auto* platformMediaSessionManager = PlatformMediaSessionManager::sharedManagerIfExists())
-        platformMediaSessionManager->stopAllMediaPlaybackForProcess();
+    PlatformMediaSessionManager::sharedManager().stopAllMediaPlaybackForProcess();
 
     // The UI process closed this connection, shut down.
     stopRunLoop();

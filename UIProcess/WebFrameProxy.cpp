@@ -144,7 +144,7 @@ void WebFrameProxy::didFailProvisionalLoad()
     m_frameLoadState.didFailProvisionalLoad();
 }
 
-void WebFrameProxy::didCommitLoad(const String& contentType, WebCertificateInfo& certificateInfo)
+void WebFrameProxy::didCommitLoad(const String& contentType, WebCertificateInfo& certificateInfo, bool containsPluginDocument)
 {
     m_frameLoadState.didCommitLoad();
 
@@ -152,6 +152,7 @@ void WebFrameProxy::didCommitLoad(const String& contentType, WebCertificateInfo&
     m_MIMEType = contentType;
     m_isFrameSet = false;
     m_certificateInfo = &certificateInfo;
+    m_containsPluginDocument = containsPluginDocument;
 }
 
 void WebFrameProxy::didFinishLoad()
@@ -246,11 +247,8 @@ bool WebFrameProxy::didHandleContentFilterUnblockNavigation(const WebCore::Resou
     RefPtr<WebPageProxy> page { m_page };
     ASSERT(page);
     m_contentFilterUnblockHandler.requestUnblockAsync([page](bool unblocked) {
-        if (unblocked) {
-            const bool reloadFromOrigin = false;
-            const bool contentBlockersEnabled = true;
-            page->reload(reloadFromOrigin, contentBlockersEnabled);
-        }
+        if (unblocked)
+            page->reload(false);
     });
     return true;
 }

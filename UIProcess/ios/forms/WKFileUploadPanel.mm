@@ -66,9 +66,6 @@ SOFT_LINK_CONSTANT(Photos, PHImageRequestOptionsVersionCurrent, NSString *);
 
 #define kCMTimeZero getkCMTimeZero()
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
 #pragma mark - Document picker icons
 
 static inline UIImage *photoLibraryIcon()
@@ -928,7 +925,5 @@ static NSArray *UTIsForMIMETypes(NSArray *mimeTypes)
 }
 
 @end
-
-#pragma clang diagnostic pop
 
 #endif // PLATFORM(IOS)

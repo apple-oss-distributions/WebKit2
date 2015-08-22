@@ -114,7 +114,6 @@ private:
     virtual void wheelEventWasNotHandledByWebCore(const NativeWebWheelEvent&) override;
 
     virtual void commitPotentialTapFailed() override;
-    virtual void didNotHandleTapAsClick() override;
     virtual void didGetTapHighlightGeometries(uint64_t requestID, const WebCore::Color&, const Vector<WebCore::FloatQuad>& highlightedQuads, const WebCore::IntSize& topLeftRadius, const WebCore::IntSize& topRightRadius, const WebCore::IntSize& bottomLeftRadius, const WebCore::IntSize& bottomRightRadius) override;
 
     virtual void didCommitLayerTree(const RemoteLayerTreeTransaction&) override;
@@ -134,7 +133,7 @@ private:
     virtual void showPlaybackTargetPicker(bool hasVideo, const WebCore::IntRect& elementRect) override;
 
     virtual bool handleRunOpenPanel(WebPageProxy*, WebFrameProxy*, WebOpenPanelParameters*, WebOpenPanelResultListenerProxy*) override;
-    virtual void disableDoubleTapGesturesDuringTapIfNecessary(uint64_t requestID) override;
+    virtual void didChangeViewportMetaTagWidth(float) override;
     virtual double minimumZoomScale() const override;
     virtual WebCore::FloatRect documentRect() const override;
 
