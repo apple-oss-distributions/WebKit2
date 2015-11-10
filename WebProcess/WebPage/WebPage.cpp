@@ -518,8 +518,6 @@ WebPage::WebPage(uint64_t pageID, const WebPageCreationParameters& parameters)
     if (parameters.viewScaleFactor != 1)
         scaleView(parameters.viewScaleFactor);
 
-    m_page->setUserContentExtensionsEnabled(parameters.userContentExtensionsEnabled);
-
 #if PLATFORM(IOS)
     m_page->settings().setContentDispositionAttachmentSandboxEnabled(true);
 #endif
@@ -1149,7 +1147,7 @@ void WebPage::setDefersLoading(bool defersLoading)
     m_page->setDefersLoading(defersLoading);
 }
 
-void WebPage::reload(uint64_t navigationID, bool reloadFromOrigin, const SandboxExtension::Handle& sandboxExtensionHandle)
+void WebPage::reload(uint64_t navigationID, bool reloadFromOrigin, bool contentBlockersEnabled, const SandboxExtension::Handle& sandboxExtensionHandle)
 {
     SendStopResponsivenessTimer stopper(this);
 
@@ -1157,7 +1155,7 @@ void WebPage::reload(uint64_t navigationID, bool reloadFromOrigin, const Sandbox
     m_pendingNavigationID = navigationID;
 
     m_sandboxExtensionTracker.beginLoad(m_mainFrame.get(), sandboxExtensionHandle);
-    corePage()->userInputBridge().reloadFrame(m_mainFrame->coreFrame(), reloadFromOrigin);
+    corePage()->userInputBridge().reloadFrame(m_mainFrame->coreFrame(), reloadFromOrigin, contentBlockersEnabled);
 }
 
 void WebPage::goForward(uint64_t navigationID, uint64_t backForwardItemID)
@@ -2171,23 +2169,11 @@ static bool handleTouchEvent(const WebTouchEvent& touchEvent, Page* page)
 #if ENABLE(IOS_TOUCH_EVENTS)
 void WebPage::dispatchTouchEvent(const WebTouchEvent& touchEvent, bool& handled)
 {
-    RefPtr<Frame> oldFocusedFrame = m_page->focusController().focusedFrame();
-    RefPtr<Element> oldFocusedElement = oldFocusedFrame ? oldFocusedFrame->document()->focusedElement() : nullptr;
     m_userIsInteracting = true;
 
     m_lastInteractionLocation = touchEvent.position();
     CurrentEvent currentEvent(touchEvent);
     handled = handleTouchEvent(touchEvent, m_page.get());
-
-    RefPtr<Frame> newFocusedFrame = m_page->focusController().focusedFrame();
-    RefPtr<Element> newFocusedElement = newFocusedFrame ? newFocusedFrame->document()->focusedElement() : nullptr;
-
-    // If the focus has not changed, we need to notify the client anyway, since it might be
-    // necessary to start assisting the node.
-    // If the node has been focused by JavaScript without user interaction, the
-    // keyboard is not on screen.
-    if (newFocusedElement && newFocusedElement == oldFocusedElement)
-        elementDidFocus(newFocusedElement.get());
 
     m_userIsInteracting = false;
 }
@@ -4630,6 +4616,7 @@ void WebPage::didCommitLoad(WebFrame* frame)
 #if PLATFORM(IOS)
     frame->setFirstLayerTreeTransactionIDAfterDidCommitLoad(downcast<RemoteLayerTreeDrawingArea>(*m_drawingArea).nextTransactionID());
     cancelPotentialTapInFrame(*frame);
+    resetAssistedNodeForFrame(frame);
 #endif
 
     if (!frame->isMainFrame())
@@ -4923,9 +4910,11 @@ PassRefPtr<DocumentLoader> WebPage::createDocumentLoader(Frame& frame, const Res
 {
     RefPtr<WebDocumentLoader> documentLoader = WebDocumentLoader::create(request, substituteData);
 
-    if (m_pendingNavigationID && frame.isMainFrame()) {
-        documentLoader->setNavigationID(m_pendingNavigationID);
-        m_pendingNavigationID = 0;
+    if (frame.isMainFrame()) {
+        if (m_pendingNavigationID) {
+            documentLoader->setNavigationID(m_pendingNavigationID);
+            m_pendingNavigationID = 0;
+        }
     }
 
     return documentLoader.release();
@@ -5024,14 +5013,6 @@ void WebPage::setShouldScaleViewToFitDocument(bool shouldScaleViewToFitDocument)
         return;
 
     m_drawingArea->setShouldScaleViewToFitDocument(shouldScaleViewToFitDocument);
-}
-
-void WebPage::setUserContentExtensionsEnabled(bool userContentExtensionsEnabled)
-{
-    if (!m_page)
-        return;
-
-    m_page->setUserContentExtensionsEnabled(userContentExtensionsEnabled);
 }
 
 #if ENABLE(VIDEO)

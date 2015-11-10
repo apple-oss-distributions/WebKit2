@@ -1039,7 +1039,7 @@ void WebPageProxy::stopLoading()
     m_process->responsivenessTimer()->start();
 }
 
-RefPtr<API::Navigation> WebPageProxy::reload(bool reloadFromOrigin)
+RefPtr<API::Navigation> WebPageProxy::reload(bool reloadFromOrigin, bool contentBlockersEnabled)
 {
     SandboxExtension::Handle sandboxExtensionHandle;
 
@@ -1059,7 +1059,7 @@ RefPtr<API::Navigation> WebPageProxy::reload(bool reloadFromOrigin)
     
     auto navigation = m_navigationState->createReloadNavigation();
 
-    m_process->send(Messages::WebPage::Reload(navigation->navigationID(), reloadFromOrigin, sandboxExtensionHandle), m_pageID);
+    m_process->send(Messages::WebPage::Reload(navigation->navigationID(), reloadFromOrigin, contentBlockersEnabled, sandboxExtensionHandle), m_pageID);
     m_process->responsivenessTimer()->start();
 
     return WTF::move(navigation);
@@ -3334,7 +3334,7 @@ void WebPageProxy::decidePolicyForNavigationAction(uint64_t frameID, const Secur
         else if (originatingFrame)
             sourceFrameInfo = API::FrameInfo::create(*originatingFrame, originatingFrameSecurityOrigin.securityOrigin());
 
-        bool shouldOpenAppLinks = !m_shouldSuppressAppLinksInNextNavigationPolicyDecision && (!destinationFrameInfo || destinationFrameInfo->isMainFrame()) && !protocolHostAndPortAreEqual(URL(ParsedURLString, m_mainFrame->url()), request.url());
+        bool shouldOpenAppLinks = !m_shouldSuppressAppLinksInNextNavigationPolicyDecision && (!destinationFrameInfo || destinationFrameInfo->isMainFrame()) && !hostsAreEqual(URL(ParsedURLString, m_mainFrame->url()), request.url());
 
         auto navigationAction = API::NavigationAction::create(navigationActionData, sourceFrameInfo.get(), destinationFrameInfo.get(), request, originalRequest.url(), shouldOpenAppLinks);
 
@@ -3368,7 +3368,7 @@ void WebPageProxy::decidePolicyForNewWindowAction(uint64_t frameID, const Securi
         if (frame)
             sourceFrameInfo = API::FrameInfo::create(*frame, frameSecurityOrigin.securityOrigin());
 
-        bool shouldOpenAppLinks = !protocolHostAndPortAreEqual(URL(ParsedURLString, m_mainFrame->url()), request.url());
+        bool shouldOpenAppLinks = !hostsAreEqual(URL(ParsedURLString, m_mainFrame->url()), request.url());
         auto navigationAction = API::NavigationAction::create(navigationActionData, sourceFrameInfo.get(), nullptr, request, request.url(), shouldOpenAppLinks);
 
         m_navigationClient->decidePolicyForNavigationAction(*this, navigationAction.get(), WTF::move(listener), m_process->transformHandlesToObjects(userData.object()).get());
@@ -3539,7 +3539,7 @@ void WebPageProxy::createNewPage(uint64_t frameID, const SecurityOriginData& sec
     newPageParameters = newPage->creationParameters();
 
     WebsiteDataStore::cloneSessionData(*this, *newPage);
-    newPage->m_shouldSuppressAppLinksInNextNavigationPolicyDecision = protocolHostAndPortAreEqual(URL(ParsedURLString, mainFrameURL), request.url());
+    newPage->m_shouldSuppressAppLinksInNextNavigationPolicyDecision = hostsAreEqual(URL(ParsedURLString, mainFrameURL), request.url());
 }
     
 void WebPageProxy::showPage()
@@ -5202,7 +5202,6 @@ WebPageCreationParameters WebPageProxy::creationParameters()
     parameters.appleMailPaginationQuirkEnabled = false;
 #endif
     parameters.shouldScaleViewToFitDocument = m_shouldScaleViewToFitDocument;
-    parameters.userContentExtensionsEnabled = m_userContentExtensionsEnabled;
 
     return parameters;
 }
@@ -6098,19 +6097,6 @@ void WebPageProxy::setShouldScaleViewToFitDocument(bool shouldScaleViewToFitDocu
         return;
 
     m_process->send(Messages::WebPage::SetShouldScaleViewToFitDocument(shouldScaleViewToFitDocument), m_pageID);
-}
-
-void WebPageProxy::setUserContentExtensionsEnabled(bool userContentExtensionsEnabled)
-{
-    if (m_userContentExtensionsEnabled == userContentExtensionsEnabled)
-        return;
-
-    m_userContentExtensionsEnabled = userContentExtensionsEnabled;
-
-    if (!isValid())
-        return;
-
-    m_process->send(Messages::WebPage::SetUserContentExtensionsEnabled(userContentExtensionsEnabled), m_pageID);
 }
 
 } // namespace WebKit
