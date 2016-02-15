@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,23 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import "config.h"
-#import "WebProcessProxy.h"
+#include "config.h"
+#include "APIWindowFeatures.h"
 
-#import <WebCore/SearchPopupMenuCocoa.h>
-#import <wtf/cf/TypeCastsCF.h>
+namespace API {
 
-namespace WebKit {
-
-void WebPageProxy::saveRecentSearches(const String& name, const Vector<WebCore::RecentSearch>& searchItems)
+Ref<WindowFeatures> WindowFeatures::create(const WebCore::WindowFeatures& windowFeatures)
 {
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
-
-    WebCore::saveRecentSearches(name, searchItems);
+    return adoptRef(*new WindowFeatures(windowFeatures));
 }
 
-void WebPageProxy::loadRecentSearches(const String& name, Vector<WebCore::RecentSearch>& searchItems)
+WindowFeatures::WindowFeatures(const WebCore::WindowFeatures& windowFeatures)
+    : m_windowFeatures(windowFeatures)
 {
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
-
-    searchItems = WebCore::loadRecentSearches(name);
 }
 
-#if ENABLE(CONTENT_FILTERING)
-void WebPageProxy::contentFilterDidBlockLoadForFrame(const WebCore::ContentFilterUnblockHandler& unblockHandler, uint64_t frameID)
+WindowFeatures::~WindowFeatures()
 {
-    if (WebFrameProxy* frame = m_process->webFrame(frameID))
-        frame->contentFilterDidBlockLoad(unblockHandler);
 }
-#endif
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,46 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import "config.h"
-#import "WebProcessProxy.h"
+#include "config.h"
+#include "WebGestureEvent.h"
 
-#import <WebCore/SearchPopupMenuCocoa.h>
-#import <wtf/cf/TypeCastsCF.h>
+#if ENABLE(MAC_GESTURE_EVENTS)
+
+#include "ArgumentCoders.h"
+#include "Arguments.h"
+#include "WebCoreArgumentCoders.h"
 
 namespace WebKit {
 
-void WebPageProxy::saveRecentSearches(const String& name, const Vector<WebCore::RecentSearch>& searchItems)
+void WebGestureEvent::encode(IPC::ArgumentEncoder& encoder) const
 {
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
+    WebEvent::encode(encoder);
 
-    WebCore::saveRecentSearches(name, searchItems);
+    encoder << m_position;
+    encoder << m_gestureScale;
+    encoder << m_gestureRotation;
 }
 
-void WebPageProxy::loadRecentSearches(const String& name, Vector<WebCore::RecentSearch>& searchItems)
+bool WebGestureEvent::decode(IPC::ArgumentDecoder& decoder, WebGestureEvent& result)
 {
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
+    if (!WebEvent::decode(decoder, result))
+        return false;
 
-    searchItems = WebCore::loadRecentSearches(name);
+    if (!decoder.decode(result.m_position))
+        return false;
+    if (!decoder.decode(result.m_gestureScale))
+        return false;
+    if (!decoder.decode(result.m_gestureRotation))
+        return false;
+
+    return true;
 }
 
-#if ENABLE(CONTENT_FILTERING)
-void WebPageProxy::contentFilterDidBlockLoadForFrame(const WebCore::ContentFilterUnblockHandler& unblockHandler, uint64_t frameID)
+bool WebGestureEvent::isGestureEventType(Type type) const
 {
-    if (WebFrameProxy* frame = m_process->webFrame(frameID))
-        frame->contentFilterDidBlockLoad(unblockHandler);
+    return type == GestureStart || type == GestureChange || type == GestureEnd;
 }
-#endif
+    
+} // namespace WebKit
 
-}
+#endif // ENABLE(MAC_GESTURE_EVENTS)

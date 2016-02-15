@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,31 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import "config.h"
-#import "WebProcessProxy.h"
+#ifndef NativeWebGestureEvent_h
+#define NativeWebGestureEvent_h
 
-#import <WebCore/SearchPopupMenuCocoa.h>
-#import <wtf/cf/TypeCastsCF.h>
+#if ENABLE(MAC_GESTURE_EVENTS)
+
+#include "WebEvent.h"
+#include "WebGestureEvent.h"
+
+OBJC_CLASS NSEvent;
+OBJC_CLASS NSTouch;
 
 namespace WebKit {
 
-void WebPageProxy::saveRecentSearches(const String& name, const Vector<WebCore::RecentSearch>& searchItems)
-{
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
+class NativeWebGestureEvent final : public WebGestureEvent {
+public:
+    explicit NativeWebGestureEvent(NSEvent *, NSView *, Vector<NSTouch *> touches);
 
-    WebCore::saveRecentSearches(name, searchItems);
-}
+    NSEvent *nativeEvent() const { return m_nativeEvent.get(); }
 
-void WebPageProxy::loadRecentSearches(const String& name, Vector<WebCore::RecentSearch>& searchItems)
-{
-    if (!name) {
-        // FIXME: This should be a message check.
-        return;
-    }
+private:
+    RetainPtr<NSEvent> m_nativeEvent;
+};
 
-    searchItems = WebCore::loadRecentSearches(name);
-}
+} // namespace WebKit
 
-#if ENABLE(CONTENT_FILTERING)
-void WebPageProxy::contentFilterDidBlockLoadForFrame(const WebCore::ContentFilterUnblockHandler& unblockHandler, uint64_t frameID)
-{
-    if (WebFrameProxy* frame = m_process->webFrame(frameID))
-        frame->contentFilterDidBlockLoad(unblockHandler);
-}
-#endif
+#endif // ENABLE(MAC_GESTURE_EVENTS)
 
-}
+#endif // NativeWebGestureEvent_h
