@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2012-2015 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -230,16 +230,8 @@ FloatSize WebPage::availableScreenSize() const
 
 void WebPage::viewportPropertiesDidChange(const ViewportArguments& viewportArguments)
 {
-    if (m_viewportConfiguration.viewportArguments() == viewportArguments)
-        return;
-
-    float oldWidth = m_viewportConfiguration.viewportArguments().width;
-
-    m_viewportConfiguration.setViewportArguments(viewportArguments);
-    viewportConfigurationChanged();
-
-    if (oldWidth != viewportArguments.width)
-        send(Messages::WebPageProxy::ViewportMetaTagWidthDidChange(viewportArguments.width));
+    if (m_viewportConfiguration.setViewportArguments(viewportArguments))
+        viewportConfigurationChanged();
 }
 
 void WebPage::didReceiveMobileDocType(bool isMobileDoctype)
@@ -662,6 +654,10 @@ void WebPage::potentialTapAtPosition(uint64_t requestID, const WebCore::FloatPoi
 {
     m_potentialTapNode = m_page->mainFrame().nodeRespondingToClickEvents(position, m_potentialTapLocation);
     sendTapHighlightForNodeIfNecessary(requestID, m_potentialTapNode.get());
+#if ENABLE(TOUCH_EVENTS)
+    if (m_potentialTapNode && !m_potentialTapNode->allowsDoubleTapGesture())
+        send(Messages::WebPageProxy::DisableDoubleTapGesturesDuringTapIfNecessary(requestID));
+#endif
 }
 
 void WebPage::commitPotentialTap(uint64_t lastLayerTreeTransactionId)
@@ -2551,8 +2547,9 @@ void WebPage::elementDidBlur(WebCore::Node* node)
 void WebPage::setViewportConfigurationMinimumLayoutSize(const FloatSize& size)
 {
     resetTextAutosizingBeforeLayoutIfNeeded(m_viewportConfiguration.minimumLayoutSize(), size);
-    m_viewportConfiguration.setMinimumLayoutSize(size);
-    viewportConfigurationChanged();
+    
+    if (m_viewportConfiguration.setMinimumLayoutSize(size))
+        viewportConfigurationChanged();
 }
 
 void WebPage::setMaximumUnobscuredSize(const FloatSize& maximumUnobscuredSize)
@@ -2950,6 +2947,9 @@ void WebPage::updateVisibleContentRects(const VisibleContentRectUpdateInfo& visi
     FrameView& frameView = *m_page->mainFrame().view();
     if (scrollPosition != frameView.scrollPosition())
         m_dynamicSizeUpdateHistory.clear();
+
+    if (m_viewportConfiguration.setCanIgnoreScalingConstraints(m_ignoreViewportScalingConstraints && visibleContentRectUpdateInfo.allowShrinkToFit()))
+        viewportConfigurationChanged();
 
     frameView.setUnobscuredContentSize(visibleContentRectUpdateInfo.unobscuredRect().size());
 

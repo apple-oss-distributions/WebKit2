@@ -80,6 +80,20 @@
 @property (nonatomic, assign) UIKeyboardInputFlags _inputFlags;
 @end
 
+@interface WKWebEvent : WebEvent
+@property (nonatomic, retain) UIEvent *uiEvent;
+@end
+
+@implementation WKWebEvent
+
+- (void)dealloc
+{
+    [_uiEvent release];
+    [super dealloc];
+}
+
+@end
+
 using namespace WebCore;
 using namespace WebKit;
 
@@ -306,6 +320,15 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     return UIWebSelectionModeWeb;
 }
 
+- (void)_createAndConfigureDoubleTapGestureRecognizer
+{
+    _doubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_doubleTapRecognized:)]);
+    [_doubleTapGestureRecognizer setNumberOfTapsRequired:2];
+    [_doubleTapGestureRecognizer setDelegate:self];
+    [self addGestureRecognizer:_doubleTapGestureRecognizer.get()];
+    [_singleTapGestureRecognizer requireOtherGestureToFail:_doubleTapGestureRecognizer.get()];
+}
+
 - (void)setupInteraction
 {
     if (!_interactionViewsContainerView) {
@@ -329,11 +352,13 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     [_singleTapGestureRecognizer setResetTarget:self action:@selector(_singleTapDidReset:)];
     [self addGestureRecognizer:_singleTapGestureRecognizer.get()];
 
-    _doubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_doubleTapRecognized:)]);
-    [_doubleTapGestureRecognizer setNumberOfTapsRequired:2];
-    [_doubleTapGestureRecognizer setDelegate:self];
-    [self addGestureRecognizer:_doubleTapGestureRecognizer.get()];
-    [_singleTapGestureRecognizer requireOtherGestureToFail:_doubleTapGestureRecognizer.get()];
+    _fastDoubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_fastDoubleTapRecognized:)]);
+    [_fastDoubleTapGestureRecognizer setNumberOfTapsRequired:2];
+    [_fastDoubleTapGestureRecognizer setDelegate:self];
+    [_fastDoubleTapGestureRecognizer setEnabled:false];
+    [self addGestureRecognizer:_fastDoubleTapGestureRecognizer.get()];
+
+    [self _createAndConfigureDoubleTapGestureRecognizer];
 
     _twoFingerDoubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_twoFingerDoubleTapRecognized:)]);
     [_twoFingerDoubleTapGestureRecognizer setNumberOfTapsRequired:2];
@@ -368,6 +393,9 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     _actionSheetAssistant = adoptNS([[WKActionSheetAssistant alloc] initWithView:self]);
     [_actionSheetAssistant setDelegate:self];
     _smartMagnificationController = std::make_unique<SmartMagnificationController>(self);
+    _isExpectingFastSingleTapCommit = NO;
+    _isDoubleTapPending = NO;
+    _showDebugTapHighlightsForFastClicking = [[NSUserDefaults standardUserDefaults] boolForKey:@"WebKitShowFastClickDebugTapHighlights"];
 }
 
 - (void)cleanupInteraction
@@ -377,6 +405,8 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     _actionSheetAssistant = nil;
     _smartMagnificationController = nil;
     _didAccessoryTabInitiateFocus = NO;
+    _isExpectingFastSingleTapCommit = NO;
+    _isDoubleTapPending = NO;
     [_formInputSession invalidate];
     _formInputSession = nil;
     [_highlightView removeFromSuperview];
@@ -403,6 +433,9 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
 
     [_doubleTapGestureRecognizer setDelegate:nil];
     [self removeGestureRecognizer:_doubleTapGestureRecognizer.get()];
+
+    [_fastDoubleTapGestureRecognizer setDelegate:nil];
+    [self removeGestureRecognizer:_fastDoubleTapGestureRecognizer.get()];
 
     [_twoFingerDoubleTapGestureRecognizer setDelegate:nil];
     [self removeGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
@@ -431,6 +464,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     [self removeGestureRecognizer:_singleTapGestureRecognizer.get()];
     [self removeGestureRecognizer:_highlightLongPressGestureRecognizer.get()];
     [self removeGestureRecognizer:_doubleTapGestureRecognizer.get()];
+    [self removeGestureRecognizer:_fastDoubleTapGestureRecognizer.get()];
     [self removeGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
 }
 
@@ -440,6 +474,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     [self addGestureRecognizer:_singleTapGestureRecognizer.get()];
     [self addGestureRecognizer:_highlightLongPressGestureRecognizer.get()];
     [self addGestureRecognizer:_doubleTapGestureRecognizer.get()];
+    [self addGestureRecognizer:_fastDoubleTapGestureRecognizer.get()];
     [self addGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
 }
 
@@ -540,6 +575,8 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
 
 - (BOOL)canBecomeFirstResponder
 {
+    if (_resigningFirstResponder)
+        return NO;
     // We might want to return something else
     // if we decide to enable/disable interaction programmatically.
     return YES;
@@ -547,6 +584,8 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
 
 - (BOOL)becomeFirstResponder
 {
+    if (_resigningFirstResponder)
+        return NO;
     BOOL didBecomeFirstResponder = [super becomeFirstResponder];
     if (didBecomeFirstResponder)
         [_textSelectionAssistant activateSelection];
@@ -559,6 +598,8 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     // FIXME: Maybe we should call resignFirstResponder on the superclass
     // and do nothing if the return value is NO.
 
+    _resigningFirstResponder = YES;
+
     if (!_webView->_activeFocusedStateRetainCount) {
         // We need to complete the editing operation before we blur the element.
         [_inputPeripheral endEditing];
@@ -569,7 +610,11 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
     [_webSelectionAssistant resignedFirstResponder];
     [_textSelectionAssistant deactivateSelection];
 
-    return [super resignFirstResponder];
+    bool superDidResign = [super resignFirstResponder];
+
+    _resigningFirstResponder = NO;
+
+    return superDidResign;
 }
 
 #if ENABLE(TOUCH_EVENTS)
@@ -594,6 +639,7 @@ static UIWebSelectionMode toUIWebSelectionMode(WKSelectionGranularity granularit
 - (void)_inspectorNodeSearchRecognized:(UIGestureRecognizer *)gestureRecognizer
 {
     ASSERT(_inspectorNodeSearchEnabled);
+    [self _resetIsDoubleTapPending];
 
     CGPoint point = [gestureRecognizer locationInView:self];
 
@@ -731,11 +777,12 @@ static NSValue *nsSizeForTapHighlightBorderRadius(WebCore::IntSize borderRadius)
 
 - (void)_showTapHighlight
 {
-    if (!highlightedQuadsAreSmallerThanRect(_tapHighlightInformation.quads, _page->unobscuredContentRect()))
+    if (!highlightedQuadsAreSmallerThanRect(_tapHighlightInformation.quads, _page->unobscuredContentRect()) && !_showDebugTapHighlightsForFastClicking)
         return;
 
     if (!_highlightView) {
         _highlightView = adoptNS([[_UIHighlightView alloc] initWithFrame:CGRectZero]);
+        [_highlightView setUserInteractionEnabled:NO];
         [_highlightView setOpaque:NO];
         [_highlightView setCornerRadius:minimumTapHighlightRadius];
     }
@@ -746,17 +793,20 @@ static NSValue *nsSizeForTapHighlightBorderRadius(WebCore::IntSize borderRadius)
 
 - (void)_didGetTapHighlightForRequest:(uint64_t)requestID color:(const WebCore::Color&)color quads:(const Vector<WebCore::FloatQuad>&)highlightedQuads topLeftRadius:(const WebCore::IntSize&)topLeftRadius topRightRadius:(const WebCore::IntSize&)topRightRadius bottomLeftRadius:(const WebCore::IntSize&)bottomLeftRadius bottomRightRadius:(const WebCore::IntSize&)bottomRightRadius
 {
-    if (!_isTapHighlightIDValid || _latestTapHighlightID != requestID)
+    if (!_isTapHighlightIDValid || _latestTapID != requestID)
         return;
 
     _isTapHighlightIDValid = NO;
 
-    _tapHighlightInformation.color = color;
     _tapHighlightInformation.quads = highlightedQuads;
     _tapHighlightInformation.topLeftRadius = topLeftRadius;
     _tapHighlightInformation.topRightRadius = topRightRadius;
     _tapHighlightInformation.bottomLeftRadius = bottomLeftRadius;
     _tapHighlightInformation.bottomRightRadius = bottomRightRadius;
+    if (_showDebugTapHighlightsForFastClicking)
+        _tapHighlightInformation.color = [self _tapHighlightColorForFastClick:![_doubleTapGestureRecognizer isEnabled]];
+    else
+        _tapHighlightInformation.color = color;
 
     if (_potentialTapInProgress) {
         _hasTapHighlightForPotentialTap = YES;
@@ -764,6 +814,24 @@ static NSValue *nsSizeForTapHighlightBorderRadius(WebCore::IntSize borderRadius)
     }
 
     [self _showTapHighlight];
+    if (_isExpectingFastSingleTapCommit) {
+        [self _finishInteraction];
+        if (!_potentialTapInProgress)
+            _isExpectingFastSingleTapCommit = NO;
+    }
+}
+
+- (BOOL)_mayDisableDoubleTapGesturesDuringSingleTap
+{
+    return _potentialTapInProgress;
+}
+
+- (void)_disableDoubleTapGesturesDuringTapIfNecessary:(uint64_t)requestID
+{
+    if (_latestTapID != requestID)
+        return;
+
+    [self _setDoubleTapGesturesEnabled:NO];
 }
 
 - (void)_cancelLongPressGestureRecognizer
@@ -888,6 +956,12 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     if (isSamePair(gestureRecognizer, otherGestureRecognizer, _singleTapGestureRecognizer.get(), _textSelectionAssistant.get().singleTapGesture))
         return YES;
 
+    if (isSamePair(gestureRecognizer, otherGestureRecognizer, _singleTapGestureRecognizer.get(), _fastDoubleTapGestureRecognizer.get()))
+        return YES;
+
+    if (isSamePair(gestureRecognizer, otherGestureRecognizer, _highlightLongPressGestureRecognizer.get(), _fastDoubleTapGestureRecognizer.get()))
+        return YES;
+
     if (isSamePair(gestureRecognizer, otherGestureRecognizer, _highlightLongPressGestureRecognizer.get(), _previewSecondaryGestureRecognizer.get()))
         return YES;
 
@@ -942,6 +1016,7 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
 
     if (gestureRecognizer == _highlightLongPressGestureRecognizer
         || gestureRecognizer == _doubleTapGestureRecognizer
+        || gestureRecognizer == _fastDoubleTapGestureRecognizer
         || gestureRecognizer == _twoFingerDoubleTapGestureRecognizer
         || gestureRecognizer == _singleTapGestureRecognizer) {
 
@@ -1000,7 +1075,8 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
 - (void)_finishInteraction
 {
     _isTapHighlightIDValid = NO;
-    [UIView animateWithDuration:0.1
+    CGFloat tapHighlightFadeDuration = _showDebugTapHighlightsForFastClicking ? 0.25 : 0.1;
+    [UIView animateWithDuration:tapHighlightFadeDuration
                      animations:^{
                          [_highlightView layer].opacity = 0;
                      }
@@ -1062,6 +1138,7 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
 - (void)_highlightLongPressRecognized:(UILongPressGestureRecognizer *)gestureRecognizer
 {
     ASSERT(gestureRecognizer == _highlightLongPressGestureRecognizer);
+    [self _resetIsDoubleTapPending];
 
     _lastInteractionLocation = gestureRecognizer.startPoint;
 
@@ -1069,7 +1146,7 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     case UIGestureRecognizerStateBegan:
         _highlightLongPressCanClick = YES;
         cancelPotentialTapIfNecessary(self);
-        _page->tapHighlightAtPosition([gestureRecognizer startPoint], ++_latestTapHighlightID);
+        _page->tapHighlightAtPosition([gestureRecognizer startPoint], ++_latestTapID);
         _isTapHighlightIDValid = YES;
         break;
     case UIGestureRecognizerStateEnded:
@@ -1092,6 +1169,7 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
 - (void)_longPressRecognized:(UILongPressGestureRecognizer *)gestureRecognizer
 {
     ASSERT(gestureRecognizer == _longPressGestureRecognizer);
+    [self _resetIsDoubleTapPending];
 
     _lastInteractionLocation = gestureRecognizer.startPoint;
 
@@ -1104,20 +1182,30 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     }
 }
 
+- (void)_endPotentialTapAndEnableDoubleTapGesturesIfNecessary
+{
+    if (_webView._allowsDoubleTapGestures)
+        [self _setDoubleTapGesturesEnabled:YES];
+
+    _potentialTapInProgress = NO;
+}
+
 - (void)_singleTapRecognized:(UITapGestureRecognizer *)gestureRecognizer
 {
     ASSERT(gestureRecognizer == _singleTapGestureRecognizer);
     ASSERT(!_potentialTapInProgress);
+    [self _resetIsDoubleTapPending];
 
-    _page->potentialTapAtPosition(gestureRecognizer.location, ++_latestTapHighlightID);
+    _page->potentialTapAtPosition(gestureRecognizer.location, ++_latestTapID);
     _potentialTapInProgress = YES;
     _isTapHighlightIDValid = YES;
+    _isExpectingFastSingleTapCommit = !_doubleTapGestureRecognizer.get().enabled;
 }
 
 static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 {
     if (contentView->_potentialTapInProgress) {
-        contentView->_potentialTapInProgress = NO;
+        [contentView _endPotentialTapAndEnableDoubleTapGesturesIfNecessary];
         [contentView _cancelInteraction];
         contentView->_page->cancelPotentialTap();
     }
@@ -1132,6 +1220,15 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 - (void)_commitPotentialTapFailed
 {
     [self _cancelInteraction];
+}
+
+- (void)_didNotHandleTapAsClick
+{
+    if (!_isDoubleTapPending)
+        return;
+
+    _smartMagnificationController->handleSmartMagnificationGesture(_lastInteractionLocation);
+    _isDoubleTapPending = NO;
 }
 
 - (void)_singleTapCommited:(UITapGestureRecognizer *)gestureRecognizer
@@ -1156,7 +1253,7 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 
     _lastInteractionLocation = gestureRecognizer.location;
 
-    _potentialTapInProgress = NO;
+    [self _endPotentialTapAndEnableDoubleTapGesturesIfNecessary];
 
     if (_hasTapHighlightForPotentialTap) {
         [self _showTapHighlight];
@@ -1165,18 +1262,32 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 
     _page->commitPotentialTap();
 
-    [self _finishInteraction];
+    if (!_isExpectingFastSingleTapCommit)
+        [self _finishInteraction];
 }
 
 - (void)_doubleTapRecognized:(UITapGestureRecognizer *)gestureRecognizer
 {
+    [self _resetIsDoubleTapPending];
     _lastInteractionLocation = gestureRecognizer.location;
 
     _smartMagnificationController->handleSmartMagnificationGesture(gestureRecognizer.location);
 }
 
+- (void)_resetIsDoubleTapPending
+{
+    _isDoubleTapPending = NO;
+}
+
+- (void)_fastDoubleTapRecognized:(UITapGestureRecognizer *)gestureRecognizer
+{
+    _lastInteractionLocation = gestureRecognizer.location;
+    _isDoubleTapPending = YES;
+}
+
 - (void)_twoFingerDoubleTapRecognized:(UITapGestureRecognizer *)gestureRecognizer
 {
+    [self _resetIsDoubleTapPending];
     _lastInteractionLocation = gestureRecognizer.location;
 
     _smartMagnificationController->handleResetMagnificationGesture(gestureRecognizer.location);
@@ -2252,6 +2363,30 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
     });
 }
 
+- (WebCore::Color)_tapHighlightColorForFastClick:(BOOL)forFastClick
+{
+    ASSERT(_showDebugTapHighlightsForFastClicking);
+    return forFastClick ? WebCore::Color(0, 225, 0, 127) : WebCore::Color(225, 0, 0, 127);
+}
+
+- (void)_setDoubleTapGesturesEnabled:(BOOL)enabled
+{
+    if (enabled && ![_doubleTapGestureRecognizer isEnabled]) {
+        // The first tap recognized after re-enabling double tap gestures will not wait for the
+        // second tap before committing. To fix this, we use a new double tap gesture recognizer.
+        [self removeGestureRecognizer:_doubleTapGestureRecognizer.get()];
+        [_doubleTapGestureRecognizer setDelegate:nil];
+        [self _createAndConfigureDoubleTapGestureRecognizer];
+    }
+
+    if (_showDebugTapHighlightsForFastClicking && !enabled)
+        _tapHighlightInformation.color = [self _tapHighlightColorForFastClick:YES];
+
+    [_doubleTapGestureRecognizer setEnabled:enabled];
+    [_fastDoubleTapGestureRecognizer setEnabled:!enabled];
+    [self _resetIsDoubleTapPending];
+}
+
 - (void)accessoryAutoFill
 {
     id <_WKFormDelegate> formDelegate = [_webView _formDelegate];
@@ -2625,15 +2760,21 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
 {
     // We only want to handle key event from the hardware keyboard when we are
     // first responder and we are not interacting with editable content.
-    if ([self isFirstResponder] && event._hidEvent && !_page->editorState().isContentEditable)
+    if ([self isFirstResponder] && event._hidEvent && !_page->editorState().isContentEditable) {
         [self handleKeyEvent:event];
+        return;
+    }
 
     [super _handleKeyUIEvent:event];
 }
 
 - (void)handleKeyEvent:(::UIEvent *)event
 {
-    ::WebEvent *webEvent = [[[::WebEvent alloc] initWithKeyEventType:(event._isKeyDown) ? WebEventKeyDown : WebEventKeyUp
+    // WebCore has already seen the event, no need for custom processing.
+    if (event == _uiEventBeingResent)
+        return;
+
+    WKWebEvent *webEvent = [[[WKWebEvent alloc] initWithKeyEventType:(event._isKeyDown) ? WebEventKeyDown : WebEventKeyUp
                                                            timeStamp:event.timestamp
                                                           characters:event._modifiedInput
                                          charactersIgnoringModifiers:event._unmodifiedInput
@@ -2643,6 +2784,7 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
                                                              keyCode:0
                                                             isTabKey:[event._modifiedInput isEqualToString:@"\t"]
                                                         characterSet:WebEventCharacterSetUnicode] autorelease];
+    webEvent.uiEvent = event;
     
     [self handleKeyWebEvent:webEvent];    
 }
@@ -2652,7 +2794,7 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
     _page->handleKeyboardEvent(NativeWebKeyboardEvent(theEvent));
 }
 
-- (void)_didHandleKeyEvent:(WebIOSEvent *)event
+- (void)_didHandleKeyEvent:(WebIOSEvent *)event eventWasHandled:(BOOL)eventWasHandled
 {
     if (event.type == WebEventKeyDown) {
         // FIXME: This is only for staging purposes.
@@ -2661,6 +2803,89 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
         else
             [[UIKeyboardImpl sharedInstance] didHandleWebKeyEvent];
     }
+
+    // If we aren't interacting with editable content, we still need to call [super _handleKeyUIEvent:]
+    // so that keyboard repeat will work correctly. If we are interacting with editable content,
+    // we already did so in _handleKeyUIEvent.
+    if (eventWasHandled && _page->editorState().isContentEditable)
+        return;
+
+    if (![event isKindOfClass:[WKWebEvent class]])
+        return;
+
+    // Resending the event may destroy this WKContentView.
+    RetainPtr<WKContentView> protector(self);
+
+    // We keep here the event when resending it to the application to distinguish
+    // the case of a new event from one that has been already sent to WebCore.
+    ASSERT(!_uiEventBeingResent);
+    _uiEventBeingResent = [(WKWebEvent *)event uiEvent];
+    [super _handleKeyUIEvent:_uiEventBeingResent.get()];
+    _uiEventBeingResent = nil;
+}
+
+- (Optional<FloatPoint>)_scrollOffsetForEvent:(WebIOSEvent *)event
+{
+    static const unsigned kWebSpaceKey = 0x20;
+
+    if (_page->editorState().isContentEditable)
+        return Nullopt;
+
+    NSString *charactersIgnoringModifiers = event.charactersIgnoringModifiers;
+    if (!charactersIgnoringModifiers.length)
+        return Nullopt;
+
+    enum ScrollingIncrement { Document, Page, Line };
+    enum ScrollingDirection { Up, Down, Left, Right };
+
+    auto computeOffset = ^(ScrollingIncrement increment, ScrollingDirection direction) {
+        bool isHorizontal = (direction == Left || direction == Right);
+
+        CGFloat scrollDistance = ^ CGFloat {
+            switch (increment) {
+            case Document:
+                ASSERT(!isHorizontal);
+                return self.bounds.size.height;
+            case Page:
+                ASSERT(!isHorizontal);
+                return Scrollbar::pageStep(_page->unobscuredContentRect().height(), self.bounds.size.height);
+            case Line:
+                return Scrollbar::pixelsPerLineStep();
+            }
+            ASSERT_NOT_REACHED();
+            return 0;
+        }();
+
+        if (direction == Up || direction == Left)
+            scrollDistance = -scrollDistance;
+        
+        return (isHorizontal ? FloatPoint(scrollDistance, 0) : FloatPoint(0, scrollDistance));
+    };
+
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputLeftArrow])
+        return computeOffset(Line, Left);
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputRightArrow])
+        return computeOffset(Line, Right);
+
+    ScrollingIncrement incrementForVerticalArrowKey = Line;
+    if (event.modifierFlags & WebEventFlagMaskAlternate)
+        incrementForVerticalArrowKey = Page;
+    else if (event.modifierFlags & WebEventFlagMaskCommand)
+        incrementForVerticalArrowKey = Document;
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputUpArrow])
+        return computeOffset(incrementForVerticalArrowKey, Up);
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputDownArrow])
+        return computeOffset(incrementForVerticalArrowKey, Down);
+
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputPageDown])
+        return computeOffset(Page, Down);
+    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputPageUp])
+        return computeOffset(Page, Up);
+
+    if ([charactersIgnoringModifiers characterAtIndex:0] == kWebSpaceKey)
+        return computeOffset(Page, (event.modifierFlags & WebEventFlagMaskShift) ? Up : Down);
+
+    return Nullopt;
 }
 
 - (BOOL)_interpretKeyEvent:(WebIOSEvent *)event isCharEvent:(BOOL)isCharEvent
@@ -2677,47 +2902,15 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
     if (!contentEditable && event.isTabKey)
         return NO;
 
-    BOOL shift = event.modifierFlags & WebEventFlagMaskShift;
-    BOOL command = event.modifierFlags & WebEventFlagMaskCommand;
-    BOOL option = event.modifierFlags & WebEventFlagMaskAlternate;
-    NSString *charactersIgnoringModifiers = [event charactersIgnoringModifiers];
-    BOOL shouldScroll = YES;
-    FloatPoint scrollOffset;
-
-    if ([charactersIgnoringModifiers isEqualToString:UIKeyInputLeftArrow])
-        scrollOffset.setX(-Scrollbar::pixelsPerLineStep());
-    else if ([charactersIgnoringModifiers isEqualToString:UIKeyInputUpArrow]) {
-        if (option)
-            scrollOffset.setY(-_page->unobscuredContentRect().height());
-        else if (command)
-            scrollOffset.setY(-[self bounds].size.height);
-        else
-            scrollOffset.setY(-Scrollbar::pixelsPerLineStep());
-    } else if ([charactersIgnoringModifiers isEqualToString:UIKeyInputRightArrow])
-            scrollOffset.setX(Scrollbar::pixelsPerLineStep());
-    else if ([charactersIgnoringModifiers isEqualToString:UIKeyInputDownArrow]) {
-        if (option)
-            scrollOffset.setY(_page->unobscuredContentRect().height());
-        else if (command)
-            scrollOffset.setY([self bounds].size.height);
-        else
-            scrollOffset.setY(Scrollbar::pixelsPerLineStep());
-    } else if ([charactersIgnoringModifiers isEqualToString:UIKeyInputPageDown])
-        scrollOffset.setY(_page->unobscuredContentRect().height());
-    else if ([charactersIgnoringModifiers isEqualToString:UIKeyInputPageUp])
-        scrollOffset.setY(-_page->unobscuredContentRect().height());
-    else
-        shouldScroll = NO;
-
-    if (shouldScroll) {
-        [_webView _scrollByOffset:scrollOffset];
+    if (Optional<FloatPoint> scrollOffset = [self _scrollOffsetForEvent:event]) {
+        [_webView _scrollByContentOffset:scrollOffset.value()];
         return YES;
     }
 
     UIKeyboardImpl *keyboard = [UIKeyboardImpl sharedInstance];
-    NSString *characters = [event characters];
+    NSString *characters = event.characters;
     
-    if (![characters length])
+    if (!characters.length)
         return NO;
 
     switch ([characters characterAtIndex:0]) {
@@ -2734,11 +2927,7 @@ static UITextAutocapitalizationType toUITextAutocapitalize(WebAutocapitalizeType
         break;
 
     case kWebSpaceKey:
-        if (!contentEditable) {
-            [_webView _scrollByOffset:FloatPoint(0, shift ? -_page->unobscuredContentRect().height() : _page->unobscuredContentRect().height())];
-            return YES;
-        }
-        if (isCharEvent) {
+        if (contentEditable && isCharEvent) {
             [keyboard addInputString:event.characters withFlags:event.keyboardFlags];
             return YES;
         }

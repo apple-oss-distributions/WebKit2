@@ -377,7 +377,7 @@ private:
 
     FloatRect fixedPositionRectForLayout = _page->computeCustomFixedPositionRect(unobscuredRect, zoomScale, WebPageProxy::UnobscuredRectConstraint::ConstrainedToDocumentRect);
     _page->updateVisibleContentRects(visibleRect, unobscuredRect, unobscuredRectInScrollViewCoordinates, fixedPositionRectForLayout,
-        zoomScale, isStableState, isChangingObscuredInsetsInteractively, timestamp, velocityData.horizontalVelocity, velocityData.verticalVelocity, velocityData.scaleChangeRate);
+        zoomScale, isStableState, isChangingObscuredInsetsInteractively, _webView._allowsViewportShrinkToFit, timestamp, velocityData.horizontalVelocity, velocityData.verticalVelocity, velocityData.scaleChangeRate);
 
     RemoteScrollingCoordinatorProxy* scrollingCoordinator = _page->scrollingCoordinatorProxy();
     FloatRect fixedPositionRect = _page->computeCustomFixedPositionRect(_page->unobscuredContentRect(), zoomScale);
@@ -453,6 +453,11 @@ private:
         IPC::DataReference elementToken = IPC::DataReference(reinterpret_cast<const uint8_t*>([remoteElementToken bytes]), [remoteElementToken length]);
         _page->registerUIProcessAccessibilityTokens(elementToken, elementToken);
     }
+}
+
+- (void)_webViewDestroyed
+{
+    _webView = nil;
 }
 
 #pragma mark PageClientImpl methods
@@ -549,6 +554,11 @@ private:
 - (void)_zoomOutWithOrigin:(CGPoint)origin
 {
     return [_webView _zoomOutWithOrigin:origin animated:YES];
+}
+
+- (void)_zoomToInitialScaleWithOrigin:(CGPoint)origin
+{
+    return [_webView _zoomToInitialScaleWithOrigin:origin animated:YES];
 }
 
 - (void)_applicationWillResignActive:(NSNotification*)notification

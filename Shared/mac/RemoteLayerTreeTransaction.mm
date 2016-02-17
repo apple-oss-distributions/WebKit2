@@ -524,12 +524,17 @@ void RemoteLayerTreeTransaction::encode(IPC::ArgumentEncoder& encoder) const
     encoder << m_pageScaleFactor;
     encoder << m_minimumScaleFactor;
     encoder << m_maximumScaleFactor;
+    encoder << m_initialScaleFactor;
+    encoder << m_viewportMetaTagWidth;
 
     encoder << m_renderTreeSize;
     encoder << m_transactionID;
 
     encoder << m_scaleWasSetByUIProcess;
     encoder << m_allowsUserScaling;
+
+    encoder << m_viewportMetaTagWidthWasExplicit;
+    encoder << m_viewportMetaTagCameFromImageDocument;
 
     encoder << m_callbackIDs;
 }
@@ -602,6 +607,12 @@ bool RemoteLayerTreeTransaction::decode(IPC::ArgumentDecoder& decoder, RemoteLay
     if (!decoder.decode(result.m_maximumScaleFactor))
         return false;
 
+    if (!decoder.decode(result.m_initialScaleFactor))
+        return false;
+
+    if (!decoder.decode(result.m_viewportMetaTagWidth))
+        return false;
+
     if (!decoder.decode(result.m_renderTreeSize))
         return false;
 
@@ -612,6 +623,12 @@ bool RemoteLayerTreeTransaction::decode(IPC::ArgumentDecoder& decoder, RemoteLay
         return false;
 
     if (!decoder.decode(result.m_allowsUserScaling))
+        return false;
+
+    if (!decoder.decode(result.m_viewportMetaTagWidthWasExplicit))
+        return false;
+
+    if (!decoder.decode(result.m_viewportMetaTagCameFromImageDocument))
         return false;
 
     if (!decoder.decode(result.m_callbackIDs))
