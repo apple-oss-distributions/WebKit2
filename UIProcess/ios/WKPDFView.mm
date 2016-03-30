@@ -153,13 +153,18 @@ typedef struct {
     return [_pdfDocument CGDocument];
 }
 
+static void detachViewForPage(PDFPageInfo& page)
+{
+    [page.view removeFromSuperview];
+    [page.view setDelegate:nil];
+    [[page.view annotationController] setDelegate:nil];
+    page.view = nil;
+}
+
 - (void)_clearPages
 {
-    for (auto& page : _pages) {
-        [page.view removeFromSuperview];
-        [page.view setDelegate:nil];
-        [[page.view annotationController] setDelegate:nil];
-    }
+    for (auto& page : _pages)
+        detachViewForPage(page);
     
     _pages.clear();
 }
@@ -216,16 +221,11 @@ typedef struct {
 
     [self _computePageAndDocumentFrames];
 
-    // FIXME: This dispatch_async is unnecessary except to work around rdar://problem/15035620.
-    // Once that is resolved, we should do the setContentOffset without the dispatch_async.
-    RetainPtr<WKPDFView> retainedSelf = self;
-    dispatch_async(dispatch_get_main_queue(), [retainedSelf, oldDocumentLeftFraction, oldDocumentTopFraction] {
-        CGSize contentSize = retainedSelf->_scrollView.contentSize;
-        UIEdgeInsets contentInset = retainedSelf->_scrollView.contentInset;
-        [retainedSelf->_scrollView setContentOffset:CGPointMake((oldDocumentLeftFraction * contentSize.width) - contentInset.left, (oldDocumentTopFraction * contentSize.height) - contentInset.top) animated:NO];
+    CGSize newContentSize = _scrollView.contentSize;
+    UIEdgeInsets contentInset = _scrollView.contentInset;
+    [_scrollView setContentOffset:CGPointMake((oldDocumentLeftFraction * newContentSize.width) - contentInset.left, (oldDocumentTopFraction * newContentSize.height) - contentInset.top) animated:NO];
 
-        [retainedSelf _revalidateViews];
-    });
+    [self _revalidateViews];
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -270,8 +270,7 @@ typedef struct {
 
     for (auto& pageInfo : _pages) {
         if (!CGRectIntersectsRect(pageInfo.frame, targetRectWithOverdraw) && pageInfo.index != _currentFindPageIndex) {
-            [pageInfo.view removeFromSuperview];
-            pageInfo.view = nullptr;
+            detachViewForPage(pageInfo);
             continue;
         }
 
