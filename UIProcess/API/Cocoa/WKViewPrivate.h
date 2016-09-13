@@ -23,6 +23,8 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if !TARGET_OS_IPHONE
+
 #import <WebKit/WKBase.h>
 #import <WebKit/WKImmediateActionTypes.h>
 #import <WebKit/WKLayoutMode.h>
@@ -35,32 +37,9 @@
 
 @property (readonly) WKPageRef pageRef;
 
-#if TARGET_OS_IPHONE
-- (id)initWithFrame:(CGRect)frame contextRef:(WKContextRef)contextRef pageGroupRef:(WKPageGroupRef)pageGroupRef;
-- (id)initWithFrame:(CGRect)frame contextRef:(WKContextRef)contextRef pageGroupRef:(WKPageGroupRef)pageGroupRef relatedToPage:(WKPageRef)relatedPage;
-#else
 - (id)initWithFrame:(NSRect)frame contextRef:(WKContextRef)contextRef pageGroupRef:(WKPageGroupRef)pageGroupRef;
 - (id)initWithFrame:(NSRect)frame contextRef:(WKContextRef)contextRef pageGroupRef:(WKPageGroupRef)pageGroupRef relatedToPage:(WKPageRef)relatedPage;
 - (id)initWithFrame:(NSRect)frame configurationRef:(WKPageConfigurationRef)configuration;
-#endif
-
-#if TARGET_OS_IPHONE
-
-@property (nonatomic) CGSize minimumLayoutSizeOverride;
-
-// Define the inset of the scrollview unusable by the web page.
-@property (nonatomic, setter=_setObscuredInsets:) UIEdgeInsets _obscuredInsets;
-
-@property (nonatomic, setter=_setBackgroundExtendsBeyondPage:) BOOL _backgroundExtendsBeyondPage;
-
-// This is deprecated and should be removed entirely: <rdar://problem/16294704>.
-@property (readonly) UIColor *_pageExtendedBackgroundColor;
-
-- (void)_beginInteractiveObscuredInsetsChange;
-- (void)_endInteractiveObscuredInsetsChange;
-- (void)_didRelaunchProcess;
-
-#else
 
 - (NSPrintOperation *)printOperationWithPrintInfo:(NSPrintInfo *)printInfo forFrame:(WKFrameRef)frameRef;
 - (BOOL)canChangeFrameLayout:(WKFrameRef)frameRef;
@@ -94,23 +73,21 @@
 @property (nonatomic, setter=_setLayoutMode:) WKLayoutMode _layoutMode;
 // For use with _layoutMode = kWKLayoutModeFixedSize:
 @property (nonatomic, setter=_setFixedLayoutSize:) CGSize _fixedLayoutSize;
-// For use with _layoutMode = kWKLayoutModeDynamicSizeWithMinimumViewSize:
-@property (nonatomic, setter=_setMinimumViewSize:) CGSize _minimumViewSize;
 
 @property (nonatomic, setter=_setViewScale:) CGFloat _viewScale;
 
-@property (nonatomic, setter=_setOverrideDeviceScaleFactor:) CGFloat _overrideDeviceScaleFactor WK_AVAILABLE(WK_MAC_TBA, NA);
+@property (nonatomic, setter=_setOverrideDeviceScaleFactor:) CGFloat _overrideDeviceScaleFactor WK_API_AVAILABLE(macosx(10.11));
 
-#if __MAC_OS_X_VERSION_MIN_REQUIRED >= 101000
 @property (nonatomic, setter=_setAutomaticallyAdjustsContentInsets:) BOOL _automaticallyAdjustsContentInsets;
-#endif
 
 @property (readonly) NSColor *_pageExtendedBackgroundColor;
 @property (copy, nonatomic) NSColor *underlayColor;
 
 #if WK_API_ENABLED
-@property (strong, nonatomic, setter=_setInspectorAttachmentView:) NSView *_inspectorAttachmentView WK_AVAILABLE(WK_MAC_TBA, NA);
+@property (strong, nonatomic, setter=_setInspectorAttachmentView:) NSView *_inspectorAttachmentView WK_API_AVAILABLE(macosx(10.11));
 #endif
+
+@property (nonatomic, readwrite, setter=_setRequiresUserActionForEditingControlsManager:) BOOL _requiresUserActionForEditingControlsManager;
 
 - (NSView*)fullScreenPlaceholderView;
 - (NSWindow*)createFullScreenWindow;
@@ -123,9 +100,6 @@
 
 - (BOOL)windowOcclusionDetectionEnabled;
 - (void)setWindowOcclusionDetectionEnabled:(BOOL)flag;
-
-- (void)forceAsyncDrawingAreaSizeUpdate:(NSSize)size;
-- (void)waitForAsyncDrawingAreaSizeUpdate;
 
 - (void)setMagnification:(double)magnification centeredAtPoint:(NSPoint)point;
 
@@ -145,7 +119,7 @@
 
 // Clients that want to maintain default behavior can return nil. To disable the immediate action entirely, return NSNull. And to
 // do something custom, return an object that conforms to the NSImmediateActionAnimationController protocol.
-- (id)_immediateActionAnimationControllerForHitTestResult:(WKHitTestResultRef)hitTestResult withType:(_WKImmediateActionType)type userData:(WKTypeRef)userData;
+- (id)_immediateActionAnimationControllerForHitTestResult:(WKHitTestResultRef)hitTestResult withType:(uint32_t)type userData:(WKTypeRef)userData;
 
 - (void)_prepareForImmediateActionAnimation;
 - (void)_cancelImmediateActionAnimation;
@@ -155,6 +129,9 @@
 - (void)_dismissContentRelativeChildWindowsWithAnimation:(BOOL)withAnimation;
 
 - (void)_didChangeContentSize:(NSSize)newSize;
-#endif
+
+- (void)_gestureEventWasNotHandledByWebCore:(NSEvent *)event;
 
 @end
+
+#endif // !TARGET_OS_IPHONE

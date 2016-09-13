@@ -68,7 +68,9 @@ using namespace WebKit;
     _storagePolicy = NSURLCacheStorageNotAllowed;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    _urlConnection = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:YES];
+    _urlConnection = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:NO];
+    [_urlConnection scheduleInRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    [_urlConnection start];
 #pragma clang diagnostic pop
 
     return self;
@@ -110,6 +112,10 @@ using namespace WebKit;
 
 - (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)redirectResponse
 {
+    if (redirectResponse) {
+        _connection->send(Messages::CustomProtocolManager::WasRedirectedToRequest(_customProtocolID, request, redirectResponse), 0);
+        return nil;
+    }
     return request;
 }
 

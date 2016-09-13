@@ -32,6 +32,7 @@
 #include "WebKitWebViewBasePrivate.h"
 #include "WebPageMessages.h"
 #include "WebProcessProxy.h"
+#include "WebsiteDataStore.h"
 #include <WebCore/UserAgentGtk.h>
 #include <gtk/gtkx.h>
 #include <wtf/NeverDestroyed.h>
@@ -57,12 +58,17 @@ void WebPageProxy::bindAccessibilityTree(const String& plugID)
     m_accessibilityPlugID = plugID;
 }
 
-void WebPageProxy::saveRecentSearches(const String&, const Vector<String>&)
+void WebPageProxy::saveRecentSearches(const String&, const Vector<WebCore::RecentSearch>&)
 {
     notImplemented();
 }
 
-void WebPageProxy::loadRecentSearches(const String&, Vector<String>&)
+void WebPageProxy::loadRecentSearches(const String&, Vector<WebCore::RecentSearch>&)
+{
+    notImplemented();
+}
+
+void WebsiteDataStore::platformRemoveRecentSearches(std::chrono::system_clock::time_point oldestTimeToRemove)
 {
     notImplemented();
 }
@@ -73,7 +79,7 @@ void WebPageProxy::editorStateChanged(const EditorState& editorState)
     
     if (editorState.shouldIgnoreCompositionSelectionChange)
         return;
-    m_pageClient.updateTextInputState();
+    m_pageClient.selectionDidChange();
 }
 
 #if PLUGIN_ARCHITECTURE(X11)
