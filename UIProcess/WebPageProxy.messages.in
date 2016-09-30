@@ -462,6 +462,5 @@ messages -> WebPageProxy {
 
 #if PLATFORM(MAC)
     DidHandleAcceptedCandidate()
-    HandleActiveNowPlayingSessionInfoResponse(bool hasActiveSession)
 #endif
 }
