@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, 2014 Apple Inc. All rights reserved.
+ * Copyright (C) 2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,34 +23,15 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef WebContextClient_h
-#define WebContextClient_h
+#import <WebKit/WKBackForwardListItem.h>
 
-#include "APIClient.h"
-#include "APIData.h"
-#include "WKContext.h"
+#if WK_API_ENABLED
 
-namespace API {
-class Array;
+@interface WKBackForwardListItem (WKPrivate)
 
-template<> struct ClientTraits<WKContextClientBase> {
-    typedef std::tuple<WKContextClientV0, WKContextClientV1, WKContextClientV2> Versions;
-};
-}
+// For testing only.
+- (CGImageRef)_copySnapshotForTesting WK_API_AVAILABLE(macosx(WK_MAC_TBA), ios(WK_IOS_TBA));
 
+@end
 
-namespace WebKit {
-
-class WebProcessPool;
-
-class WebContextClient : public API::Client<WKContextClientBase> {
-public:
-    void plugInAutoStartOriginHashesChanged(WebProcessPool*);
-    void networkProcessDidCrash(WebProcessPool*);
-    void databaseProcessDidCrash(WebProcessPool*);
-    void plugInInformationBecameAvailable(WebProcessPool*, API::Array*);
-};
-
-} // namespace WebKit
-
-#endif // WebContextClient_h
+#endif

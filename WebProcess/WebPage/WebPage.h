@@ -938,7 +938,7 @@ public:
     void addUserStyleSheet(const String& source, WebCore::UserContentInjectedFrames);
     void removeAllUserContent();
 
-    void dispatchDidLayout(WebCore::LayoutMilestones);
+    void dispatchDidReachLayoutMilestone(WebCore::LayoutMilestones);
 
     void didRestoreScrollPosition();
 
@@ -1187,6 +1187,7 @@ private:
     void dataDetectorsDidHideUI(WebCore::PageOverlay::PageOverlayID);
 
     void handleAcceptedCandidate(WebCore::TextCheckingResult);
+    void requestActiveNowPlayingSessionInfo();
 #endif
 
     void setShouldDispatchFakeMouseMoveEvents(bool dispatch) { m_shouldDispatchFakeMouseMoveEvents = dispatch; }
