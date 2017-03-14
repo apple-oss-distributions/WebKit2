@@ -34,7 +34,7 @@ using namespace WebCore;
 
 namespace WebKit {
 
-void NetworkResourceLoadParameters::encode(IPC::ArgumentEncoder& encoder) const
+void NetworkResourceLoadParameters::encode(IPC::Encoder& encoder) const
 {
     encoder << identifier;
     encoder << webPageID;
@@ -75,13 +75,14 @@ void NetworkResourceLoadParameters::encode(IPC::ArgumentEncoder& encoder) const
     encoder.encodeEnum(contentSniffingPolicy);
     encoder.encodeEnum(allowStoredCredentials);
     encoder.encodeEnum(clientCredentialPolicy);
+    encoder << shouldFollowRedirects;
     encoder << shouldClearReferrerOnHTTPSToHTTPRedirect;
     encoder << defersLoading;
     encoder << needsCertificateInfo;
     encoder << maximumBufferingTime;
 }
 
-bool NetworkResourceLoadParameters::decode(IPC::ArgumentDecoder& decoder, NetworkResourceLoadParameters& result)
+bool NetworkResourceLoadParameters::decode(IPC::Decoder& decoder, NetworkResourceLoadParameters& result)
 {
     if (!decoder.decode(result.identifier))
         return false;
@@ -129,6 +130,8 @@ bool NetworkResourceLoadParameters::decode(IPC::ArgumentDecoder& decoder, Networ
     if (!decoder.decodeEnum(result.allowStoredCredentials))
         return false;
     if (!decoder.decodeEnum(result.clientCredentialPolicy))
+        return false;
+    if (!decoder.decode(result.shouldFollowRedirects))
         return false;
     if (!decoder.decode(result.shouldClearReferrerOnHTTPSToHTTPRedirect))
         return false;

@@ -30,8 +30,7 @@
 
 #import "WebPageProxy.h"
 #import "WebPaymentCoordinatorProxyCocoa.h"
-#import <Foundation/NSExtension.h>
-#import <PassKit/PKPaymentAuthorizationViewController_Private.h>
+#import <WebCore/PassKitSPI.h>
 #import <WebCore/SoftLinking.h>
 
 SOFT_LINK_PRIVATE_FRAMEWORK(PassKit)
@@ -43,7 +42,7 @@ namespace WebKit {
 
 void WebPaymentCoordinatorProxy::platformShowPaymentUI(const WebCore::URL& originatingURL, const Vector<WebCore::URL>& linkIconURLStrings, const WebCore::PaymentRequest& request, std::function<void (bool)> completionHandler)
 {
-    auto paymentRequest = toPKPaymentRequest(originatingURL, linkIconURLStrings, request);
+    auto paymentRequest = toPKPaymentRequest(m_webPageProxy, originatingURL, linkIconURLStrings, request);
 
     auto showPaymentUIRequestSeed = m_showPaymentUIRequestSeed;
     auto weakThis = m_weakPtrFactory.createWeakPtr();

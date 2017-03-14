@@ -93,7 +93,7 @@ void WebBackForwardList::addItem(WebBackForwardListItem* newItem)
     Vector<RefPtr<WebBackForwardListItem>> removedItems;
     
     if (m_hasCurrentIndex) {
-        m_page->recordNavigationSnapshot();
+        m_page->recordAutomaticNavigationSnapshot();
 
         // Toss everything in the forward list.
         unsigned targetSize = m_currentIndex + 1;
@@ -187,7 +187,7 @@ void WebBackForwardList::goToItem(WebBackForwardListItem* item)
     WebBackForwardListItem* currentItem = m_entries[m_currentIndex].get();
     bool shouldKeepCurrentItem = true;
     if (currentItem != item) {
-        m_page->recordNavigationSnapshot();
+        m_page->recordAutomaticNavigationSnapshot();
         shouldKeepCurrentItem = m_page->shouldKeepCurrentBackForwardListItemInList(m_entries[m_currentIndex].get());
     }
 
@@ -415,7 +415,7 @@ BackForwardListState WebBackForwardList::backForwardListState(const std::functio
     }
 
     if (backForwardListState.items.isEmpty())
-        backForwardListState.currentIndex = Nullopt;
+        backForwardListState.currentIndex = std::nullopt;
     else if (backForwardListState.items.size() <= backForwardListState.currentIndex.value())
         backForwardListState.currentIndex = backForwardListState.items.size() - 1;
 
@@ -432,7 +432,7 @@ void WebBackForwardList::restoreFromState(BackForwardListState backForwardListSt
         items.uncheckedAppend(WebBackForwardListItem::create(WTFMove(backForwardListItemState), m_page->pageID()));
     }
     m_hasCurrentIndex = !!backForwardListState.currentIndex;
-    m_currentIndex = backForwardListState.currentIndex.valueOr(0);
+    m_currentIndex = backForwardListState.currentIndex.value_or(0);
     m_entries = WTFMove(items);
 }
 

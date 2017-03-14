@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010, 2011, 2012, 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2010-2012, 2015-2016 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -59,6 +59,7 @@
 #import <WebCore/BackForwardController.h>
 #import <WebCore/DataDetection.h>
 #import <WebCore/DictionaryLookup.h>
+#import <WebCore/Editor.h>
 #import <WebCore/EventHandler.h>
 #import <WebCore/FocusController.h>
 #import <WebCore/FrameLoader.h>
@@ -70,6 +71,7 @@
 #import <WebCore/KeyboardEvent.h>
 #import <WebCore/MIMETypeRegistry.h>
 #import <WebCore/MainFrame.h>
+#import <WebCore/NetworkStorageSession.h>
 #import <WebCore/NetworkingContext.h>
 #import <WebCore/Page.h>
 #import <WebCore/PageOverlayController.h>
@@ -87,6 +89,7 @@
 #import <WebCore/WindowsKeyboardCodes.h>
 #import <WebCore/htmlediting.h>
 #import <WebKitSystemInterface.h>
+#import <wtf/SetForScope.h>
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
 #include <WebCore/MediaPlaybackTargetMac.h>
@@ -138,7 +141,7 @@ void WebPage::platformEditorState(Frame& frame, EditorState& result, IncludePost
 
     postLayoutData.candidateRequestStartPosition = TextIterator::rangeLength(makeRange(paragraphStart, selectionStart).get());
     postLayoutData.selectedTextLength = TextIterator::rangeLength(makeRange(paragraphStart, selectionEnd).get()) - postLayoutData.candidateRequestStartPosition;
-    postLayoutData.paragraphContextForCandidateRequest = plainText(makeRange(paragraphStart, paragraphEnd).get());
+    postLayoutData.paragraphContextForCandidateRequest = plainText(frame.editor().contextRangeForCandidateRequest().get());
     postLayoutData.stringForCandidateRequest = frame.editor().stringForCandidateRequest();
 
     IntRect rectForSelectionCandidates;
@@ -309,6 +312,8 @@ void WebPage::insertDictatedTextAsync(const String& text, const EditingRange& re
 {
     Frame& frame = m_page->focusController().focusedOrMainFrame();
 
+    Ref<Frame> protector(frame);
+
     if (replacementEditingRange.location != notFound) {
         RefPtr<Range> replacementRange = rangeFromEditingRange(frame, replacementEditingRange);
         if (replacementRange)
@@ -340,7 +345,7 @@ void WebPage::attributedSubstringForCharacterRangeAsync(const EditingRange& edit
         return;
     }
 
-    result.string = editingAttributedStringFromRange(*range);
+    result.string = editingAttributedStringFromRange(*range, IncludeImagesInAttributedString::No);
     NSAttributedString* attributedString = result.string.get();
     
     // WebCore::editingAttributedStringFromRange() insists on inserting a trailing
@@ -416,17 +421,24 @@ void WebPage::performDictionaryLookupOfCurrentSelection()
 
 DictionaryPopupInfo WebPage::dictionaryPopupInfoForRange(Frame* frame, Range& range, NSDictionary **options, TextIndicatorPresentationTransition presentationTransition)
 {
+    Editor& editor = frame->editor();
+    editor.setIsGettingDictionaryPopupInfo(true);
+
     DictionaryPopupInfo dictionaryPopupInfo;
-    if (range.text().stripWhiteSpace().isEmpty())
+    if (range.text().stripWhiteSpace().isEmpty()) {
+        editor.setIsGettingDictionaryPopupInfo(false);
         return dictionaryPopupInfo;
+    }
     
     RenderObject* renderer = range.startContainer().renderer();
     const RenderStyle& style = renderer->style();
 
     Vector<FloatQuad> quads;
     range.absoluteTextQuads(quads);
-    if (quads.isEmpty())
+    if (quads.isEmpty()) {
+        editor.setIsGettingDictionaryPopupInfo(false);
         return dictionaryPopupInfo;
+    }
 
     IntRect rangeRect = frame->view()->contentsToWindow(quads[0].enclosingBoundingBox());
 
@@ -456,12 +468,15 @@ DictionaryPopupInfo WebPage::dictionaryPopupInfoForRange(Frame* frame, Range& ra
         indicatorOptions |= TextIndicatorOptionIncludeSnapshotWithSelectionHighlight;
 
     RefPtr<TextIndicator> textIndicator = TextIndicator::createWithRange(range, indicatorOptions, presentationTransition);
-    if (!textIndicator)
+    if (!textIndicator) {
+        editor.setIsGettingDictionaryPopupInfo(false);
         return dictionaryPopupInfo;
+    }
 
     dictionaryPopupInfo.textIndicator = textIndicator->data();
     dictionaryPopupInfo.attributedString = scaledNSAttributedString;
 
+    editor.setIsGettingDictionaryPopupInfo(false);
     return dictionaryPopupInfo;
 }
 
@@ -531,7 +546,7 @@ bool WebPage::performNonEditingBehaviorForSelector(const String& selector, Keybo
 {
     // First give accessibility a chance to handle the event.
     Frame* frame = frameForEvent(event);
-    frame->eventHandler().handleKeyboardSelectionMovementForAccessibility(event);
+    frame->eventHandler().handleKeyboardSelectionMovementForAccessibility(*event);
     if (event->defaultHandled())
         return true;
 
@@ -969,7 +984,7 @@ void WebPage::performImmediateActionHitTestAtLocation(WebCore::FloatPoint locati
     HitTestResult hitTestResult = mainFrame.eventHandler().hitTestResultAtPoint(locationInContentCoordinates);
 
     bool immediateActionHitTestPreventsDefault = false;
-    Element* element = hitTestResult.innerElement();
+    Element* element = hitTestResult.targetElement();
 
     mainFrame.eventHandler().setImmediateActionStage(ImmediateActionStage::PerformedHitTest);
     if (element)
