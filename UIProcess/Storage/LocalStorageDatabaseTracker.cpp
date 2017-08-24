@@ -32,6 +32,8 @@
 #include <WebCore/SecurityOrigin.h>
 #include <WebCore/SecurityOriginData.h>
 #include <WebCore/TextEncoding.h>
+#include <wtf/MainThread.h>
+#include <wtf/RunLoop.h>
 #include <wtf/WorkQueue.h>
 #include <wtf/text/CString.h>
 
@@ -142,6 +144,8 @@ static std::optional<time_t> fileModificationTime(const String& filePath)
 
 Vector<SecurityOriginData> LocalStorageDatabaseTracker::deleteDatabasesModifiedSince(std::chrono::system_clock::time_point time)
 {
+    ASSERT(!RunLoop::isMain());
+    importOriginIdentifiers();
     Vector<String> originIdentifiersToDelete;
 
     for (const String& origin : m_origins) {
@@ -209,6 +213,10 @@ String LocalStorageDatabaseTracker::databasePath(const String& filename) const
         LOG_ERROR("Unable to create LocalStorage database path %s", m_localStorageDirectory.utf8().data());
         return String();
     }
+
+#if PLATFORM(IOS)
+    platformMaybeExcludeFromBackup();
+#endif
 
     return pathByAppendingComponent(m_localStorageDirectory, filename);
 }

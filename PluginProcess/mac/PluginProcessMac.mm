@@ -606,6 +606,11 @@ void PluginProcess::platformInitializeProcess(const ChildProcessInitializationPa
     // FIXME: Workaround for Java not liking its plugin process to be suppressed - <rdar://problem/14267843>
     if (m_pluginBundleIdentifier == "com.oracle.java.JavaAppletPlugin")
         (new UserActivity("com.oracle.java.JavaAppletPlugin"))->start();
+    
+    if (!pluginHasSandboxProfile(m_pluginBundleIdentifier)) {
+        // Allow Apple Events from Citrix plugin. This can be removed when <rdar://problem/14012823> is fixed.
+        setenv("__APPLEEVENTSSERVICENAME", "com.apple.coreservices.appleevents", 1);
+    }
 }
 
 void PluginProcess::initializeProcessName(const ChildProcessInitializationParameters& parameters)
@@ -620,13 +625,12 @@ void PluginProcess::initializeSandbox(const ChildProcessInitializationParameters
 {
     // PluginProcess may already be sandboxed if its parent process was sandboxed, and launched a child process instead of an XPC service.
     // This is generally not expected, however we currently always spawn a child process to create a MIME type preferences file.
-    if (processIsSandboxed(getpid())) {
+    if (currentProcessIsSandboxed()) {
         RELEASE_ASSERT(!parameters.connectionIdentifier.xpcConnection);
-        RELEASE_ASSERT(processIsSandboxed(getppid()));
         return;
     }
 
-    bool parentIsSandboxed = parameters.connectionIdentifier.xpcConnection && processIsSandboxed(xpc_connection_get_pid(parameters.connectionIdentifier.xpcConnection.get()));
+    bool parentIsSandboxed = parameters.connectionIdentifier.xpcConnection && connectedProcessIsSandboxed(parameters.connectionIdentifier.xpcConnection.get());
 
     if (parameters.extraInitializationData.get("disable-sandbox") == "1") {
         if (parentIsSandboxed) {

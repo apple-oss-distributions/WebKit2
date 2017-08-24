@@ -44,7 +44,7 @@ using namespace WebCore;
 
 namespace WebKit {
 
-PassRefPtr<PlatformCALayerRemote> PlatformCALayerRemote::create(LayerType layerType, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
+Ref<PlatformCALayerRemote> PlatformCALayerRemote::create(LayerType layerType, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
 {
     RefPtr<PlatformCALayerRemote> layer;
 
@@ -55,48 +55,45 @@ PassRefPtr<PlatformCALayerRemote> PlatformCALayerRemote::create(LayerType layerT
 
     context.layerWasCreated(*layer, layerType);
 
-    return WTFMove(layer);
+    return layer.releaseNonNull();
 }
 
-PassRefPtr<PlatformCALayerRemote> PlatformCALayerRemote::create(PlatformLayer *platformLayer, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
+Ref<PlatformCALayerRemote> PlatformCALayerRemote::create(PlatformLayer *platformLayer, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
 {
     return PlatformCALayerRemoteCustom::create(platformLayer, owner, context);
 }
 
-PassRefPtr<PlatformCALayerRemote> PlatformCALayerRemote::create(const PlatformCALayerRemote& other, WebCore::PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
+Ref<PlatformCALayerRemote> PlatformCALayerRemote::create(const PlatformCALayerRemote& other, WebCore::PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
 {
     auto layer = adoptRef(*new PlatformCALayerRemote(other, owner, context));
 
     context.layerWasCreated(layer.get(), other.layerType());
 
-    return WTFMove(layer);
+    return layer;
 }
 
 PlatformCALayerRemote::PlatformCALayerRemote(LayerType layerType, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
     : PlatformCALayer(layerType, owner)
-    , m_superlayer(nullptr)
-    , m_maskLayer(nullptr)
-    , m_acceleratesDrawing(false)
     , m_context(&context)
 {
-    if (owner)
+    if (owner && layerType != LayerTypeContentsProvidedLayer && layerType != LayerTypeTransformLayer) {
         m_properties.contentsScale = owner->platformCALayerDeviceScaleFactor();
+        m_properties.notePropertiesChanged(RemoteLayerTreeTransaction::ContentsScaleChanged);
+    }
 }
 
 PlatformCALayerRemote::PlatformCALayerRemote(const PlatformCALayerRemote& other, PlatformCALayerClient* owner, RemoteLayerTreeContext& context)
     : PlatformCALayer(other.layerType(), owner)
-    , m_superlayer(nullptr)
-    , m_maskLayer(nullptr)
     , m_acceleratesDrawing(other.acceleratesDrawing())
     , m_context(&context)
 {
 }
 
-PassRefPtr<PlatformCALayer> PlatformCALayerRemote::clone(PlatformCALayerClient* owner) const
+Ref<PlatformCALayer> PlatformCALayerRemote::clone(PlatformCALayerClient* owner) const
 {
     auto clone = PlatformCALayerRemote::create(*this, owner, *m_context);
 
-    updateClonedLayerProperties(*clone);
+    updateClonedLayerProperties(clone);
 
     clone->setClonedLayer(this);
     return WTFMove(clone);
@@ -206,7 +203,7 @@ void PlatformCALayerRemote::updateBackingStore()
     if (!m_properties.backingStore)
         return;
 
-    m_properties.backingStore->ensureBackingStore(m_properties.bounds.size(), m_properties.contentsScale, m_acceleratesDrawing, m_properties.opaque);
+    m_properties.backingStore->ensureBackingStore(m_properties.bounds.size(), m_properties.contentsScale, m_acceleratesDrawing, m_wantsDeepColorBackingStore, m_properties.opaque);
 }
 
 void PlatformCALayerRemote::setNeedsDisplayInRect(const FloatRect& rect)
@@ -360,7 +357,7 @@ void PlatformCALayerRemote::removeAnimationForKey(const String& key)
     m_properties.notePropertiesChanged(RemoteLayerTreeTransaction::AnimationsChanged);
 }
 
-PassRefPtr<PlatformCAAnimation> PlatformCALayerRemote::animationForKey(const String& key)
+RefPtr<PlatformCAAnimation> PlatformCALayerRemote::animationForKey(const String& key)
 {
     return m_animations.get(key);
 }
@@ -455,9 +452,9 @@ FloatPoint3D PlatformCALayerRemote::position() const
 
 void PlatformCALayerRemote::setPosition(const FloatPoint3D& value)
 {
-    if (value == m_properties.position)
-        return;
-
+    // We can't early return here if the position has not changed, since GraphicsLayerCA::syncPosition() may have changed
+    // the GraphicsLayer position (which doesn't force a geometry update) but we want a subsequent GraphicsLayerCA::setPosition()
+    // to push a new position to the UI process, even though our m_properties.position hasn't changed.
     m_properties.position = value;
     m_properties.notePropertiesChanged(RemoteLayerTreeTransaction::PositionChanged);
 }
@@ -599,6 +596,26 @@ void PlatformCALayerRemote::setAcceleratesDrawing(bool acceleratesDrawing)
 {
     m_acceleratesDrawing = acceleratesDrawing;
     updateBackingStore();
+}
+
+bool PlatformCALayerRemote::wantsDeepColorBackingStore() const
+{
+    return m_wantsDeepColorBackingStore;
+}
+
+void PlatformCALayerRemote::setWantsDeepColorBackingStore(bool wantsDeepColorBackingStore)
+{
+    m_wantsDeepColorBackingStore = wantsDeepColorBackingStore;
+    updateBackingStore();
+}
+
+bool PlatformCALayerRemote::supportsSubpixelAntialiasedText() const
+{
+    return false;
+}
+
+void PlatformCALayerRemote::setSupportsSubpixelAntialiasedText(bool)
+{
 }
 
 CFTypeRef PlatformCALayerRemote::contents() const
@@ -804,7 +821,7 @@ void PlatformCALayerRemote::updateCustomAppearance(GraphicsLayer::CustomAppearan
     m_properties.notePropertiesChanged(RemoteLayerTreeTransaction::CustomAppearanceChanged);
 }
 
-PassRefPtr<PlatformCALayer> PlatformCALayerRemote::createCompatibleLayer(PlatformCALayer::LayerType layerType, PlatformCALayerClient* client) const
+Ref<PlatformCALayer> PlatformCALayerRemote::createCompatibleLayer(PlatformCALayer::LayerType layerType, PlatformCALayerClient* client) const
 {
     return PlatformCALayerRemote::create(layerType, client, *m_context);
 }
