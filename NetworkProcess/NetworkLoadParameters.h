@@ -23,9 +23,9 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NetworkLoadParameters_h
-#define NetworkLoadParameters_h
+#pragma once
 
+#include "NetworkActivityTracker.h"
 #include <WebCore/BlobDataFileReference.h>
 #include <WebCore/ResourceLoaderOptions.h>
 #include <WebCore/ResourceRequest.h>
@@ -41,7 +41,7 @@ public:
     uint64_t webFrameID { 0 };
     PAL::SessionID sessionID { PAL::SessionID::emptySessionID() };
     WebCore::ResourceRequest request;
-    WebCore::ContentSniffingPolicy contentSniffingPolicy { WebCore::SniffContent };
+    WebCore::ContentSniffingPolicy contentSniffingPolicy { WebCore::ContentSniffingPolicy::SniffContent };
     WebCore::ContentEncodingSniffingPolicy contentEncodingSniffingPolicy { WebCore::ContentEncodingSniffingPolicy::Sniff };
     WebCore::StoredCredentialsPolicy storedCredentialsPolicy { WebCore::StoredCredentialsPolicy::DoNotUse };
     WebCore::ClientCredentialPolicy clientCredentialPolicy { WebCore::ClientCredentialPolicy::CannotAskClientForCredentials };
@@ -49,12 +49,10 @@ public:
     bool shouldClearReferrerOnHTTPSToHTTPRedirect { true };
     bool defersLoading { false };
     bool needsCertificateInfo { false };
-#if USE(NETWORK_SESSION)
+    bool isMainFrameNavigation { false };
     Vector<RefPtr<WebCore::BlobDataFileReference>> blobFileReferences;
-#endif
     PreconnectOnly shouldPreconnectOnly { PreconnectOnly::No };
+    std::optional<NetworkActivityTracker> networkActivityTracker;
 };
 
 } // namespace WebKit
-
-#endif // NetworkLoadParameters_h

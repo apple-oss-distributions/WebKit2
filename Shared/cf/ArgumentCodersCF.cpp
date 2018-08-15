@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 Apple Inc. All rights reserved.
+ * Copyright (C) 2010-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,6 +30,7 @@
 #include "Decoder.h"
 #include "Encoder.h"
 #include <WebCore/CFURLExtras.h>
+#include <wtf/ProcessPrivilege.h>
 #include <wtf/Vector.h>
 #include <wtf/spi/cocoa/SecuritySPI.h>
 
@@ -408,6 +409,12 @@ bool decode(Decoder& decoder, RetainPtr<CFDateRef>& result)
 
 void encode(Encoder& encoder, CFDictionaryRef dictionary)
 {
+    if (!dictionary) {
+        encoder << true;
+        return;
+    }
+    encoder << false;
+
     CFIndex size = CFDictionaryGetCount(dictionary);
     Vector<CFTypeRef, 32> keys(size);
     Vector<CFTypeRef, 32> values(size);
@@ -432,6 +439,14 @@ void encode(Encoder& encoder, CFDictionaryRef dictionary)
 
 bool decode(Decoder& decoder, RetainPtr<CFDictionaryRef>& result)
 {
+    bool isNull = false;
+    if (!decoder.decode(isNull))
+        return false;
+    if (isNull) {
+        result = nullptr;
+        return true;
+    }
+
     uint64_t size;
     if (!decoder.decode(size))
         return false;
@@ -609,7 +624,7 @@ bool decode(Decoder& decoder, RetainPtr<CFURLRef>& result)
     if (urlBytes.isEmpty()) {
         // CFURL can't hold an empty URL, unlike NSURL.
         // FIXME: This discards base URL, which seems incorrect.
-        result = reinterpret_cast<CFURLRef>([NSURL URLWithString:@""]);
+        result = (__bridge CFURLRef)[NSURL URLWithString:@""];
         return true;
     }
 #endif
@@ -644,6 +659,7 @@ void setAllowsDecodingSecKeyRef(bool allowsDecodingSecKeyRef)
 
 static CFDataRef copyPersistentRef(SecKeyRef key)
 {
+    RELEASE_ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessCredentials));
     // This function differs from SecItemCopyPersistentRef in that it specifies an access group.
     // This is necessary in case there are multiple copies of the key in the keychain, because we
     // need a reference to the one that the Networking process will be able to access.
@@ -674,6 +690,7 @@ void encode(Encoder& encoder, SecIdentityRef identity)
     keyData = copyPersistentRef(key);
 #endif
 #if PLATFORM(MAC)
+    RELEASE_ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessCredentials));
     SecKeychainItemCreatePersistentReference((SecKeychainItemRef)key, &keyData);
 #endif
     CFRelease(key);
@@ -687,6 +704,10 @@ void encode(Encoder& encoder, SecIdentityRef identity)
 
 bool decode(Decoder& decoder, RetainPtr<SecIdentityRef>& result)
 {
+#if PLATFORM(COCOA)
+    RELEASE_ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessCredentials));
+#endif
+
     RetainPtr<SecCertificateRef> certificate;
     if (!decode(decoder, certificate))
         return false;
@@ -721,6 +742,8 @@ bool decode(Decoder& decoder, RetainPtr<SecIdentityRef>& result)
 #if HAVE(SEC_KEYCHAIN)
 void encode(Encoder& encoder, SecKeychainItemRef keychainItem)
 {
+    RELEASE_ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessCredentials));
+
     CFDataRef data;
     if (SecKeychainItemCreatePersistentReference(keychainItem, &data) == errSecSuccess) {
         encode(encoder, data);
@@ -730,6 +753,8 @@ void encode(Encoder& encoder, SecKeychainItemRef keychainItem)
 
 bool decode(Decoder& decoder, RetainPtr<SecKeychainItemRef>& result)
 {
+    RELEASE_ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessCredentials));
+
     RetainPtr<CFDataRef> data;
     if (!IPC::decode(decoder, data))
         return false;

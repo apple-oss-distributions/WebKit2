@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015-2017 Apple Inc. All rights reserved.
+ * Copyright (C) 2015-2018 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,8 +26,6 @@
 #import "config.h"
 #import "NetworkSessionCocoa.h"
 
-#if USE(NETWORK_SESSION)
-
 #import "AuthenticationManager.h"
 #import "DataReference.h"
 #import "Download.h"
@@ -52,18 +50,26 @@
 #import <pal/spi/cf/CFNetworkSPI.h>
 #import <wtf/MainThread.h>
 #import <wtf/NeverDestroyed.h>
+#import <wtf/ProcessPrivilege.h>
 
 using namespace WebKit;
 
 #if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101300) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000)
 @interface NSURLSessionConfiguration (WKStaging)
 @property (nullable, copy) NSSet *_suppressedAutoAddedHTTPHeaders;
+#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101400) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 120000)
+// FIXME: Remove this once rdar://problem/40650244 is in a build.
+@property (copy) NSDictionary *_socketStreamProperties;
+#endif
 @end
 #endif
 
 static NSURLSessionResponseDisposition toNSURLSessionResponseDisposition(WebCore::PolicyAction disposition)
 {
     switch (disposition) {
+    case WebCore::PolicyAction::Suspend:
+        LOG_ERROR("PolicyAction::Suspend encountered - Treating as PolicyAction::Ignore for now");
+        FALLTHROUGH;
     case WebCore::PolicyAction::Ignore:
         return NSURLSessionResponseCancel;
     case WebCore::PolicyAction::Use:
@@ -180,6 +186,24 @@ static NSURLRequest* downgradeRequest(NSURLRequest *request)
     ASSERT_NOT_REACHED();
     return request;
 }
+
+static bool schemeWasUpgradedDueToDynamicHSTS(NSURLRequest *request)
+{
+    return [request respondsToSelector:@selector(_schemeWasUpgradedDueToDynamicHSTS)]
+        && [request _schemeWasUpgradedDueToDynamicHSTS];
+}
+
+static void setIgnoreHSTS(NSMutableURLRequest *request, bool ignoreHSTS)
+{
+    if ([request respondsToSelector:@selector(_setIgnoreHSTS:)])
+        [request _setIgnoreHSTS:ignoreHSTS];
+}
+
+static bool ignoreHSTS(NSURLRequest *request)
+{
+    return [request respondsToSelector:@selector(_ignoreHSTS)]
+        && [request _ignoreHSTS];
+}
 #endif
 
 static NSURLRequest* updateIgnoreStrictTransportSecuritySettingIfNecessary(NSURLRequest *request, bool shouldIgnoreHSTS)
@@ -229,7 +253,7 @@ static NSURLRequest* updateIgnoreStrictTransportSecuritySettingIfNecessary(NSURL
 #else
             UNUSED_PARAM(taskIdentifier);
 #endif
-            auto nsRequest = request.nsURLRequest(WebCore::UpdateHTTPBody);
+            auto nsRequest = request.nsURLRequest(WebCore::HTTPBodyUpdatePolicy::UpdateHTTPBody);
             nsRequest = updateIgnoreStrictTransportSecuritySettingIfNecessary(nsRequest, shouldIgnoreHSTS);
             completionHandlerCopy(nsRequest);
             Block_release(completionHandlerCopy);
@@ -263,7 +287,7 @@ static NSURLRequest* updateIgnoreStrictTransportSecuritySettingIfNecessary(NSURL
 #else
             UNUSED_PARAM(taskIdentifier);
 #endif
-            auto nsRequest = request.nsURLRequest(WebCore::UpdateHTTPBody);
+            auto nsRequest = request.nsURLRequest(WebCore::HTTPBodyUpdatePolicy::UpdateHTTPBody);
             nsRequest = updateIgnoreStrictTransportSecuritySettingIfNecessary(nsRequest, shouldIgnoreHSTS);
             completionHandlerCopy(nsRequest);
             Block_release(completionHandlerCopy);
@@ -553,8 +577,6 @@ static NSURLRequest* updateIgnoreStrictTransportSecuritySettingIfNecessary(NSURL
 @end
 
 namespace WebKit {
-    
-static bool usesNetworkCache { false };
 
 #if !ASSERT_DISABLED
 static bool sessionsCreated = false;
@@ -614,11 +636,6 @@ void NetworkSessionCocoa::setSourceApplicationSecondaryIdentifier(const String& 
     globalSourceApplicationSecondaryIdentifier() = identifier;
 }
 
-void NetworkSessionCocoa::setUsesNetworkCache(bool value)
-{
-    usesNetworkCache = value;
-}
-
 #if PLATFORM(IOS)
 void NetworkSessionCocoa::setCTDataConnectionServiceType(const String& type)
 {
@@ -635,7 +652,10 @@ Ref<NetworkSession> NetworkSessionCocoa::create(NetworkSessionCreationParameters
 NetworkSessionCocoa::NetworkSessionCocoa(NetworkSessionCreationParameters&& parameters)
     : NetworkSession(parameters.sessionID)
     , m_boundInterfaceIdentifier(parameters.boundInterfaceIdentifier)
+    , m_proxyConfiguration(parameters.proxyConfiguration)
 {
+    ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessRawCookies));
+
     relaxAdoptionRequirement();
 
 #if !ASSERT_DISABLED
@@ -653,11 +673,11 @@ NetworkSessionCocoa::NetworkSessionCocoa(NetworkSessionCreationParameters&& para
     if (parameters.allowsCellularAccess == AllowsCellularAccess::No)
         configuration.allowsCellularAccess = NO;
 
-    if (usesNetworkCache)
-        configuration.URLCache = nil;
+    // The WebKit network cache was already queried.
+    configuration.URLCache = nil;
 
     if (auto& data = globalSourceApplicationAuditTokenData())
-        configuration._sourceApplicationAuditTokenData = (NSData *)data.get();
+        configuration._sourceApplicationAuditTokenData = (__bridge NSData *)data.get();
 
     auto& sourceApplicationBundleIdentifier = globalSourceApplicationBundleIdentifier();
     if (!sourceApplicationBundleIdentifier.isEmpty()) {
@@ -675,13 +695,20 @@ NetworkSessionCocoa::NetworkSessionCocoa(NetworkSessionCreationParameters&& para
         configuration._CTDataConnectionServiceType = ctDataConnectionServiceType;
 #endif
 
-    if (parameters.legacyCustomProtocolManager)
-        parameters.legacyCustomProtocolManager->registerProtocolClass(configuration);
-    
+#if ENABLE(LEGACY_CUSTOM_PROTOCOL_MANAGER)
+    NetworkProcess::singleton().supplement<LegacyCustomProtocolManager>()->registerProtocolClass(configuration);
+#endif
+
 #if HAVE(TIMINGDATAOPTIONS)
     configuration._timingDataOptions = _TimingDataOptionsEnableW3CNavigationTiming;
 #else
     setCollectsTimingData();
+#endif
+
+#if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MIN_REQUIRED >= 101400) || (PLATFORM(IOS) && __IPHONE_OS_VERSION_MIN_REQUIRED >= 120000)
+    // FIXME: Replace @"kCFStreamPropertyAutoErrorOnSystemChange" with a constant from the SDK once rdar://problem/40650244 is in a build.
+    if (NetworkProcess::singleton().suppressesConnectionTerminationOnSystemChange())
+        configuration._socketStreamProperties = @{ @"kCFStreamPropertyAutoErrorOnSystemChange" : @(NO) };
 #endif
 
     auto* storageSession = WebCore::NetworkStorageSession::storageSession(parameters.sessionID);
@@ -805,5 +832,3 @@ bool NetworkSessionCocoa::allowsSpecificHTTPSCertificateForHost(const WebCore::A
 }
 
 }
-
-#endif

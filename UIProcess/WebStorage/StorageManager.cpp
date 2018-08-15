@@ -39,9 +39,8 @@
 #include <wtf/WorkQueue.h>
 #include <wtf/threads/BinarySemaphore.h>
 
-using namespace WebCore;
-
 namespace WebKit {
+using namespace WebCore;
 
 class StorageManager::StorageArea : public ThreadSafeRefCounted<StorageManager::StorageArea> {
 public:
@@ -426,8 +425,6 @@ StorageManager::SessionStorageNamespace::~SessionStorageNamespace()
 
 void StorageManager::SessionStorageNamespace::setAllowedConnection(IPC::Connection* allowedConnection)
 {
-    ASSERT(!allowedConnection || !m_allowedConnection);
-
     m_allowedConnection = allowedConnection;
 }
 
@@ -605,7 +602,7 @@ void StorageManager::getLocalStorageOriginDetails(Function<void (Vector<LocalSto
     });
 }
 
-void StorageManager::deleteLocalStorageEntriesForOrigin(SecurityOriginData&& securityOrigin)
+void StorageManager::deleteLocalStorageEntriesForOrigin(const SecurityOriginData& securityOrigin)
 {
     m_queue->dispatch([this, protectedThis = makeRef(*this), copiedOrigin = securityOrigin.isolatedCopy()]() mutable {
         for (auto& localStorageNamespace : m_localStorageNamespaces.values())
@@ -621,15 +618,17 @@ void StorageManager::deleteLocalStorageEntriesForOrigin(SecurityOriginData&& sec
 void StorageManager::deleteLocalStorageOriginsModifiedSince(WallTime time, Function<void()>&& completionHandler)
 {
     m_queue->dispatch([this, protectedThis = makeRef(*this), time, completionHandler = WTFMove(completionHandler)]() mutable {
-        auto deletedOrigins = m_localStorageDatabaseTracker->deleteDatabasesModifiedSince(time);
-
-        for (const auto& origin : deletedOrigins) {
-            for (auto& localStorageNamespace : m_localStorageNamespaces.values())
-                localStorageNamespace->clearStorageAreasMatchingOrigin(origin);
-        }
-
+        auto originsToDelete = m_localStorageDatabaseTracker->databasesModifiedSince(time);
+        
         for (auto& transientLocalStorageNamespace : m_transientLocalStorageNamespaces.values())
             transientLocalStorageNamespace->clearAllStorageAreas();
+
+        for (const auto& origin : originsToDelete) {
+            for (auto& localStorageNamespace : m_localStorageNamespaces.values())
+                localStorageNamespace->clearStorageAreasMatchingOrigin(origin);
+            
+            m_localStorageDatabaseTracker->deleteDatabaseWithOrigin(origin);
+        }
 
         RunLoop::main().dispatch(WTFMove(completionHandler));
     });
