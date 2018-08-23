@@ -57,7 +57,7 @@ void WebProcessCreationParameters::encode(IPC::Encoder& encoder) const
     encoder << mediaCacheDirectoryExtensionHandle;
     encoder << javaScriptConfigurationDirectory;
     encoder << javaScriptConfigurationDirectoryExtensionHandle;
-#if PLATFORM(MAC)
+#if PLATFORM(COCOA)
     encoder << uiProcessCookieStorageIdentifier;
 #endif
 #if PLATFORM(IOS)
@@ -158,6 +158,7 @@ void WebProcessCreationParameters::encode(IPC::Encoder& encoder) const
 
 #if PLATFORM(MAC)
     encoder << screenProperties;
+    encoder << useOverlayScrollbars;
 #endif
 }
 
@@ -214,7 +215,7 @@ bool WebProcessCreationParameters::decode(IPC::Decoder& decoder, WebProcessCreat
         return false;
     parameters.javaScriptConfigurationDirectoryExtensionHandle = WTFMove(*javaScriptConfigurationDirectoryExtensionHandle);
 
-#if PLATFORM(MAC)
+#if PLATFORM(COCOA)
     if (!decoder.decode(parameters.uiProcessCookieStorageIdentifier))
         return false;
 #endif
@@ -414,6 +415,8 @@ bool WebProcessCreationParameters::decode(IPC::Decoder& decoder, WebProcessCreat
     if (!screenProperties)
         return false;
     parameters.screenProperties = WTFMove(*screenProperties);
+    if (!decoder.decode(parameters.useOverlayScrollbars))
+        return false;
 #endif
 
     return true;

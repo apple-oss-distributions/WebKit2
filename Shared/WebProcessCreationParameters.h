@@ -84,7 +84,7 @@ struct WebProcessCreationParameters {
     SandboxExtension::Handle mediaCacheDirectoryExtensionHandle;
     String javaScriptConfigurationDirectory;
     SandboxExtension::Handle javaScriptConfigurationDirectoryExtensionHandle;
-#if PLATFORM(MAC)
+#if PLATFORM(COCOA)
     Vector<uint8_t> uiProcessCookieStorageIdentifier;
 #endif
 #if PLATFORM(IOS)
@@ -197,6 +197,7 @@ struct WebProcessCreationParameters {
 
 #if PLATFORM(MAC)
     WebCore::ScreenProperties screenProperties;
+    bool useOverlayScrollbars { true };
 #endif
 };
 

@@ -119,7 +119,7 @@ NetworkResourceLoader::NetworkResourceLoader(NetworkResourceLoadParameters&& par
     }
 
     if (synchronousReply || parameters.shouldRestrictHTTPResponseAccess) {
-        m_networkLoadChecker = std::make_unique<NetworkLoadChecker>(FetchOptions { m_parameters.options }, m_parameters.sessionID, HTTPHeaderMap { m_parameters.originalRequestHeaders }, URL { m_parameters.request.url() }, m_parameters.sourceOrigin.copyRef(), m_parameters.preflightPolicy, originalRequest().httpReferrer(), shouldCaptureExtraNetworkLoadMetrics());
+        m_networkLoadChecker = std::make_unique<NetworkLoadChecker>(FetchOptions { m_parameters.options }, m_parameters.sessionID, m_parameters.webPageID, m_parameters.webFrameID, HTTPHeaderMap { m_parameters.originalRequestHeaders }, URL { m_parameters.request.url() }, m_parameters.sourceOrigin.copyRef(), m_parameters.preflightPolicy, originalRequest().httpReferrer(), shouldCaptureExtraNetworkLoadMetrics());
         if (m_parameters.cspResponseHeaders)
             m_networkLoadChecker->setCSPResponseHeaders(ContentSecurityPolicyResponseHeaders { m_parameters.cspResponseHeaders.value() });
 #if ENABLE(CONTENT_EXTENSIONS)
@@ -933,13 +933,10 @@ void NetworkResourceLoader::invalidateSandboxExtensions()
 #if USE(PROTECTION_SPACE_AUTH_CALLBACK)
 void NetworkResourceLoader::canAuthenticateAgainstProtectionSpaceAsync(const ProtectionSpace& protectionSpace)
 {
-    NetworkProcess::singleton().canAuthenticateAgainstProtectionSpace(*this, protectionSpace);
-}
-
-void NetworkResourceLoader::continueCanAuthenticateAgainstProtectionSpace(bool result)
-{
-    if (m_networkLoad)
-        m_networkLoad->continueCanAuthenticateAgainstProtectionSpace(result);
+    NetworkProcess::singleton().canAuthenticateAgainstProtectionSpace(protectionSpace, pageID(), frameID(), [this, protectedThis = makeRef(*this)] (bool result) {
+        if (m_networkLoad)
+            m_networkLoad->continueCanAuthenticateAgainstProtectionSpace(result);
+    });
 }
 #endif
 

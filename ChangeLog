@@ -1,65 +1,532 @@
-2018-08-10  Kocsen Chung  <kocsen_chung@apple.com>
+2018-08-22  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r234730. rdar://problem/43144157
+        Cherry-pick r235133. rdar://problem/43584853
 
-    REGRESSION (r232083): WKWebView loses first-party cookies on iOS
-    https://bugs.webkit.org/show_bug.cgi?id=188443
-    <rdar://problem/42991584>
+    Increment NetworkCache::Storage::lastStableVersion after r233742
+    https://bugs.webkit.org/show_bug.cgi?id=188798
+    <rdar://43561761>
     
-    Patch by Sihui Liu <sihui_liu@apple.com> on 2018-08-09
-    Reviewed by Chris Dumez.
+    Reviewed by Geoffrey Garen.
+    
+    * NetworkProcess/cache/NetworkCacheStorage.h:
+    
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@235133 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-21  Alex Christensen  <achristensen@webkit.org>
+
+            Increment NetworkCache::Storage::lastStableVersion after r233742
+            https://bugs.webkit.org/show_bug.cgi?id=188798
+            <rdar://43561761>
+
+            Reviewed by Geoffrey Garen.
+
+            * NetworkProcess/cache/NetworkCacheStorage.h:
+
+2018-08-16  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234908. rdar://problem/43385542
+
+    [WinCairo] Unreviewed build fix after r234896.
+    
+    * NetworkProcess/curl/NetworkDataTaskCurl.cpp:
+    (WebKit::NetworkDataTaskCurl::tryHttpAuthentication):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234908 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-15  Ross Kirsling  <ross.kirsling@sony.com>
+
+            [WinCairo] Unreviewed build fix after r234896.
+
+            * NetworkProcess/curl/NetworkDataTaskCurl.cpp:
+            (WebKit::NetworkDataTaskCurl::tryHttpAuthentication):
+
+2018-08-16  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234896. rdar://problem/43385542
+
+    NetworkCORSPreflightChecker should proceed in case of ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested even though the WebKit app is not implementing the didReceiveAuthenticationChallenge/didReceiveAuthenticationChallengeInFrame callback
+    https://bugs.webkit.org/show_bug.cgi?id=188592
+    <rdar://problem/43210331>
+    
+    Reviewed by Youenn Fablet.
+    
+    Do a canAuthenticateAgainstProtectionSpace check in NetworkCORSPreflightChecker like we do in NetworkLoad.
+    Use CompletionHandlers to make the now 3 different canAuthenticateAgainstProtectionSpace checks look the same from the NetworkProcess.
+    
+    * NetworkProcess/NetworkCORSPreflightChecker.cpp:
+    (WebKit::NetworkCORSPreflightChecker::didReceiveChallenge):
+    * NetworkProcess/NetworkCORSPreflightChecker.h:
+    * NetworkProcess/NetworkDataTask.h:
+    * NetworkProcess/NetworkLoad.cpp:
+    (WebKit::NetworkLoad::didReceiveChallenge):
+    * NetworkProcess/NetworkLoad.h:
+    * NetworkProcess/NetworkProcess.cpp:
+    (WebKit::NetworkProcess::canAuthenticateAgainstProtectionSpace):
+    (WebKit::NetworkProcess::continueCanAuthenticateAgainstProtectionSpace):
+    * NetworkProcess/NetworkProcess.h:
+    * NetworkProcess/NetworkResourceLoader.cpp:
+    (WebKit::NetworkResourceLoader::canAuthenticateAgainstProtectionSpaceAsync):
+    (WebKit::NetworkResourceLoader::continueCanAuthenticateAgainstProtectionSpace): Deleted.
+    * NetworkProcess/NetworkResourceLoader.h:
+    * NetworkProcess/PingLoad.cpp:
+    (WebKit::PingLoad::didReceiveChallenge):
+    * NetworkProcess/PingLoad.h:
+    * NetworkProcess/PreconnectTask.cpp:
+    (WebKit::PreconnectTask::canAuthenticateAgainstProtectionSpaceAsync):
+    (WebKit::PreconnectTask::continueCanAuthenticateAgainstProtectionSpace): Deleted.
+    * NetworkProcess/PreconnectTask.h:
+    * NetworkProcess/cocoa/NetworkDataTaskCocoa.h:
+    * NetworkProcess/cocoa/NetworkDataTaskCocoa.mm:
+    (WebKit::NetworkDataTaskCocoa::didReceiveChallenge):
+    
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234896 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-15  Alex Christensen  <achristensen@webkit.org>
+
+            NetworkCORSPreflightChecker should proceed in case of ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested even though the WebKit app is not implementing the didReceiveAuthenticationChallenge/didReceiveAuthenticationChallengeInFrame callback
+            https://bugs.webkit.org/show_bug.cgi?id=188592
+            <rdar://problem/43210331>
+
+            Reviewed by Youenn Fablet.
+
+            Do a canAuthenticateAgainstProtectionSpace check in NetworkCORSPreflightChecker like we do in NetworkLoad.
+            Use CompletionHandlers to make the now 3 different canAuthenticateAgainstProtectionSpace checks look the same from the NetworkProcess.
+
+            * NetworkProcess/NetworkCORSPreflightChecker.cpp:
+            (WebKit::NetworkCORSPreflightChecker::didReceiveChallenge):
+            * NetworkProcess/NetworkCORSPreflightChecker.h:
+            * NetworkProcess/NetworkDataTask.h:
+            * NetworkProcess/NetworkLoad.cpp:
+            (WebKit::NetworkLoad::didReceiveChallenge):
+            * NetworkProcess/NetworkLoad.h:
+            * NetworkProcess/NetworkProcess.cpp:
+            (WebKit::NetworkProcess::canAuthenticateAgainstProtectionSpace):
+            (WebKit::NetworkProcess::continueCanAuthenticateAgainstProtectionSpace):
+            * NetworkProcess/NetworkProcess.h:
+            * NetworkProcess/NetworkResourceLoader.cpp:
+            (WebKit::NetworkResourceLoader::canAuthenticateAgainstProtectionSpaceAsync):
+            (WebKit::NetworkResourceLoader::continueCanAuthenticateAgainstProtectionSpace): Deleted.
+            * NetworkProcess/NetworkResourceLoader.h:
+            * NetworkProcess/PingLoad.cpp:
+            (WebKit::PingLoad::didReceiveChallenge):
+            * NetworkProcess/PingLoad.h:
+            * NetworkProcess/PreconnectTask.cpp:
+            (WebKit::PreconnectTask::canAuthenticateAgainstProtectionSpaceAsync):
+            (WebKit::PreconnectTask::continueCanAuthenticateAgainstProtectionSpace): Deleted.
+            * NetworkProcess/PreconnectTask.h:
+            * NetworkProcess/cocoa/NetworkDataTaskCocoa.h:
+            * NetworkProcess/cocoa/NetworkDataTaskCocoa.mm:
+            (WebKit::NetworkDataTaskCocoa::didReceiveChallenge):
+
+2018-08-16  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234873. rdar://problem/43385599
+
+    isValidCSSSelector is unsafe to be called from a non-main thread
+    https://bugs.webkit.org/show_bug.cgi?id=188581
+    <rdar://problem/40517358>
+    
+    Reviewed by Sam Weinig.
+    
+    Source/WebCore:
+    
+    Parsing and determining whether the css selectors are valid is fast enough to do before
+    hopping to the background thread for the slow NFA/DFA operations and writing to disk.
+    Doing it on the main thread avoids the thread safety issues in the CSSParser's use of strings.
+    
+    * contentextensions/ContentExtensionCompiler.cpp:
+    (WebCore::ContentExtensions::compileRuleList):
+    * contentextensions/ContentExtensionCompiler.h:
+    * contentextensions/ContentExtensionParser.cpp:
+    (WebCore::ContentExtensions::isValidCSSSelector):
+    (WebCore::ContentExtensions::loadEncodedRules):
+    (WebCore::ContentExtensions::parseRuleList):
+    * contentextensions/ContentExtensionParser.h:
+    * contentextensions/ContentExtensionRule.cpp:
+    (WebCore::ContentExtensions::Trigger::isolatedCopy const):
+    (WebCore::ContentExtensions::Action::isolatedCopy const):
+    * contentextensions/ContentExtensionRule.h:
+    (WebCore::ContentExtensions::Trigger::isEmpty const):
+    (WebCore::ContentExtensions::Trigger::operator== const):
+    (WebCore::ContentExtensions::Action::Action):
+    (WebCore::ContentExtensions::ContentExtensionRule::isolatedCopy const):
+    (WebCore::ContentExtensions::ContentExtensionRule::operator== const):
+    (WebCore::ContentExtensions::vectorIsolatedCopy):
     
     Source/WebKit:
     
-    Revert the change to set sharedCookieStorage for iOS as it is breaking Kayak.
+    * UIProcess/API/APIContentRuleListStore.cpp:
+    (API::compiledToFile):
+    (API::ContentRuleListStore::lookupContentRuleList):
+    (API::ContentRuleListStore::getAvailableContentRuleListIdentifiers):
+    (API::ContentRuleListStore::compileContentRuleList):
+    (API::ContentRuleListStore::removeContentRuleList):
+    (API::ContentRuleListStore::getContentRuleListSource):
+    * UIProcess/API/APIContentRuleListStore.h:
+    * UIProcess/API/Cocoa/WKContentRuleListStore.mm:
     
-    * NetworkProcess/NetworkProcess.h:
-    * NetworkProcess/NetworkProcessCreationParameters.cpp:
-    (WebKit::NetworkProcessCreationParameters::encode const):
-    (WebKit::NetworkProcessCreationParameters::decode):
-    * NetworkProcess/NetworkProcessCreationParameters.h:
-    * NetworkProcess/cocoa/NetworkProcessCocoa.mm:
-    (WebKit::NetworkProcess::platformInitializeNetworkProcessCocoa):
+    Source/WTF:
+    
+    * wtf/Vector.h:
+    (WTF::minCapacity>::isolatedCopy):
+    
+    Tools:
+    
+    * TestWebKitAPI/Tests/WebCore/ContentExtensions.cpp:
+    (TestWebKitAPI::InMemoryCompiledContentExtension::create):
+    (TestWebKitAPI::checkCompilerError):
+    
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234873 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-14  Alex Christensen  <achristensen@webkit.org>
+
+            isValidCSSSelector is unsafe to be called from a non-main thread
+            https://bugs.webkit.org/show_bug.cgi?id=188581
+            <rdar://problem/40517358>
+
+            Reviewed by Sam Weinig.
+
+            * UIProcess/API/APIContentRuleListStore.cpp:
+            (API::compiledToFile):
+            (API::ContentRuleListStore::lookupContentRuleList):
+            (API::ContentRuleListStore::getAvailableContentRuleListIdentifiers):
+            (API::ContentRuleListStore::compileContentRuleList):
+            (API::ContentRuleListStore::removeContentRuleList):
+            (API::ContentRuleListStore::getContentRuleListSource):
+            * UIProcess/API/APIContentRuleListStore.h:
+            * UIProcess/API/Cocoa/WKContentRuleListStore.mm:
+
+2018-08-15  Babak Shafiei  <bshafiei@apple.com>
+
+        Cherry-pick r234905. rdar://problem/43347925
+
+    Can't share an app on AppStore to WeChat due to a release assert
+    https://bugs.webkit.org/show_bug.cgi?id=188621
+    <rdar://problem/43343976>
+    
+    Reviewed by Geoffrey Garen.
+    
+    Disable the thread safety check when the app is not linked on or after iOS 12 since this release assert
+    is getting hit by third party applications on iOS in UI process.
+    
+    Source/WebCore:
+    
+    * platform/Timer.cpp:
+    (WebCore::shouldSuppressThreadSafetyCheck): Added a SDK check.
+    
+    Source/WebKit:
+    
+    * UIProcess/Cocoa/VersionChecks.h:
+    (WebKit::SDKVersion::FirstWithMainThreadReleaseAssertionInWebPageProxy): Added. It's iOS 12 or macOS 10.14 Mojave.
+    * UIProcess/WebProcessProxy.cpp:
+    (WebKit::isMainThreadOrCheckDisabled): Added. Returns true whether when we're in the main thread or if the app
+    is not linked on or after iOS 12 or macOS 10.14 Mojave.
+    (WebKit::globalPageMap):
+    (WebKit::m_isInPrewarmedPool):
+    (WebKit::WebProcessProxy::~WebProcessProxy):
+    (WebKit::WebProcessProxy::shutDown):
+    (WebKit::WebProcessProxy::deleteWebsiteDataForTopPrivatelyControlledDomainsInAllPersistentDataStores):
+    (WebKit::WebProcessProxy::topPrivatelyControlledDomainsWithWebsiteData):
+    (WebKit::WebProcessProxy::didFinishLaunching):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234905 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-15  Ryosuke Niwa  <rniwa@webkit.org>
+
+            Can't share an app on AppStore to WeChat due to a release assert
+            https://bugs.webkit.org/show_bug.cgi?id=188621
+            <rdar://problem/43343976>
+
+            Reviewed by Geoffrey Garen.
+
+            Disable the thread safety check when the app is not linked on or after iOS 12 since this release assert
+            is getting hit by third party applications on iOS in UI process.
+
+            * UIProcess/Cocoa/VersionChecks.h:
+            (WebKit::SDKVersion::FirstWithMainThreadReleaseAssertionInWebPageProxy): Added. It's iOS 12 or macOS 10.14 Mojave.
+            * UIProcess/WebProcessProxy.cpp:
+            (WebKit::isMainThreadOrCheckDisabled): Added. Returns true whether when we're in the main thread or if the app
+            is not linked on or after iOS 12 or macOS 10.14 Mojave.
+            (WebKit::globalPageMap):
+            (WebKit::m_isInPrewarmedPool):
+            (WebKit::WebProcessProxy::~WebProcessProxy):
+            (WebKit::WebProcessProxy::shutDown):
+            (WebKit::WebProcessProxy::deleteWebsiteDataForTopPrivatelyControlledDomainsInAllPersistentDataStores):
+            (WebKit::WebProcessProxy::topPrivatelyControlledDomainsWithWebsiteData):
+            (WebKit::WebProcessProxy::didFinishLaunching):
+
+2018-08-07  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234652. rdar://problem/43009927
+
+    [macOS] Scrollbars are not visible when using 3rd party mouse
+    https://bugs.webkit.org/show_bug.cgi?id=188372
+    
+    Reviewed by Simon Fraser.
+    
+    Source/WebCore/PAL:
+    
+    Added declaration of NSScrollerImpPair class method. This method updates all NSScrollerImpPairs
+    with a new recommended scroller style.
+    
+    * pal/spi/mac/NSScrollerImpSPI.h:
+    
+    Source/WebKit:
+    
+    The scrollbars are not visible because they are not updated with the recommended scroller style
+    when a 3rd party mouse is used. They still have the overlay style, but the system is
+    recommending the legacy style in this case. The UI process is currently notifying the WebProcess
+    about changes in the scroller style, but the current style is not set in the WebProcess on
+    startup. This patch sets the initial scroller style in the WebProcess by passing it as part of
+    the WebProcess creation parameters. Also, to make sure hot-plugging of a 3rd party mouse is
+    is visually changing the scroller style of the current page, a class method in NSScrollerImpPair
+    is called to update all NSScrollerImpPairs with the new recommended style. This method was
+    previously called by AppKit, but after blocking WindowServer access, AppKit is no longer calling
+    this method. This has been manually tested by using a 3rd party mouse.
+    
     * Shared/WebProcessCreationParameters.cpp:
     (WebKit::WebProcessCreationParameters::encode const):
     (WebKit::WebProcessCreationParameters::decode):
     * Shared/WebProcessCreationParameters.h:
     * UIProcess/Cocoa/WebProcessPoolCocoa.mm:
     (WebKit::WebProcessPool::platformInitializeWebProcess):
-    (WebKit::WebProcessPool::platformInitializeNetworkProcess):
+    * WebProcess/cocoa/WebProcessCocoa.mm:
+    (WebKit::WebProcess::platformInitializeWebProcess):
+    (WebKit::WebProcess::scrollerStylePreferenceChanged):
     
-    Tools:
     
-    Skip WebKit.WKHTTPCookieStoreWithoutProcessPool on iOS.
-    
-    * TestWebKitAPI/Tests/WebKitCocoa/WKHTTPCookieStore.mm:
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234730 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234652 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2018-08-09  Sihui Liu  <sihui_liu@apple.com>
+    2018-08-07  Per Arne Vollan  <pvollan@apple.com>
 
-            REGRESSION (r232083): WKWebView loses first-party cookies on iOS
-            https://bugs.webkit.org/show_bug.cgi?id=188443
-            <rdar://problem/42991584>
+            [macOS] Scrollbars are not visible when using 3rd party mouse
+            https://bugs.webkit.org/show_bug.cgi?id=188372
 
-            Reviewed by Chris Dumez.
+            Reviewed by Simon Fraser.
 
-            Revert the change to set sharedCookieStorage for iOS as it is breaking Kayak.
+            The scrollbars are not visible because they are not updated with the recommended scroller style
+            when a 3rd party mouse is used. They still have the overlay style, but the system is
+            recommending the legacy style in this case. The UI process is currently notifying the WebProcess
+            about changes in the scroller style, but the current style is not set in the WebProcess on
+            startup. This patch sets the initial scroller style in the WebProcess by passing it as part of
+            the WebProcess creation parameters. Also, to make sure hot-plugging of a 3rd party mouse is
+            is visually changing the scroller style of the current page, a class method in NSScrollerImpPair
+            is called to update all NSScrollerImpPairs with the new recommended style. This method was
+            previously called by AppKit, but after blocking WindowServer access, AppKit is no longer calling
+            this method. This has been manually tested by using a 3rd party mouse.
 
-            * NetworkProcess/NetworkProcess.h:
-            * NetworkProcess/NetworkProcessCreationParameters.cpp:
-            (WebKit::NetworkProcessCreationParameters::encode const):
-            (WebKit::NetworkProcessCreationParameters::decode):
-            * NetworkProcess/NetworkProcessCreationParameters.h:
-            * NetworkProcess/cocoa/NetworkProcessCocoa.mm:
-            (WebKit::NetworkProcess::platformInitializeNetworkProcessCocoa):
             * Shared/WebProcessCreationParameters.cpp:
             (WebKit::WebProcessCreationParameters::encode const):
             (WebKit::WebProcessCreationParameters::decode):
             * Shared/WebProcessCreationParameters.h:
             * UIProcess/Cocoa/WebProcessPoolCocoa.mm:
             (WebKit::WebProcessPool::platformInitializeWebProcess):
-            (WebKit::WebProcessPool::platformInitializeNetworkProcess):
+            * WebProcess/cocoa/WebProcessCocoa.mm:
+            (WebKit::WebProcess::platformInitializeWebProcess):
+            (WebKit::WebProcess::scrollerStylePreferenceChanged):
+
+2018-08-07  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234626. rdar://problem/43009894
+
+    Regression(NetworkLoadChecker): CORS preflights are no longer able to deal with client certificate authentication
+    https://bugs.webkit.org/show_bug.cgi?id=188355
+    <rdar://problem/42546319>
+    
+    Reviewed by Alex Christensen.
+    
+    Before we started using the NetworkLoadChecker to do CORS-preflighting in the Network process, challenges would
+    use the NetworkLoad::completeAuthenticationChallenge() code path with isAllowedToAskUserForCredentials to set
+    to false. This would call:
+    1. completionHandler(AuthenticationChallengeDisposition::UseCredential, { }); for TLS handshakes (server trust
+       evaluation & client certification authentication)
+    2. NetworkProcess::singleton().authenticationManager().didReceiveAuthenticationChallenge() otherwise
+    
+    However, NetworkCORSPreflightChecker::didReceiveChallenge() was behaving differently and calling:
+    1. completionHandler(AuthenticationChallengeDisposition::RejectProtectionSpace, { }); for server trust evaluations
+    2. completionHandler(AuthenticationChallengeDisposition::Cancel, { }); otherwise
+    
+    Restore previous behavior by aligning NetworkCORSPreflightChecker::didReceiveChallenge() with
+    NetworkLoad::completeAuthenticationChallenge() when isAllowedToAskUserForCredentials is set to false. This means
+    we end up asking the AuthenticationManager for client certificate authentication instead or cancelling the
+    preflight.
+    
+    This fixes CORS-preflighting on some internal sites.
+    
+    * NetworkProcess/NetworkCORSPreflightChecker.cpp:
+    (WebKit::NetworkCORSPreflightChecker::didReceiveChallenge):
+    * NetworkProcess/NetworkCORSPreflightChecker.h:
+    * NetworkProcess/NetworkLoadChecker.cpp:
+    (WebKit::NetworkLoadChecker::NetworkLoadChecker):
+    (WebKit::NetworkLoadChecker::checkCORSRequestWithPreflight):
+    * NetworkProcess/NetworkLoadChecker.h:
+    * NetworkProcess/NetworkResourceLoader.cpp:
+    * NetworkProcess/PingLoad.cpp:
+    (WebKit::PingLoad::PingLoad):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234626 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-06  Chris Dumez  <cdumez@apple.com>
+
+            Regression(NetworkLoadChecker): CORS preflights are no longer able to deal with client certificate authentication
+            https://bugs.webkit.org/show_bug.cgi?id=188355
+            <rdar://problem/42546319>
+
+            Reviewed by Alex Christensen.
+
+            Before we started using the NetworkLoadChecker to do CORS-preflighting in the Network process, challenges would
+            use the NetworkLoad::completeAuthenticationChallenge() code path with isAllowedToAskUserForCredentials to set
+            to false. This would call:
+            1. completionHandler(AuthenticationChallengeDisposition::UseCredential, { }); for TLS handshakes (server trust
+               evaluation & client certification authentication)
+            2. NetworkProcess::singleton().authenticationManager().didReceiveAuthenticationChallenge() otherwise
+
+            However, NetworkCORSPreflightChecker::didReceiveChallenge() was behaving differently and calling:
+            1. completionHandler(AuthenticationChallengeDisposition::RejectProtectionSpace, { }); for server trust evaluations
+            2. completionHandler(AuthenticationChallengeDisposition::Cancel, { }); otherwise
+
+            Restore previous behavior by aligning NetworkCORSPreflightChecker::didReceiveChallenge() with
+            NetworkLoad::completeAuthenticationChallenge() when isAllowedToAskUserForCredentials is set to false. This means
+            we end up asking the AuthenticationManager for client certificate authentication instead or cancelling the
+            preflight.
+
+            This fixes CORS-preflighting on some internal sites.
+
+            * NetworkProcess/NetworkCORSPreflightChecker.cpp:
+            (WebKit::NetworkCORSPreflightChecker::didReceiveChallenge):
+            * NetworkProcess/NetworkCORSPreflightChecker.h:
+            * NetworkProcess/NetworkLoadChecker.cpp:
+            (WebKit::NetworkLoadChecker::NetworkLoadChecker):
+            (WebKit::NetworkLoadChecker::checkCORSRequestWithPreflight):
+            * NetworkProcess/NetworkLoadChecker.h:
+            * NetworkProcess/NetworkResourceLoader.cpp:
+            * NetworkProcess/PingLoad.cpp:
+            (WebKit::PingLoad::PingLoad):
+
+2018-08-07  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r234611. rdar://problem/43009901
+
+    Fix IPC::Connection leak in StorageManager
+    https://bugs.webkit.org/show_bug.cgi?id=188321
+    <rdar://problem/42748485>
+    
+    Reviewed by Alex Christensen.
+    
+    When a StorageMap is destroyed on WebContent process side, StorageManager::destroyStorageMap()
+    gets called via IPC with a (IPC::Connection, StorageMapID) pair. Normally, it removes this
+    pair from m_storageAreasByConnection. However, if this is a *transient* StorageMap (sessionStorage),
+    then we keep the pair in the map and we merely remove the StorageMapID as a listener from the
+    StorageArea. We do this so that:
+    1. The StorageArea stays alive so that it can be reused later on for the same security origin, on
+       the same IPC::Connection (logic for this is in StorageManager::createTransientLocalStorageMap()
+    2. Removing the StorageMapID as a listener from the StorageArea is important because
+       StorageArea::m_eventListeners holds a strong reference to the IPC::Connection in a std::pair
+       with the StorageMapID (HashSet<std::pair<RefPtr<IPC::Connection>, uint64_t>> m_eventListeners).
+    
+    As mentioned in 1 above, in StorageManager::createTransientLocalStorageMap(), there is logic to
+    check if there is already an existing StorageArea for the given IPC::Connection that is transient
+    and is for the same security origin. In this case, we could avoid constructing a new StorageArea
+    and we would:
+    1. Add a new entry to m_storageAreasByConnection with the key (connection, newStorageMapID), using
+       same same StorageArea as value.
+    2. Remove the previous (connection, oldStorageMapID) key from m_storageAreasByConnection.
+    
+    Step 2 here is wrong and is updated in this patch. It is only safe to remove the previous
+    (connection, oldStorageMapID) if this oldStorageMapID no longer exists (i.e. destroyStorageMap()
+    was already called for it). This patch thus adds a check before removing (connection, oldStorageMapID)
+    from the HashMap to make sure that the oldStorageMapID is no longer a listener of the StorageArea).
+    
+    This would cause leaks in the following case:
+    1. We construct a StorageArea for (connection1, storageMapId1)
+    2. We ask for a StorageArea for (connection1, storageMapId2) and decide to reuse the existing StorageArea
+       since it has the same SecurityOrigin.
+    3. As a result of step2, we would remove (connection1, storageMapId1) from m_storageAreasByConnection
+       and add (connection1, storageMapId2), even though there is still a StorageMap with storageMapId1
+       on WebContent process side.
+    4. Later on, we would try to call destroyStorageMap(connection1, storageMap1), it would fail to find
+       it in m_storageAreasByConnection and return early. It would therefore fail to remove storageMapId1
+       as a listener of the StorageArea which still exists.
+    -> This would leak the IPC::Connection that there would be a std::pair<RefPtr<IPC::Connection>, StorageMapID>
+       with value (connection1, storageMap1) which would get leaked and it would ref the IPC::Connection.
+    
+    This code should really be refactored to be less leak prone but I have kept the patch minimal for now
+    to facilitate cherry-picking.
+    
+    Note that this would reproduce very easily on sina.com.cn, when clicking bold links at the top, which
+    opens new tabs to different pages in the same WebContent process. When closing all Safari windows, the
+    IPC::Connection for this WebContent process would stay alive.
+    
+    * UIProcess/WebStorage/StorageManager.cpp:
+    (WebKit::StorageManager::StorageArea::hasListener const):
+    (WebKit::StorageManager::createTransientLocalStorageMap):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@234611 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2018-08-06  Chris Dumez  <cdumez@apple.com>
+
+            Fix IPC::Connection leak in StorageManager
+            https://bugs.webkit.org/show_bug.cgi?id=188321
+            <rdar://problem/42748485>
+
+            Reviewed by Alex Christensen.
+
+            When a StorageMap is destroyed on WebContent process side, StorageManager::destroyStorageMap()
+            gets called via IPC with a (IPC::Connection, StorageMapID) pair. Normally, it removes this
+            pair from m_storageAreasByConnection. However, if this is a *transient* StorageMap (sessionStorage),
+            then we keep the pair in the map and we merely remove the StorageMapID as a listener from the
+            StorageArea. We do this so that:
+            1. The StorageArea stays alive so that it can be reused later on for the same security origin, on
+               the same IPC::Connection (logic for this is in StorageManager::createTransientLocalStorageMap()
+            2. Removing the StorageMapID as a listener from the StorageArea is important because
+               StorageArea::m_eventListeners holds a strong reference to the IPC::Connection in a std::pair
+               with the StorageMapID (HashSet<std::pair<RefPtr<IPC::Connection>, uint64_t>> m_eventListeners).
+
+            As mentioned in 1 above, in StorageManager::createTransientLocalStorageMap(), there is logic to
+            check if there is already an existing StorageArea for the given IPC::Connection that is transient
+            and is for the same security origin. In this case, we could avoid constructing a new StorageArea
+            and we would:
+            1. Add a new entry to m_storageAreasByConnection with the key (connection, newStorageMapID), using
+               same same StorageArea as value.
+            2. Remove the previous (connection, oldStorageMapID) key from m_storageAreasByConnection.
+
+            Step 2 here is wrong and is updated in this patch. It is only safe to remove the previous
+            (connection, oldStorageMapID) if this oldStorageMapID no longer exists (i.e. destroyStorageMap()
+            was already called for it). This patch thus adds a check before removing (connection, oldStorageMapID)
+            from the HashMap to make sure that the oldStorageMapID is no longer a listener of the StorageArea).
+
+            This would cause leaks in the following case:
+            1. We construct a StorageArea for (connection1, storageMapId1)
+            2. We ask for a StorageArea for (connection1, storageMapId2) and decide to reuse the existing StorageArea
+               since it has the same SecurityOrigin.
+            3. As a result of step2, we would remove (connection1, storageMapId1) from m_storageAreasByConnection
+               and add (connection1, storageMapId2), even though there is still a StorageMap with storageMapId1
+               on WebContent process side.
+            4. Later on, we would try to call destroyStorageMap(connection1, storageMap1), it would fail to find
+               it in m_storageAreasByConnection and return early. It would therefore fail to remove storageMapId1
+               as a listener of the StorageArea which still exists.
+            -> This would leak the IPC::Connection that there would be a std::pair<RefPtr<IPC::Connection>, StorageMapID>
+               with value (connection1, storageMap1) which would get leaked and it would ref the IPC::Connection.
+
+            This code should really be refactored to be less leak prone but I have kept the patch minimal for now
+            to facilitate cherry-picking.
+
+            Note that this would reproduce very easily on sina.com.cn, when clicking bold links at the top, which
+            opens new tabs to different pages in the same WebContent process. When closing all Safari windows, the
+            IPC::Connection for this WebContent process would stay alive.
+
+            * UIProcess/WebStorage/StorageManager.cpp:
+            (WebKit::StorageManager::StorageArea::hasListener const):
+            (WebKit::StorageManager::createTransientLocalStorageMap):
 
 2018-08-01  Babak Shafiei  <bshafiei@apple.com>
 
