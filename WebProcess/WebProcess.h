@@ -270,7 +270,6 @@ private:
 
     void platformTerminate();
 
-    void setHasSuspendedPageProxy(bool);
     void setIsInProcessCache(bool);
     void markIsNoLongerPrewarmed();
 
@@ -483,7 +482,6 @@ private:
 #if PLATFORM(WAYLAND)
     std::unique_ptr<WaylandCompositorDisplay> m_waylandCompositorDisplay;
 #endif
-    bool m_hasSuspendedPageProxy { false };
     bool m_isSuspending { false };
 };
 

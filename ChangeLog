@@ -1,78 +1,6 @@
-2019-03-08  Kocsen Chung  <kocsen_chung@apple.com>
-
-        Cherry-pick r242629. rdar://problem/48716549
-
-    Crash under RemoteLayerTreePropertyApplier::applyProperties
-    https://bugs.webkit.org/show_bug.cgi?id=195448
-    <rdar://problem/48588226>
-    
-    Reviewed by Simon Fraser.
-    
-    * UIProcess/RemoteLayerTree/RemoteLayerTreeHost.mm:
-    (WebKit::RemoteLayerTreeHost::updateLayerTree):
-    Under some currently-unknown circumstances, the UI process is receiving
-    commits referring to layers that it does not know about.
-    One understood case of this was fixed in r241899, but there seem to be
-    cases remaining that are not understood.
-    Also, add a release log so that we can identify any downstream effects.
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242629 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-03-07  Tim Horton  <timothy_horton@apple.com>
-
-            Crash under RemoteLayerTreePropertyApplier::applyProperties
-            https://bugs.webkit.org/show_bug.cgi?id=195448
-            <rdar://problem/48588226>
-
-            Reviewed by Simon Fraser.
-
-            * UIProcess/RemoteLayerTree/RemoteLayerTreeHost.mm:
-            (WebKit::RemoteLayerTreeHost::updateLayerTree):
-            Under some currently-unknown circumstances, the UI process is receiving
-            commits referring to layers that it does not know about.
-            One understood case of this was fixed in r241899, but there seem to be
-            cases remaining that are not understood.
-            Also, add a release log so that we can identify any downstream effects.
-
-2019-03-06  Kocsen Chung  <kocsen_chung@apple.com>
-
-        Cherry-pick r242554. rdar://problem/48538837
-
-    REGRESSION (r238490): YouTube.com: Returning PiP to Safari after sleeping device loses page
-    https://bugs.webkit.org/show_bug.cgi?id=195364
-    <rdar://problem/48538837>
-    
-    Reviewed by Geoffrey Garen.
-    
-    Make sure we unset the LayerTreeFreezeReason::ProcessSuspended layer tree freeze reason
-    when WebPage::applicationWillEnterForeground() is called. This restores pre-r238490
-    behavior and addresses the issue with PiP on youtube.com.
-    
-    * WebProcess/WebPage/ios/WebPageIOS.mm:
-    (WebKit::WebPage::applicationWillEnterForeground):
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242554 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-03-06  Chris Dumez  <cdumez@apple.com>
-
-            REGRESSION (r238490): YouTube.com: Returning PiP to Safari after sleeping device loses page
-            https://bugs.webkit.org/show_bug.cgi?id=195364
-            <rdar://problem/48538837>
-
-            Reviewed by Geoffrey Garen.
-
-            Make sure we unset the LayerTreeFreezeReason::ProcessSuspended layer tree freeze reason
-            when WebPage::applicationWillEnterForeground() is called. This restores pre-r238490
-            behavior and addresses the issue with PiP on youtube.com.
-
-            * WebProcess/WebPage/ios/WebPageIOS.mm:
-            (WebKit::WebPage::applicationWillEnterForeground):
-
 2019-03-05  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r242394. rdar://problem/48591281
+        Cherry-pick r242394. rdar://problem/48591280
 
     Unreviewed build fix after r242378
     
@@ -90,7 +18,7 @@
 
 2019-03-05  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r242378. rdar://problem/48591281
+        Cherry-pick r242378. rdar://problem/48591280
 
     Check contextIDs when handling WebContent messages
     https://bugs.webkit.org/show_bug.cgi?id=195289
@@ -208,126 +136,9 @@
             (WebKit::EditableImageController::didDestroyEditableImage):
             (WebKit::EditableImageController::associateWithAttachment):
 
-2019-03-04  Null  <null@apple.com>
+2019-02-27  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r242302. rdar://problem/48520362
-
-    Add setters on WKWebsiteDataStore for sourceApplicationBundleIdentifier and sourceApplicationSecondaryIdentifier
-    https://bugs.webkit.org/show_bug.cgi?id=195229
-    <rdar://problem/48520362>
-    
-    Reviewed by Chris Dumez.
-    
-    Source/WebKit:
-    
-    Just like _setBoundInterfaceIdentifier, we need a way to set these properties after instantiation of a WKWebsiteDataStore,
-    but we need to make sure we don't set it after the parameters have been copied to the NetworkProcess.
-    
-    Functionality verified by manual testing.  See radar.
-    Added an API test that verifies the setter restrictions work as expected.
-    
-    * UIProcess/API/Cocoa/WKWebsiteDataStore.mm:
-    (-[WKWebsiteDataStore _sourceApplicationBundleIdentifier]):
-    (-[WKWebsiteDataStore _setSourceApplicationBundleIdentifier:]):
-    (-[WKWebsiteDataStore _sourceApplicationSecondaryIdentifier]):
-    (-[WKWebsiteDataStore _setSourceApplicationSecondaryIdentifier:]):
-    * UIProcess/API/Cocoa/WKWebsiteDataStorePrivate.h:
-    * UIProcess/ApplePay/cocoa/WebPaymentCoordinatorProxyCocoa.mm:
-    (WebKit::toPKPaymentRequest):
-    * UIProcess/WebsiteData/Cocoa/WebsiteDataStoreCocoa.mm:
-    (WebKit::WebsiteDataStore::parameters):
-    * UIProcess/WebsiteData/WebsiteDataStore.cpp:
-    (WebKit::WebsiteDataStore::WebsiteDataStore):
-    (WebKit::WebsiteDataStore::setSourceApplicationSecondaryIdentifier):
-    (WebKit::WebsiteDataStore::setSourceApplicationBundleIdentifier):
-    * UIProcess/WebsiteData/WebsiteDataStore.h:
-    (WebKit::WebsiteDataStore::sourceApplicationBundleIdentifier):
-    (WebKit::WebsiteDataStore::sourceApplicationSecondaryIdentifier):
-    
-    Tools:
-    
-    * TestWebKitAPI/Tests/WebKitCocoa/WebsiteDataStoreCustomPaths.mm:
-    (TEST):
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242302 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-03-01  Alex Christensen  <achristensen@webkit.org>
-
-            Add setters on WKWebsiteDataStore for sourceApplicationBundleIdentifier and sourceApplicationSecondaryIdentifier
-            https://bugs.webkit.org/show_bug.cgi?id=195229
-            <rdar://problem/48520362>
-
-            Reviewed by Chris Dumez.
-
-            Just like _setBoundInterfaceIdentifier, we need a way to set these properties after instantiation of a WKWebsiteDataStore,
-            but we need to make sure we don't set it after the parameters have been copied to the NetworkProcess.
-
-            Functionality verified by manual testing.  See radar.
-            Added an API test that verifies the setter restrictions work as expected.
-
-            * UIProcess/API/Cocoa/WKWebsiteDataStore.mm:
-            (-[WKWebsiteDataStore _sourceApplicationBundleIdentifier]):
-            (-[WKWebsiteDataStore _setSourceApplicationBundleIdentifier:]):
-            (-[WKWebsiteDataStore _sourceApplicationSecondaryIdentifier]):
-            (-[WKWebsiteDataStore _setSourceApplicationSecondaryIdentifier:]):
-            * UIProcess/API/Cocoa/WKWebsiteDataStorePrivate.h:
-            * UIProcess/ApplePay/cocoa/WebPaymentCoordinatorProxyCocoa.mm:
-            (WebKit::toPKPaymentRequest):
-            * UIProcess/WebsiteData/Cocoa/WebsiteDataStoreCocoa.mm:
-            (WebKit::WebsiteDataStore::parameters):
-            * UIProcess/WebsiteData/WebsiteDataStore.cpp:
-            (WebKit::WebsiteDataStore::WebsiteDataStore):
-            (WebKit::WebsiteDataStore::setSourceApplicationSecondaryIdentifier):
-            (WebKit::WebsiteDataStore::setSourceApplicationBundleIdentifier):
-            * UIProcess/WebsiteData/WebsiteDataStore.h:
-            (WebKit::WebsiteDataStore::sourceApplicationBundleIdentifier):
-            (WebKit::WebsiteDataStore::sourceApplicationSecondaryIdentifier):
-
-2019-03-04  Babak Shafiei  <bshafiei@apple.com>
-
-        Cherry-pick r242355. rdar://problem/48563891
-
-    [iOS] Fullscreen "stay in page" option breaks video playback
-    https://bugs.webkit.org/show_bug.cgi?id=195277
-    <rdar://problem/48537317>
-    
-    Reviewed by Eric Carlson.
-    
-    Source/WebCore:
-    
-    Add a LOG entry when playback is rejected due to media playback suspension.
-    
-    * html/MediaElementSession.cpp:
-    (WebCore::MediaElementSession::playbackPermitted const):
-    
-    Source/WebKit:
-    
-    Make sure we resume media playback when the user chooses "stay in page" from the deceptive
-    website warning dialog.
-    
-    * UIProcess/ios/fullscreen/WKFullScreenViewController.mm:
-    (-[WKFullScreenViewController _showPhishingAlert]):
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242355 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-03-04  Jer Noble  <jer.noble@apple.com>
-
-            [iOS] Fullscreen "stay in page" option breaks video playback
-            https://bugs.webkit.org/show_bug.cgi?id=195277
-            <rdar://problem/48537317>
-
-            Reviewed by Eric Carlson.
-
-            Make sure we resume media playback when the user chooses "stay in page" from the deceptive
-            website warning dialog.
-
-            * UIProcess/ios/fullscreen/WKFullScreenViewController.mm:
-            (-[WKFullScreenViewController _showPhishingAlert]):
-
-2019-02-27  Babak Shafiei  <bshafiei@apple.com>
-
-        Apply patch. rdar://problem/48429676
+        Apply patch. rdar://problem/48429602
 
     2019-02-27  Alex Christensen  <achristensen@webkit.org>
 
@@ -370,88 +181,9 @@
             (WebKit::StorageNamespaceImpl::ephemeralLocalStorageArea): Deleted.
             * WebProcess/WebStorage/StorageNamespaceImpl.h:
 
-2019-02-27  Babak Shafiei  <bshafiei@apple.com>
+2019-02-27  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r242099. rdar://problem/48429675
-
-    [iOS] Regression(PSON) Scroll position is no longer restored when navigating back to reddit.com
-    https://bugs.webkit.org/show_bug.cgi?id=195054
-    <rdar://problem/48330549>
-    
-    Reviewed by Geoff Garen.
-    
-    Source/WebCore:
-    
-    Add MaintainMemoryCache flag to indicate that the memory cache should not get purged.
-    
-    * page/MemoryRelease.cpp:
-    (WebCore::releaseNoncriticalMemory):
-    (WebCore::releaseCriticalMemory):
-    (WebCore::releaseMemory):
-    * page/MemoryRelease.h:
-    
-    Source/WebKit:
-    
-    We attempt to restore the scroll position twice, on first layout and then on load completion.
-    Before PSON, the scroll position would fail to get restored on first layout but would succeed
-    on load completion because the view is tall enough by then. With PSON however, we would
-    fail to restore the scroll position on load completion because the view would not be tall
-    enough yet by this point. The reason is that the dynamic resources would not be in the memory cache
-    and would then get reloaded abd finish loading *after* the load event.
-    
-    To address the issue, we now make sure to not purge the memory cache on process suspension on
-    iOS if there is currently a SuspendedPageProxy in the UIProcess for this process.
-    
-    * UIProcess/SuspendedPageProxy.cpp:
-    (WebKit::SuspendedPageProxy::SuspendedPageProxy):
-    (WebKit::SuspendedPageProxy::~SuspendedPageProxy):
-    * UIProcess/WebProcessProxy.cpp:
-    (WebKit::WebProcessProxy::incrementSuspendedPageCount):
-    (WebKit::WebProcessProxy::decrementSuspendedPageCount):
-    * UIProcess/WebProcessProxy.h:
-    * WebProcess/WebProcess.cpp:
-    (WebKit::WebProcess::initializeWebProcess):
-    (WebKit::WebProcess::setHasSuspendedPageProxy):
-    * WebProcess/WebProcess.h:
-    * WebProcess/WebProcess.messages.in:
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242099 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-02-26  Chris Dumez  <cdumez@apple.com>
-
-            [iOS] Regression(PSON) Scroll position is no longer restored when navigating back to reddit.com
-            https://bugs.webkit.org/show_bug.cgi?id=195054
-            <rdar://problem/48330549>
-
-            Reviewed by Geoff Garen.
-
-            We attempt to restore the scroll position twice, on first layout and then on load completion.
-            Before PSON, the scroll position would fail to get restored on first layout but would succeed
-            on load completion because the view is tall enough by then. With PSON however, we would
-            fail to restore the scroll position on load completion because the view would not be tall
-            enough yet by this point. The reason is that the dynamic resources would not be in the memory cache
-            and would then get reloaded abd finish loading *after* the load event.
-
-            To address the issue, we now make sure to not purge the memory cache on process suspension on
-            iOS if there is currently a SuspendedPageProxy in the UIProcess for this process.
-
-            * UIProcess/SuspendedPageProxy.cpp:
-            (WebKit::SuspendedPageProxy::SuspendedPageProxy):
-            (WebKit::SuspendedPageProxy::~SuspendedPageProxy):
-            * UIProcess/WebProcessProxy.cpp:
-            (WebKit::WebProcessProxy::incrementSuspendedPageCount):
-            (WebKit::WebProcessProxy::decrementSuspendedPageCount):
-            * UIProcess/WebProcessProxy.h:
-            * WebProcess/WebProcess.cpp:
-            (WebKit::WebProcess::initializeWebProcess):
-            (WebKit::WebProcess::setHasSuspendedPageProxy):
-            * WebProcess/WebProcess.h:
-            * WebProcess/WebProcess.messages.in:
-
-2019-02-27  Babak Shafiei  <bshafiei@apple.com>
-
-        Cherry-pick r242089. rdar://problem/48429668
+        Cherry-pick r242089. rdar://problem/48445620
 
     WebPageProxy should nullify m_userMediaPermissionRequestManager after resetting the media state
     https://bugs.webkit.org/show_bug.cgi?id=195028
@@ -485,53 +217,6 @@
 
             * UIProcess/WebPageProxy.cpp:
             (WebKit::WebPageProxy::resetState):
-
-2019-02-27  Babak Shafiei  <bshafiei@apple.com>
-
-        Cherry-pick r242098. rdar://problem/48429674
-
-    [iOS] REGRESSION(r238490?): Safari sometimes shows blank page until a cross site navigation or re-opening the tab
-    https://bugs.webkit.org/show_bug.cgi?id=195037
-    <rdar://problem/48154508>
-    
-    Reviewed by Antti Koivisto.
-    
-    Restore the pre-r238490 behavior of WebPage::didCompletePageTransition clearing LayerTreeFreezeReason::ProcessSuspended
-    as this has been an issue when I was able to reproduce the issue locally.
-    
-    Also added release logging to help diagnose the issue in the future.
-    
-    * WebProcess/WebPage/WebPage.cpp:
-    (WebKit::WebPage::freezeLayerTree):
-    (WebKit::WebPage::unfreezeLayerTree):
-    (WebKit::WebPage::didCompletePageTransition):
-    * WebProcess/WebProcess.cpp:
-    (WebKit::WebProcess::freezeAllLayerTrees):
-    (WebKit::WebProcess::unfreezeAllLayerTrees):
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@242098 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-02-26  Ryosuke Niwa  <rniwa@webkit.org>
-
-            [iOS] REGRESSION(r238490?): Safari sometimes shows blank page until a cross site navigation or re-opening the tab
-            https://bugs.webkit.org/show_bug.cgi?id=195037
-            <rdar://problem/48154508>
-
-            Reviewed by Antti Koivisto.
-
-            Restore the pre-r238490 behavior of WebPage::didCompletePageTransition clearing LayerTreeFreezeReason::ProcessSuspended
-            as this has been an issue when I was able to reproduce the issue locally.
-
-            Also added release logging to help diagnose the issue in the future.
-
-            * WebProcess/WebPage/WebPage.cpp:
-            (WebKit::WebPage::freezeLayerTree):
-            (WebKit::WebPage::unfreezeLayerTree):
-            (WebKit::WebPage::didCompletePageTransition):
-            * WebProcess/WebProcess.cpp:
-            (WebKit::WebProcess::freezeAllLayerTrees):
-            (WebKit::WebProcess::unfreezeAllLayerTrees):
 
 2019-02-24  Babak Shafiei  <bshafiei@apple.com>
 

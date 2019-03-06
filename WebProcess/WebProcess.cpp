@@ -297,8 +297,7 @@ void WebProcess::initializeWebProcess(WebProcessCreationParameters&& parameters)
 #endif
 
             auto maintainPageCache = m_isSuspending && hasPageRequiringPageCacheWhileSuspended() ? WebCore::MaintainPageCache::Yes : WebCore::MaintainPageCache::No;
-            auto maintainMemoryCache = m_isSuspending && m_hasSuspendedPageProxy ? WebCore::MaintainMemoryCache::Yes : WebCore::MaintainMemoryCache::No;
-            WebCore::releaseMemory(critical, synchronous, maintainPageCache, maintainMemoryCache);
+            WebCore::releaseMemory(critical, synchronous, maintainPageCache);
         });
 #if (PLATFORM(MAC) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101200) || PLATFORM(GTK) || PLATFORM(WPE)
         memoryPressureHandler.setShouldUsePeriodicMemoryMonitor(true);
@@ -462,12 +461,6 @@ bool WebProcess::areAllPagesSuspended() const
             return false;
     }
     return true;
-}
-
-void WebProcess::setHasSuspendedPageProxy(bool hasSuspendedPageProxy)
-{
-    ASSERT(m_hasSuspendedPageProxy != hasSuspendedPageProxy);
-    m_hasSuspendedPageProxy = hasSuspendedPageProxy;
 }
 
 void WebProcess::setIsInProcessCache(bool isInProcessCache)
@@ -1535,14 +1528,12 @@ void WebProcess::cancelMarkAllLayersVolatile()
 
 void WebProcess::freezeAllLayerTrees()
 {
-    RELEASE_LOG(ProcessSuspension, "WebProcess %i is freezing all layer trees", getpid());
     for (auto& page : m_pageMap.values())
         page->freezeLayerTree(WebPage::LayerTreeFreezeReason::ProcessSuspended);
 }
 
 void WebProcess::unfreezeAllLayerTrees()
 {
-    RELEASE_LOG(ProcessSuspension, "WebProcess %i is unfreezing all layer trees", getpid());
     for (auto& page : m_pageMap.values())
         page->unfreezeLayerTree(WebPage::LayerTreeFreezeReason::ProcessSuspended);
 }
