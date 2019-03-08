@@ -25,9 +25,10 @@
 
 #pragma once
 
-#if (PLATFORM(IOS) && HAVE(AVKIT)) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
+#if (PLATFORM(IOS_FAMILY) && HAVE(AVKIT)) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
 
 #include "MessageReceiver.h"
+#include <WebCore/AudioSession.h>
 #include <WebCore/GraphicsLayer.h>
 #include <WebCore/PlatformView.h>
 #include <WebCore/VideoFullscreenChangeObserver.h>
@@ -36,14 +37,15 @@
 #include <wtf/HashSet.h>
 #include <wtf/RefCounted.h>
 #include <wtf/RefPtr.h>
+#include <wtf/text/WTFString.h>
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
 #include <WebCore/VideoFullscreenInterfaceAVKit.h>
 #else
 #include <WebCore/VideoFullscreenInterfaceMac.h>
 #endif
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
 typedef WebCore::VideoFullscreenInterfaceAVKit PlatformVideoFullscreenInterface;
 #else
 typedef WebCore::VideoFullscreenInterfaceMac PlatformVideoFullscreenInterface;
@@ -80,15 +82,20 @@ private:
     void removeClient(WebCore::VideoFullscreenModelClient&) override;
     void requestFullscreenMode(WebCore::HTMLMediaElementEnums::VideoFullscreenMode, bool finishedWithMedia = false) override;
     void setVideoLayerFrame(WebCore::FloatRect) override;
-    void setVideoLayerGravity(VideoGravity) override;
+    void setVideoLayerGravity(WebCore::MediaPlayerEnums::VideoGravity) override;
     void fullscreenModeChanged(WebCore::HTMLMediaElementEnums::VideoFullscreenMode) override;
-    bool isVisible() const override;
     bool hasVideo() const override { return m_hasVideo; }
     WebCore::FloatSize videoDimensions() const override { return m_videoDimensions; }
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
     UIViewController *presentingViewController() final;
     UIViewController *createVideoFullscreenViewController(AVPlayerViewController*) final;
 #endif
+    void willEnterPictureInPicture() final;
+    void didEnterPictureInPicture() final;
+    void failedToEnterPictureInPicture() final;
+    void willExitPictureInPicture() final;
+    void didExitPictureInPicture() final;
+    void requestRouteSharingPolicyAndContextUID(CompletionHandler<void(WebCore::RouteSharingPolicy, String)>&&) final;
 
     // VideoFullscreenChangeObserver
     void requestUpdateInlineRect() final;
@@ -112,7 +119,7 @@ private:
 
 class VideoFullscreenManagerProxy : public RefCounted<VideoFullscreenManagerProxy>, private IPC::MessageReceiver {
 public:
-    static RefPtr<VideoFullscreenManagerProxy> create(WebPageProxy&, PlaybackSessionManagerProxy&);
+    static Ref<VideoFullscreenManagerProxy> create(WebPageProxy&, PlaybackSessionManagerProxy&);
     virtual ~VideoFullscreenManagerProxy();
 
     void invalidate();
@@ -123,9 +130,13 @@ public:
     void applicationDidBecomeActive();
     bool isVisible() const;
 
+    void requestRouteSharingPolicyAndContextUID(uint64_t contextId, CompletionHandler<void(WebCore::RouteSharingPolicy, String)>&&);
+
 #if ENABLE(VIDEO_PRESENTATION_MODE)
     bool isPlayingVideoInEnhancedFullscreen() const;
 #endif
+
+    PlatformVideoFullscreenInterface* controlsManagerInterface();
 
 private:
     friend class VideoFullscreenModelContext;
@@ -167,7 +178,7 @@ private:
     void didEnterFullscreen(uint64_t contextId);
     void didCleanupFullscreen(uint64_t contextId);
     void setVideoLayerFrame(uint64_t contextId, WebCore::FloatRect);
-    void setVideoLayerGravity(uint64_t contextId, WebCore::VideoFullscreenModel::VideoGravity);
+    void setVideoLayerGravity(uint64_t contextId, WebCore::MediaPlayerEnums::VideoGravity);
     void fullscreenModeChanged(uint64_t contextId, WebCore::HTMLMediaElementEnums::VideoFullscreenMode);
     void fullscreenMayReturnToInline(uint64_t contextId);
 
@@ -180,5 +191,5 @@ private:
     
 } // namespace WebKit
 
-#endif // PLATFORM(IOS) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
+#endif // PLATFORM(IOS_FAMILY) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
 

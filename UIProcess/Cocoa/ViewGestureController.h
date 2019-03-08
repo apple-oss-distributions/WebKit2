@@ -38,7 +38,7 @@
 
 OBJC_CLASS CALayer;
 
-#if PLATFORM(IOS)
+#if PLATFORM(IOS_FAMILY)
 OBJC_CLASS UIGestureRecognizer;
 OBJC_CLASS UIView;
 OBJC_CLASS WKSwipeTransitionController;
@@ -61,6 +61,7 @@ namespace WebKit {
 class ViewSnapshot;
 class WebBackForwardListItem;
 class WebPageProxy;
+class WebProcessProxy;
 
 class ViewGestureController : private IPC::MessageReceiver {
     WTF_MAKE_NONCOPYABLE(ViewGestureController);
@@ -68,6 +69,9 @@ public:
     ViewGestureController(WebPageProxy&);
     ~ViewGestureController();
     void platformTeardown();
+
+    void disconnectFromProcess();
+    void connectToProcess();
     
     enum class ViewGestureType {
         None,
@@ -136,6 +140,9 @@ public:
 
     void removeSwipeSnapshot();
 
+    void setSwipeGestureEnabled(bool enabled) { m_swipeGestureEnabled = enabled; }
+    bool isSwipeGestureEnabled() { return m_swipeGestureEnabled; }
+
     // Testing
     bool beginSimulatedSwipeInDirectionForTesting(SwipeDirection);
     bool completeSimulatedSwipeInDirectionForTesting(SwipeDirection);
@@ -149,6 +156,8 @@ private:
     static GestureID takeNextGestureID();
     void willBeginGesture(ViewGestureType);
     void didEndGesture();
+
+    void didStartProvisionalOrSameDocumentLoadForMainFrame();
 
     class SnapshotRemovalTracker {
     public:
@@ -166,11 +175,20 @@ private:
 
         void start(Events, WTF::Function<void()>&&);
         void reset();
+        
+        void pause() { m_paused = true; }
+        void resume();
+        bool isPaused() const { return m_paused; }
+        bool hasRemovalCallback() const { return !!m_removalCallback; }
 
         bool eventOccurred(Events);
         bool cancelOutstandingEvent(Events);
+        bool hasOutstandingEvent(Event);
 
         void startWatchdog(Seconds);
+
+        uint64_t renderTreeSizeThreshold() const { return m_renderTreeSizeThreshold; }
+        void setRenderTreeSizeThreshold(uint64_t threshold) { m_renderTreeSizeThreshold = threshold; }
 
     private:
         static String eventsDescription(Events);
@@ -186,7 +204,11 @@ private:
         WTF::Function<void()> m_removalCallback;
         MonotonicTime m_startTime;
 
+        uint64_t m_renderTreeSizeThreshold { 0 };
+
         RunLoop::Timer<SnapshotRemovalTracker> m_watchdogTimer;
+        
+        bool m_paused { true };
     };
 
 #if PLATFORM(MAC)
@@ -211,6 +233,8 @@ private:
     void didMoveSwipeSnapshotLayer();
 
     void forceRepaintIfNeeded();
+
+    void requestRenderTreeSizeNotificationIfNeeded();
 
     class PendingSwipeTracker {
     public:
@@ -246,6 +270,8 @@ private:
 
     WebPageProxy& m_webPageProxy;
     ViewGestureType m_activeGestureType { ViewGestureType::None };
+
+    bool m_swipeGestureEnabled { true };
 
     RunLoop::Timer<ViewGestureController> m_swipeActiveLoadMonitoringTimer;
 
@@ -295,9 +321,10 @@ private:
     RetainPtr<_UIViewControllerOneToOneTransitionContext> m_swipeTransitionContext;
     uint64_t m_snapshotRemovalTargetRenderTreeSize { 0 };
 #endif
+    bool m_isConnectedToProcess { false };
 
-    WTF::Function<void()> m_provisionalOrSameDocumentLoadCallback;
     SnapshotRemovalTracker m_snapshotRemovalTracker;
+    WTF::Function<void()> m_loadCallback;
 };
 
 } // namespace WebKit

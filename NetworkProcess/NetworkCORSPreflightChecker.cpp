@@ -26,12 +26,13 @@
 #include "config.h"
 #include "NetworkCORSPreflightChecker.h"
 
+#include "AuthenticationChallengeDisposition.h"
 #include "AuthenticationManager.h"
 #include "Logging.h"
 #include "NetworkLoadParameters.h"
+#include "NetworkProcess.h"
 #include "SessionTracker.h"
 #include <WebCore/CrossOriginAccessControl.h>
-#include <WebCore/SecurityOrigin.h>
 
 #define RELEASE_LOG_IF_ALLOWED(fmt, ...) RELEASE_LOG_IF(m_parameters.sessionID.isAlwaysOnLoggingAllowed(), Network, "%p - NetworkCORSPreflightChecker::" fmt, this, ##__VA_ARGS__)
 
@@ -64,7 +65,6 @@ void NetworkCORSPreflightChecker::startPreflight()
     NetworkLoadParameters loadParameters;
     loadParameters.sessionID = m_parameters.sessionID;
     loadParameters.request = createAccessControlPreflightRequest(m_parameters.originalRequest, m_parameters.sourceOrigin, m_parameters.referrer);
-    loadParameters.shouldFollowRedirects = false;
     if (!m_parameters.userAgent.isNull())
         loadParameters.request.setHTTPHeaderField(HTTPHeaderName::UserAgent, m_parameters.userAgent);
 
@@ -88,22 +88,25 @@ void NetworkCORSPreflightChecker::willPerformHTTPRedirection(WebCore::ResourceRe
     m_completionCallback(ResourceError { errorDomainWebKitInternal, 0, m_parameters.originalRequest.url(), "Preflight response is not successful"_s, ResourceError::Type::AccessControl });
 }
 
-void NetworkCORSPreflightChecker::didReceiveChallenge(const WebCore::AuthenticationChallenge& challenge, ChallengeCompletionHandler&& completionHandler)
+void NetworkCORSPreflightChecker::didReceiveChallenge(WebCore::AuthenticationChallenge&& challenge, ChallengeCompletionHandler&& completionHandler)
 {
-    RELEASE_LOG_IF_ALLOWED("didReceiveChallenge");
+    RELEASE_LOG_IF_ALLOWED("didReceiveChallenge, authentication scheme: %u", challenge.protectionSpace().authenticationScheme());
 
-    if (challenge.protectionSpace().authenticationScheme() == ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested) {
-        completionHandler(AuthenticationChallengeDisposition::RejectProtectionSpace, { });
+    auto scheme = challenge.protectionSpace().authenticationScheme();
+    bool isTLSHandshake = scheme == ProtectionSpaceAuthenticationSchemeServerTrustEvaluationRequested
+        || scheme == ProtectionSpaceAuthenticationSchemeClientCertificateRequested;
+
+    if (!isTLSHandshake) {
+        completionHandler(AuthenticationChallengeDisposition::UseCredential, { });
         return;
     }
 
-    completionHandler(AuthenticationChallengeDisposition::Cancel, { });
-    m_completionCallback(ResourceError { errorDomainWebKitInternal, 0, m_parameters.originalRequest.url(), "Preflight response is not successful"_s, ResourceError::Type::AccessControl });
+    NetworkProcess::singleton().authenticationManager().didReceiveAuthenticationChallenge(m_parameters.pageID, m_parameters.frameID, challenge, WTFMove(completionHandler));
 }
 
-void NetworkCORSPreflightChecker::didReceiveResponseNetworkSession(WebCore::ResourceResponse&& response, ResponseCompletionHandler&& completionHandler)
+void NetworkCORSPreflightChecker::didReceiveResponse(WebCore::ResourceResponse&& response, ResponseCompletionHandler&& completionHandler)
 {
-    RELEASE_LOG_IF_ALLOWED("didReceiveResponseNetworkSession");
+    RELEASE_LOG_IF_ALLOWED("didReceiveResponse");
 
     if (m_shouldCaptureExtraNetworkLoadMetrics)
         m_loadInformation.response = response;
@@ -166,3 +169,5 @@ NetworkTransactionInformation NetworkCORSPreflightChecker::takeInformation()
 }
 
 } // Namespace WebKit
+
+#undef RELEASE_LOG_IF_ALLOWED

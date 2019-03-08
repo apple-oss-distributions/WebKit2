@@ -38,7 +38,7 @@ class SecurityOrigin;
 
 namespace WebKit {
 
-class NetworkCORSPreflightChecker final : private NetworkDataTaskClient  {
+class NetworkCORSPreflightChecker final : private NetworkDataTaskClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     struct Parameters {
@@ -47,6 +47,8 @@ public:
         String referrer;
         String userAgent;
         PAL::SessionID sessionID;
+        uint64_t pageID;
+        uint64_t frameID;
         WebCore::StoredCredentialsPolicy storedCredentialsPolicy;
     };
     using CompletionCallback = CompletionHandler<void(WebCore::ResourceError&&)>;
@@ -61,8 +63,8 @@ public:
 
 private:
     void willPerformHTTPRedirection(WebCore::ResourceResponse&&, WebCore::ResourceRequest&&, RedirectCompletionHandler&&) final;
-    void didReceiveChallenge(const WebCore::AuthenticationChallenge&, ChallengeCompletionHandler&&) final;
-    void didReceiveResponseNetworkSession(WebCore::ResourceResponse&&, ResponseCompletionHandler&&) final;
+    void didReceiveChallenge(WebCore::AuthenticationChallenge&&, ChallengeCompletionHandler&&) final;
+    void didReceiveResponse(WebCore::ResourceResponse&&, ResponseCompletionHandler&&) final;
     void didReceiveData(Ref<WebCore::SharedBuffer>&&) final;
     void didCompleteWithError(const WebCore::ResourceError&, const WebCore::NetworkLoadMetrics&) final;
     void didSendData(uint64_t totalBytesSent, uint64_t totalBytesExpectedToSend) final;
