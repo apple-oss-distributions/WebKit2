@@ -69,6 +69,8 @@ static RefPtr<ShareableBitmap> convertImageToBitmap(NSImage *image, const IntSiz
         return nullptr;
 
     auto graphicsContext = bitmap->createGraphicsContext();
+    if (!graphicsContext)
+        return nullptr;
 
     RetainPtr<NSGraphicsContext> savedContext = [NSGraphicsContext currentContext];
 
@@ -210,7 +212,7 @@ void WebDragClient::declareAndWriteDragImage(const String& pasteboardName, Eleme
 
 void WebDragClient::didConcludeEditDrag()
 {
-    m_page->didConcludeEditDataInteraction();
+    m_page->didConcludeEditDrag();
 }
 
 #endif // PLATFORM(IOS_FAMILY)

@@ -172,6 +172,11 @@ bool PageLoadState::isLoading() const
     return isLoading(m_committedState);
 }
 
+bool PageLoadState::hasUncommittedLoad() const
+{
+    return isLoading(m_uncommittedState);
+}
+
 String PageLoadState::activeURL(const Data& data)
 {
     // If there is a currently pending URL, it is the active URL,
@@ -234,16 +239,30 @@ const String& PageLoadState::pendingAPIRequestURL() const
     return m_committedState.pendingAPIRequestURL;
 }
 
-void PageLoadState::setPendingAPIRequestURL(const Transaction::Token& token, const String& pendingAPIRequestURL)
+const URL& PageLoadState::resourceDirectoryURL() const
+{
+    return m_committedState.resourceDirectoryURL;
+}
+
+void PageLoadState::setPendingAPIRequestURL(const Transaction::Token& token, const String& pendingAPIRequestURL, const URL& resourceDirectoryURL)
 {
     ASSERT_UNUSED(token, &token.m_pageLoadState == this);
     m_uncommittedState.pendingAPIRequestURL = pendingAPIRequestURL;
+    m_uncommittedState.resourceDirectoryURL = resourceDirectoryURL;
 }
 
 void PageLoadState::clearPendingAPIRequestURL(const Transaction::Token& token)
 {
     ASSERT_UNUSED(token, &token.m_pageLoadState == this);
     m_uncommittedState.pendingAPIRequestURL = String();
+}
+
+void PageLoadState::didExplicitOpen(const Transaction::Token& token, const String& url)
+{
+    ASSERT_UNUSED(token, &token.m_pageLoadState == this);
+
+    m_uncommittedState.url = url;
+    m_uncommittedState.provisionalURL = String();
 }
 
 void PageLoadState::didStartProvisionalLoad(const Transaction::Token& token, const String& url, const String& unreachableURL)

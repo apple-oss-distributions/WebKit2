@@ -60,12 +60,14 @@ const unsigned WebInspectorProxy::initialWindowWidth = 1000;
 const unsigned WebInspectorProxy::initialWindowHeight = 650;
 
 WebInspectorProxy::WebInspectorProxy(WebPageProxy* inspectedPage)
-    : m_inspectedPage(inspectedPage)
-#if PLATFORM(MAC) && WK_API_ENABLED
-    , m_closeFrontendAfterInactivityTimer(RunLoop::main(), this, &WebInspectorProxy::closeFrontendAfterInactivityTimerFired)
+#if PLATFORM(MAC)
+    : m_closeFrontendAfterInactivityTimer(RunLoop::main(), this, &WebInspectorProxy::closeFrontendAfterInactivityTimerFired)
 #endif
 {
-    m_inspectedPage->process().addMessageReceiver(Messages::WebInspectorProxy::messageReceiverName(), m_inspectedPage->pageID(), *this);
+    if (inspectedPage && inspectedPage->hasRunningProcess()) {
+        m_inspectedPage = inspectedPage;
+        m_inspectedPage->process().addMessageReceiver(Messages::WebInspectorProxy::messageReceiverName(), m_inspectedPage->pageID(), *this);
+    }
 }
 
 WebInspectorProxy::~WebInspectorProxy()
@@ -178,6 +180,17 @@ void WebInspectorProxy::reopen()
 
     close();
     show();
+}
+
+void WebInspectorProxy::resetState()
+{
+    inspectorPagePreferences().deleteInspectorAttachedHeight();
+    inspectorPagePreferences().deleteInspectorAttachedWidth();
+    inspectorPagePreferences().deleteInspectorAttachmentSide();
+    inspectorPagePreferences().deleteInspectorStartsAttached();
+    inspectorPagePreferences().deleteInspectorWindowFrame();
+
+    platformResetState();
 }
 
 void WebInspectorProxy::reset()
@@ -323,6 +336,11 @@ void WebInspectorProxy::setAttachedWindowWidth(unsigned width)
     platformSetAttachedWindowWidth(width);
 }
 
+void WebInspectorProxy::setSheetRect(const FloatRect& rect)
+{
+    platformSetSheetRect(rect);
+}
+
 void WebInspectorProxy::startWindowDrag()
 {
     platformStartWindowDrag();
@@ -382,7 +400,7 @@ void WebInspectorProxy::createFrontendPage()
     if (!m_inspectorPage)
         return;
 
-    trackInspectorPage(m_inspectorPage);
+    trackInspectorPage(m_inspectorPage, m_inspectedPage);
 
     m_inspectorPage->process().addMessageReceiver(Messages::WebInspectorProxy::messageReceiverName(), m_inspectedPage->pageID(), *this);
     m_inspectorPage->process().assumeReadAccessToBaseURL(*m_inspectorPage, WebInspectorProxy::inspectorBaseURL());
@@ -591,7 +609,7 @@ bool WebInspectorProxy::shouldOpenAttached()
 
 // Unsupported configurations can use the stubs provided here.
 
-#if PLATFORM(IOS_FAMILY) || (PLATFORM(MAC) && !WK_API_ENABLED)
+#if PLATFORM(IOS_FAMILY)
 
 WebPageProxy* WebInspectorProxy::platformCreateFrontendPage()
 {
@@ -615,6 +633,11 @@ void WebInspectorProxy::platformDidCloseForCrash()
 }
 
 void WebInspectorProxy::platformInvalidate()
+{
+    notImplemented();
+}
+
+void WebInspectorProxy::platformResetState()
 {
     notImplemented();
 }
@@ -687,6 +710,11 @@ void WebInspectorProxy::platformSetAttachedWindowHeight(unsigned)
     notImplemented();
 }
 
+void WebInspectorProxy::platformSetSheetRect(const FloatRect&)
+{
+    notImplemented();
+}
+
 void WebInspectorProxy::platformStartWindowDrag()
 {
     notImplemented();
@@ -720,6 +748,6 @@ void WebInspectorProxy::platformAttachAvailabilityChanged(bool)
     notImplemented();
 }
 
-#endif // PLATFORM(IOS_FAMILY) || (PLATFORM(MAC) && !WK_API_ENABLED)
+#endif // PLATFORM(IOS_FAMILY)
 
 } // namespace WebKit
