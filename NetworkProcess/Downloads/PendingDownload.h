@@ -49,9 +49,6 @@ public:
     PendingDownload(std::unique_ptr<NetworkLoad>&&, DownloadID, const WebCore::ResourceRequest&, const WebCore::ResourceResponse&);
 
     void continueWillSendRequest(WebCore::ResourceRequest&&);
-#if USE(PROTECTION_SPACE_AUTH_CALLBACK)
-    void continueCanAuthenticateAgainstProtectionSpace(bool canAuthenticate);
-#endif
     void cancel();
 
 private:    
@@ -61,6 +58,7 @@ private:
     void canAuthenticateAgainstProtectionSpaceAsync(const WebCore::ProtectionSpace&) override;
 #endif
     bool isSynchronous() const override { return false; }
+    bool isAllowedToAskUserForCredentials() const final { return m_isAllowedToAskUserForCredentials; }
     void willSendRedirectedRequest(WebCore::ResourceRequest&&, WebCore::ResourceRequest&& redirectRequest, WebCore::ResourceResponse&& redirectResponse) override;
     ShouldContinueDidReceiveResponse didReceiveResponse(WebCore::ResourceResponse&&) override { return ShouldContinueDidReceiveResponse::No; };
     void didReceiveBuffer(Ref<WebCore::SharedBuffer>&&, int reportedEncodedDataLength) override { };
@@ -73,6 +71,7 @@ private:
 
 private:
     std::unique_ptr<NetworkLoad> m_networkLoad;
+    bool m_isAllowedToAskUserForCredentials;
 };
 
 }

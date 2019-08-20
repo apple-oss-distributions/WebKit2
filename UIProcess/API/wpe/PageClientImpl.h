@@ -83,7 +83,7 @@ private:
 
     RefPtr<WebPopupMenuProxy> createPopupMenuProxy(WebPageProxy&) override;
 #if ENABLE(CONTEXT_MENUS)
-    RefPtr<WebContextMenuProxy> createContextMenuProxy(WebPageProxy&, const ContextMenuContextData&, const UserData&) override;
+    Ref<WebContextMenuProxy> createContextMenuProxy(WebPageProxy&, ContextMenuContextData&&, const UserData&) override;
 #endif
 
     void enterAcceleratedCompositingMode(const LayerTreeContext&) override;
@@ -105,19 +105,19 @@ private:
     void didSameDocumentNavigationForMainFrame(SameDocumentNavigationType) override;
 
     void didChangeBackgroundColor() override;
+    void isPlayingAudioWillChange() final { }
+    void isPlayingAudioDidChange() final { }
 
     void refView() override;
     void derefView() override;
 
-#if ENABLE(VIDEO)
+#if ENABLE(VIDEO) && USE(GSTREAMER)
     bool decidePolicyForInstallMissingMediaPluginsPermissionRequest(InstallMissingMediaPluginsPermissionRequest&) override;
 #endif
 
     void didRestoreScrollPosition() override;
 
     WebCore::UserInterfaceLayoutDirection userInterfaceLayoutDirection() override;
-
-    void didChangeAvoidsUnsafeArea(bool) override { }
 
     JSGlobalContextRef javascriptGlobalContext() override;
 
