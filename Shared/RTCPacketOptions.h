@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2017 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,30 +23,28 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#import <WebKit/WKFoundation.h>
+#pragma once
 
-#if WK_API_ENABLED
+#if USE(LIBWEBRTC)
 
-typedef NS_ENUM(NSInteger, _WKWebsiteAutoplayPolicy) {
-    _WKWebsiteAutoplayPolicyDefault,
-    _WKWebsiteAutoplayPolicyAllow,
-    _WKWebsiteAutoplayPolicyAllowWithoutSound,
-    _WKWebsiteAutoplayPolicyDeny
-} WK_API_AVAILABLE(macosx(WK_MAC_TBA), ios(WK_IOS_TBA));
+#include <WebCore/LibWebRTCMacros.h>
+#include <webrtc/base/asyncpacketsocket.h>
+#include <wtf/Optional.h>
 
-typedef NS_OPTIONS(NSUInteger, _WKWebsiteAutoplayQuirk) {
-    _WKWebsiteAutoplayQuirkSynthesizedPauseEvents = 1 << 0,
-    _WKWebsiteAutoplayQuirkInheritedUserGestures = 1 << 1,
-    _WKWebsiteAutoplayQuirkArbitraryUserGestures = 1 << 2,
-} WK_API_AVAILABLE(macosx(WK_MAC_TBA), ios(WK_IOS_TBA));
+namespace IPC {
+class Decoder;
+class Encoder;
+}
 
-WK_CLASS_AVAILABLE(macosx(10.12.3), ios(10.3))
-@interface _WKWebsitePolicies : NSObject
+namespace WebKit {
 
-@property (nonatomic) BOOL contentBlockersEnabled;
-@property (nonatomic) _WKWebsiteAutoplayQuirk allowedAutoplayQuirks WK_API_AVAILABLE(macosx(WK_MAC_TBA), ios(WK_IOS_TBA));
-@property (nonatomic) _WKWebsiteAutoplayPolicy autoplayPolicy WK_API_AVAILABLE(macosx(WK_MAC_TBA), ios(WK_IOS_TBA));
+struct RTCPacketOptions {
+    void encode(IPC::Encoder&) const;
+    static bool decode(IPC::Decoder&, RTCPacketOptions&);
 
-@end
+    rtc::PacketOptions options;
+};
 
-#endif // WK_API_ENABLED
+}
+
+#endif // USE(LIBWEBRTC)
