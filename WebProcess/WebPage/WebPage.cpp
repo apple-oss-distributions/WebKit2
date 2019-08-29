@@ -416,8 +416,6 @@ WebPage::WebPage(PageIdentifier pageID, WebPageCreationParameters&& parameters)
     , m_deviceOrientation(parameters.deviceOrientation)
     , m_keyboardIsAttached(parameters.keyboardIsAttached)
     , m_canShowWhileLocked(parameters.canShowWhileLocked)
-    , m_doubleTapForDoubleClickDelay(parameters.doubleTapForDoubleClickDelay)
-    , m_doubleTapForDoubleClickRadius(parameters.doubleTapForDoubleClickRadius)
 #endif
     , m_layerVolatilityTimer(*this, &WebPage::layerVolatilityTimerFired)
     , m_activityState(parameters.activityState)
@@ -430,6 +428,9 @@ WebPage::WebPage(PageIdentifier pageID, WebPageCreationParameters&& parameters)
 #endif
 #if ENABLE(VIEWPORT_RESIZING)
     , m_shrinkToFitContentTimer(*this, &WebPage::shrinkToFitContentTimerFired, 0_s)
+#endif
+#if ENABLE(TEXT_AUTOSIZING)
+    , m_textAutoSizingAdjustmentTimer(*this, &WebPage::textAutoSizingAdjustmentTimerFired)
 #endif
 {
     ASSERT(m_pageID);
@@ -1400,6 +1401,10 @@ void WebPage::close()
 
 #if ENABLE(VIEWPORT_RESIZING)
     m_shrinkToFitContentTimer.stop();
+#endif
+
+#if ENABLE(TEXT_AUTOSIZING)
+    m_textAutoSizingAdjustmentTimer.stop();
 #endif
 
 #if ENABLE(CONTEXT_MENUS)
@@ -2886,21 +2891,10 @@ static bool handleTouchEvent(const WebTouchEvent& touchEvent, Page* page)
 void WebPage::dispatchTouchEvent(const WebTouchEvent& touchEvent, bool& handled)
 {
     SetForScope<bool> userIsInteractingChange { m_userIsInteracting, true };
-
-    auto oldFocusedFrame = makeRefPtr(m_page->focusController().focusedFrame());
-    auto oldFocusedElement = makeRefPtr(oldFocusedFrame ? oldFocusedFrame->document()->focusedElement() : nullptr);
-
     m_lastInteractionLocation = touchEvent.position();
     CurrentEvent currentEvent(touchEvent);
     handled = handleTouchEvent(touchEvent, m_page.get());
     updatePotentialTapSecurityOrigin(touchEvent, handled);
-
-    if (handled && oldFocusedElement) {
-        auto newFocusedFrame = makeRefPtr(m_page->focusController().focusedFrame());
-        auto newFocusedElement = makeRefPtr(newFocusedFrame ? newFocusedFrame->document()->focusedElement() : nullptr);
-        if (oldFocusedElement == newFocusedElement && isTransparentOrFullyClipped(*newFocusedElement))
-            elementDidRefocus(*newFocusedElement);
-    }
 }
 
 void WebPage::touchEventSync(const WebTouchEvent& touchEvent, CompletionHandler<void(bool)>&& reply)
@@ -5475,6 +5469,7 @@ static bool isTextFormControlOrEditableContent(const WebCore::Element& element)
 void WebPage::elementDidFocus(WebCore::Element& element)
 {
     if (!shouldDispatchUpdateAfterFocusingElement(element)) {
+        updateInputContextAfterBlurringAndRefocusingElementIfNeeded(element);
         m_focusedElement = &element;
         m_recentlyBlurredElement = nullptr;
         return;
@@ -5482,6 +5477,7 @@ void WebPage::elementDidFocus(WebCore::Element& element)
 
     if (is<HTMLSelectElement>(element) || isTextFormControlOrEditableContent(element)) {
         m_focusedElement = &element;
+        m_hasPendingInputContextUpdateAfterBlurringAndRefocusingElement = false;
 
 #if PLATFORM(IOS_FAMILY)
 
@@ -5523,6 +5519,7 @@ void WebPage::elementDidBlur(WebCore::Element& element)
             }
             protectedThis->m_recentlyBlurredElement = nullptr;
         });
+        m_hasPendingInputContextUpdateAfterBlurringAndRefocusingElement = false;
     }
 }
 
@@ -5797,6 +5794,10 @@ void WebPage::didCommitLoad(WebFrame* frame)
 
 #if ENABLE(VIEWPORT_RESIZING)
     m_shrinkToFitContentTimer.stop();
+#endif
+
+#if ENABLE(TEXT_AUTOSIZING)
+    m_textAutoSizingAdjustmentTimer.stop();
 #endif
 
 #if ENABLE(PRIMARY_SNAPSHOTTED_PLUGIN_HEURISTIC)
@@ -6697,6 +6698,10 @@ WebCore::IntRect WebPage::rectForElementAtInteractionLocation() const
     return { };
 }
 
+void WebPage::updateInputContextAfterBlurringAndRefocusingElementIfNeeded(Element&)
+{
+}
+
 #endif // !PLATFORM(IOS_FAMILY)
 
 static IntRect elementRectInRootViewCoordinates(const Element& element, const Frame& frame)
@@ -6806,6 +6811,13 @@ void WebPage::didFinishLoadingImageForElement(WebCore::HTMLImageElement&)
 {
 }
 
+#endif
+
+#if ENABLE(TEXT_AUTOSIZING)
+void WebPage::textAutoSizingAdjustmentTimerFired()
+{
+    m_page->recomputeTextAutoSizingInAllFrames();
+}
 #endif
 
 } // namespace WebKit

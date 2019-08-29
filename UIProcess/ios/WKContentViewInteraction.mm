@@ -699,16 +699,6 @@ static inline bool hasFocusedElement(WebKit::FocusedElementInformation focusedEl
     [self addGestureRecognizer:_longPressGestureRecognizer.get()];
 }
 
-- (void)_ensureNonBlockingDoubleTapGestureRecognizer
-{
-    if (_nonBlockingDoubleTapGestureRecognizer)
-        return;
-    _nonBlockingDoubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_nonBlockingDoubleTapRecognized:)]);
-    [_nonBlockingDoubleTapGestureRecognizer setNumberOfTapsRequired:2];
-    [_nonBlockingDoubleTapGestureRecognizer setDelegate:self];
-    [_nonBlockingDoubleTapGestureRecognizer setEnabled:NO];
-}
-
 - (void)setupInteraction
 {
     // If the page is not valid yet then delay interaction setup until the process is launched/relaunched.
@@ -755,8 +745,16 @@ static inline bool hasFocusedElement(WebKit::FocusedElementInformation focusedEl
 #endif
     [self addGestureRecognizer:_singleTapGestureRecognizer.get()];
 
-    [self _ensureNonBlockingDoubleTapGestureRecognizer];
+    _nonBlockingDoubleTapGestureRecognizer = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_nonBlockingDoubleTapRecognized:)]);
+    [_nonBlockingDoubleTapGestureRecognizer setNumberOfTapsRequired:2];
+    [_nonBlockingDoubleTapGestureRecognizer setDelegate:self];
+    [_nonBlockingDoubleTapGestureRecognizer setEnabled:NO];
     [self addGestureRecognizer:_nonBlockingDoubleTapGestureRecognizer.get()];
+
+    _doubleTapGestureRecognizerForDoubleClick = adoptNS([[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_doubleTapRecognizedForDoubleClick:)]);
+    [_doubleTapGestureRecognizerForDoubleClick setNumberOfTapsRequired:2];
+    [_doubleTapGestureRecognizerForDoubleClick setDelegate:self];
+    [self addGestureRecognizer:_doubleTapGestureRecognizerForDoubleClick.get()];
 
     [self _createAndConfigureDoubleTapGestureRecognizer];
 
@@ -904,6 +902,9 @@ static inline bool hasFocusedElement(WebKit::FocusedElementInformation focusedEl
     [_nonBlockingDoubleTapGestureRecognizer setDelegate:nil];
     [self removeGestureRecognizer:_nonBlockingDoubleTapGestureRecognizer.get()];
 
+    [_doubleTapGestureRecognizerForDoubleClick setDelegate:nil];
+    [self removeGestureRecognizer:_doubleTapGestureRecognizerForDoubleClick.get()];
+
     [_twoFingerDoubleTapGestureRecognizer setDelegate:nil];
     [self removeGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
 
@@ -980,6 +981,7 @@ static inline bool hasFocusedElement(WebKit::FocusedElementInformation focusedEl
     [self removeGestureRecognizer:_highlightLongPressGestureRecognizer.get()];
     [self removeGestureRecognizer:_doubleTapGestureRecognizer.get()];
     [self removeGestureRecognizer:_nonBlockingDoubleTapGestureRecognizer.get()];
+    [self removeGestureRecognizer:_doubleTapGestureRecognizerForDoubleClick.get()];
     [self removeGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
     [self removeGestureRecognizer:_twoFingerSingleTapGestureRecognizer.get()];
     [self removeGestureRecognizer:_stylusSingleTapGestureRecognizer.get()];
@@ -999,6 +1001,7 @@ static inline bool hasFocusedElement(WebKit::FocusedElementInformation focusedEl
     [self addGestureRecognizer:_highlightLongPressGestureRecognizer.get()];
     [self addGestureRecognizer:_doubleTapGestureRecognizer.get()];
     [self addGestureRecognizer:_nonBlockingDoubleTapGestureRecognizer.get()];
+    [self addGestureRecognizer:_doubleTapGestureRecognizerForDoubleClick.get()];
     [self addGestureRecognizer:_twoFingerDoubleTapGestureRecognizer.get()];
     [self addGestureRecognizer:_twoFingerSingleTapGestureRecognizer.get()];
     [self addGestureRecognizer:_stylusSingleTapGestureRecognizer.get()];
@@ -1901,6 +1904,12 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     if (isSamePair(gestureRecognizer, otherGestureRecognizer, _highlightLongPressGestureRecognizer.get(), _previewGestureRecognizer.get()))
         return YES;
 
+    if (isSamePair(gestureRecognizer, otherGestureRecognizer, _nonBlockingDoubleTapGestureRecognizer.get(), _doubleTapGestureRecognizerForDoubleClick.get()))
+        return YES;
+
+    if (isSamePair(gestureRecognizer, otherGestureRecognizer, _doubleTapGestureRecognizer.get(), _doubleTapGestureRecognizerForDoubleClick.get()))
+        return YES;
+
     return NO;
 }
 
@@ -2090,9 +2099,25 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     if (gestureRecognizer == _stylusSingleTapGestureRecognizer)
         return _webView._stylusTapGestureShouldCreateEditableImage;
 
+    if (gestureRecognizer == _singleTapGestureRecognizer) {
+        UIScrollView *mainScroller = _webView.scrollView;
+        UIView *view = [_singleTapGestureRecognizer lastTouchedScrollView] ?: mainScroller;
+        while (view) {
+            if ([view isKindOfClass:UIScrollView.class] && [(UIScrollView *)view _isInterruptingDeceleration])
+                return NO;
+
+            if (mainScroller == view)
+                break;
+
+            view = view.superview;
+        }
+        return YES;
+    }
+
     if (gestureRecognizer == _highlightLongPressGestureRecognizer
         || gestureRecognizer == _doubleTapGestureRecognizer
         || gestureRecognizer == _nonBlockingDoubleTapGestureRecognizer
+        || gestureRecognizer == _doubleTapGestureRecognizerForDoubleClick
         || gestureRecognizer == _twoFingerDoubleTapGestureRecognizer) {
 
         if (hasFocusedElement(_focusedElementInformation)) {
@@ -2234,9 +2259,31 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     if (_suppressSelectionAssistantReasons)
         return NO;
     
-    // Don't allow double tap text gestures in noneditable content.
-    if (!self.isFocusingElement && gesture == UIWKGestureDoubleTap)
-        return NO;
+    if (!self.isFocusingElement) {
+        if (gesture == UIWKGestureDoubleTap) {
+            // Don't allow double tap text gestures in noneditable content.
+            return NO;
+        }
+
+        if (gesture == UIWKGestureOneFingerTap) {
+            ASSERT(_suppressNonEditableSingleTapTextInteractionCount >= 0);
+            if (_suppressNonEditableSingleTapTextInteractionCount > 0)
+                return NO;
+
+            switch ([_textSelectionAssistant loupeGesture].state) {
+            case UIGestureRecognizerStateBegan:
+            case UIGestureRecognizerStateChanged:
+            case UIGestureRecognizerStateEnded: {
+                // Avoid handling one-finger taps while the web process is processing certain selection changes.
+                // This works around a scenario where UIKeyboardImpl blocks the main thread while handling a one-
+                // finger tap, which subsequently prevents the UI process from handling any incoming IPC messages.
+                return NO;
+            }
+            default:
+                break;
+            }
+        }
+    }
 
     WebKit::InteractionInformationRequest request(WebCore::roundedIntPoint(point));
     if (![self ensurePositionInformationIsUpToDate:request])
@@ -2329,6 +2376,11 @@ static inline bool isSamePair(UIGestureRecognizer *a, UIGestureRecognizer *b, UI
     default:
         break;
     }
+}
+
+- (void)_doubleTapRecognizedForDoubleClick:(UITapGestureRecognizer *)gestureRecognizer
+{
+    _page->handleDoubleTapForDoubleClickAtPoint(WebCore::IntPoint(gestureRecognizer.location), WebKit::webEventModifierFlags(gestureRecognizerModifierFlags(gestureRecognizer)), _layerTreeTransactionIdAtLastTouchStart);
 }
 
 - (void)_twoFingerSingleTapGestureRecognized:(UITapGestureRecognizer *)gestureRecognizer
@@ -3745,12 +3797,14 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
 - (void)selectTextWithGranularity:(UITextGranularity)granularity atPoint:(CGPoint)point completionHandler:(void (^)(void))completionHandler
 {
     _usingGestureForSelection = YES;
+    ++_suppressNonEditableSingleTapTextInteractionCount;
     UIWKSelectionCompletionHandler selectionHandler = [completionHandler copy];
     RetainPtr<WKContentView> view = self;
 
     _page->selectTextWithGranularityAtPoint(WebCore::IntPoint(point), toWKTextGranularity(granularity), [self _isInteractingWithFocusedElement], [view, selectionHandler](WebKit::CallbackBase::Error error) {
         selectionHandler();
         view->_usingGestureForSelection = NO;
+        --view->_suppressNonEditableSingleTapTextInteractionCount;
         [selectionHandler release];
     });
 }
@@ -3779,9 +3833,11 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
 {
     UIWKSelectionWithDirectionCompletionHandler selectionHandler = [completionHandler copy];
     
-    _page->updateSelectionWithExtentPointAndBoundary(WebCore::IntPoint(point), toWKTextGranularity(granularity), [self _isInteractingWithFocusedElement], [selectionHandler](bool endIsMoving, WebKit::CallbackBase::Error error) {
+    ++_suppressNonEditableSingleTapTextInteractionCount;
+    _page->updateSelectionWithExtentPointAndBoundary(WebCore::IntPoint(point), toWKTextGranularity(granularity), [self _isInteractingWithFocusedElement], [selectionHandler, protectedSelf = retainPtr(self)] (bool endIsMoving, WebKit::CallbackBase::Error error) {
         selectionHandler(endIsMoving);
         [selectionHandler release];
+        --protectedSelf->_suppressNonEditableSingleTapTextInteractionCount;
     });
 }
 
@@ -3914,10 +3970,24 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
 
 - (void)_didStartProvisionalLoadForMainFrame
 {
-    // We need to disable the double-tap gesture recognizers that are enabled for double-tap-to-zoom and which
+    // Reset the double tap gesture recognizer to prevent any double click that is in the process of being recognized.
+    [_doubleTapGestureRecognizerForDoubleClick setEnabled:NO];
+    [_doubleTapGestureRecognizerForDoubleClick setEnabled:YES];
+    // We also need to disable the double-tap gesture recognizers that are enabled for double-tap-to-zoom and which
     // are enabled when a single tap is first recognized. This avoids tests running in sequence and simulating taps
     // in the same location to trigger double-tap recognition.
     [self _setDoubleTapGesturesEnabled:NO];
+}
+
+- (void)_didCommitLoadForMainFrame
+{
+#if USE(UIKIT_KEYBOARD_ADDITIONS)
+    _seenHardwareKeyDownInNonEditableElement = NO;
+#endif
+    [self _elementDidBlur];
+    [self _cancelLongPressGestureRecognizer];
+    [self _hideContextMenuHintContainer];
+    [_webView _didCommitLoadForMainFrame];
 }
 
 #if !USE(UIKIT_KEYBOARD_ADDITIONS)
@@ -3972,28 +4042,6 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
     [_doubleTapGestureRecognizer setEnabled:enabled];
     [_nonBlockingDoubleTapGestureRecognizer setEnabled:!enabled];
     [self _resetIsDoubleTapPending];
-}
-
-- (double)_doubleTapForDoubleClickDelay
-{
-    static double doubleTapForDoubleClickDelay = 350;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        [self _ensureNonBlockingDoubleTapGestureRecognizer];
-        doubleTapForDoubleClickDelay = [_nonBlockingDoubleTapGestureRecognizer maximumIntervalBetweenSuccessiveTaps];
-    });
-    return doubleTapForDoubleClickDelay;
-}
-
-- (float)_doubleTapForDoubleClickRadius
-{
-    static float doubleTapForDoubleClickRadius = 45;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        [self _ensureNonBlockingDoubleTapGestureRecognizer];
-        doubleTapForDoubleClickRadius = [_nonBlockingDoubleTapGestureRecognizer allowableMovement];
-    });
-    return doubleTapForDoubleClickRadius;
 }
 
 // MARK: UIWebFormAccessoryDelegate protocol and accessory methods
@@ -4317,6 +4365,9 @@ static WebKit::WritingDirection coreWritingDirection(NSWritingDirection directio
 
 - (void)setBaseWritingDirection:(NSWritingDirection)direction forRange:(UITextRange *)range
 {
+    if (!_page->isEditable())
+        return;
+
     if (range && ![range isEqual:self.selectedTextRange]) {
         // We currently only support changing the base writing direction at the selection.
         return;
@@ -5416,6 +5467,13 @@ static RetainPtr<NSObject <WKFormPeripheral>> createInputPeripheralWithView(WebK
     _inputPeripheral = nil;
     _focusRequiresStrongPasswordAssistance = NO;
 
+#if USE(UIKIT_KEYBOARD_ADDITIONS)
+    // When defocusing an editable element reset a seen keydown before calling -_hideKeyboard so that we
+    // re-evaluate whether we still need a keyboard when UIKit calls us back in -_requiresKeyboardWhenFirstResponder.
+    if (editableChanged)
+        _seenHardwareKeyDownInNonEditableElement = NO;
+#endif
+
     [self _hideKeyboard];
 
 #if PLATFORM(WATCHOS)
@@ -5434,6 +5492,14 @@ static RetainPtr<NSObject <WKFormPeripheral>> createInputPeripheralWithView(WebK
 
     if (!_isChangingFocus)
         _didAccessoryTabInitiateFocus = NO;
+}
+
+- (void)_updateInputContextAfterBlurringAndRefocusingElement
+{
+    if (!hasFocusedElement(_focusedElementInformation) || !_suppressSelectionAssistantReasons)
+        return;
+
+    [UIKeyboardImpl.activeInstance updateForChangedSelection];
 }
 
 - (BOOL)shouldIgnoreKeyboardWillHideNotification
@@ -6808,6 +6874,11 @@ static NSArray<NSItemProvider *> *extractItemProvidersFromDropSession(id <UIDrop
     return nil;
 }
 
+- (BOOL)supportsImagePaste
+{
+    return mayContainSelectableText(_focusedElementInformation.elementType);
+}
+
 #if HAVE(UI_WK_DOCUMENT_CONTEXT)
 
 static inline OptionSet<WebKit::DocumentEditingContextRequest::Options> toWebDocumentRequestOptions(UIWKDocumentRequestFlags flags)
@@ -7897,6 +7968,9 @@ static UIMenu *menuWithShowLinkPreviewAction(UIMenu *originalMenu)
 
 - (void)continueContextMenuInteraction:(void(^)(UIContextMenuConfiguration *))continueWithContextMenuConfiguration
 {
+    if (!self.window)
+        return continueWithContextMenuConfiguration(nil);
+
     if (!_positionInformation.touchCalloutEnabled)
         return continueWithContextMenuConfiguration(nil);
 
@@ -8121,8 +8195,7 @@ static RetainPtr<UITargetedPreview> createTargetedPreview(UIImage *image, UIView
     else
         parameters = adoptNS([[UIPreviewParameters alloc] init]);
 
-    if (backgroundColor)
-        [parameters setBackgroundColor:backgroundColor];
+    [parameters setBackgroundColor:(backgroundColor ?: [UIColor clearColor])];
 
     CGPoint centerInContainerCoordinates = { CGRectGetMidX(frameInContainerCoordinates), CGRectGetMidY(frameInContainerCoordinates) };
     auto target = adoptNS([[UIPreviewTarget alloc] initWithContainer:previewContainer center:centerInContainerCoordinates]);
@@ -8331,7 +8404,7 @@ static RetainPtr<UITargetedPreview> createFallbackTargetedPreview(UIView *rootVi
 
     // FIXME: This delegate is being called more than once by UIKit. <rdar://problem/51550291>
     // This conditional avoids the WKUIDelegate being called twice too.
-    if (!_contextMenuElementInfo) {
+    if (_contextMenuElementInfo) {
         auto uiDelegate = static_cast<id<WKUIDelegatePrivate>>(_webView.UIDelegate);
         if ([uiDelegate respondsToSelector:@selector(webView:contextMenuDidEndForElement:)])
             [uiDelegate webView:_webView contextMenuDidEndForElement:_contextMenuElementInfo.get()];

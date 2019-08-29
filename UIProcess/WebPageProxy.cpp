@@ -888,6 +888,12 @@ RefPtr<API::Navigation> WebPageProxy::launchProcessForReload()
 
     auto navigation = m_navigationState->createReloadNavigation();
 
+    String url = currentURL();
+    if (!url.isEmpty()) {
+        auto transaction = m_pageLoadState.transaction();
+        m_pageLoadState.setPendingAPIRequest(transaction, { navigation->navigationID(), url });
+    }
+
     // We allow stale content when reloading a WebProcess that's been killed or crashed.
     m_process->send(Messages::WebPage::GoToBackForwardItem(navigation->navigationID(), m_backForwardList->currentItem()->itemID(), FrameLoadType::IndexedBackForward, ShouldTreatAsContinuingLoad::No, WTF::nullopt), m_pageID);
     m_process->responsivenessTimer().start();
@@ -1059,6 +1065,12 @@ void WebPageProxy::maybeInitializeSandboxExtensionHandle(WebProcessProxy& proces
     // Inspector resources are in a directory with assumed access.
     ASSERT_WITH_SECURITY_IMPLICATION(!WebKit::isInspectorPage(*this));
 
+#if HAVE(SANDBOX_ISSUE_READ_EXTENSION_TO_PROCESS_BY_PID)
+    if (SandboxExtension::createHandleForReadByPid("/", process.processIdentifier(), sandboxExtensionHandle)) {
+        willAcquireUniversalFileReadSandboxExtension(process);
+        return;
+    }
+#endif
     if (SandboxExtension::createHandle("/", SandboxExtension::Type::ReadOnly, sandboxExtensionHandle)) {
         willAcquireUniversalFileReadSandboxExtension(process);
         return;
@@ -1115,7 +1127,7 @@ void WebPageProxy::loadRequestWithNavigationShared(Ref<WebProcessProxy>&& proces
 
     auto url = request.url();
     if (shouldTreatAsContinuingLoad != ShouldTreatAsContinuingLoad::Yes)
-        m_pageLoadState.setPendingAPIRequestURL(transaction, url);
+        m_pageLoadState.setPendingAPIRequest(transaction, { navigation.navigationID(), url });
 
     LoadParameters loadParameters;
     loadParameters.navigationID = navigation.navigationID();
@@ -1168,7 +1180,7 @@ RefPtr<API::Navigation> WebPageProxy::loadFile(const String& fileURLString, cons
 
     auto transaction = m_pageLoadState.transaction();
 
-    m_pageLoadState.setPendingAPIRequestURL(transaction, fileURLString, resourceDirectoryURL);
+    m_pageLoadState.setPendingAPIRequest(transaction, { navigation->navigationID(), fileURLString }, resourceDirectoryURL);
 
     String resourceDirectoryPath = resourceDirectoryURL.fileSystemPath();
 
@@ -1177,6 +1189,9 @@ RefPtr<API::Navigation> WebPageProxy::loadFile(const String& fileURLString, cons
     loadParameters.request = fileURL;
     loadParameters.shouldOpenExternalURLsPolicy = ShouldOpenExternalURLsPolicy::ShouldNotAllow;
     loadParameters.userData = UserData(process().transformObjectsToHandles(userData).get());
+#if HAVE(SANDBOX_ISSUE_READ_EXTENSION_TO_PROCESS_BY_PID)
+    if (!SandboxExtension::createHandleForReadByPid(resourceDirectoryPath, processIdentifier(), loadParameters.sandboxExtensionHandle))
+#endif
     SandboxExtension::createHandle(resourceDirectoryPath, SandboxExtension::Type::ReadOnly, loadParameters.sandboxExtensionHandle);
     addPlatformLoadParameters(loadParameters);
 
@@ -1212,7 +1227,7 @@ void WebPageProxy::loadDataWithNavigationShared(Ref<WebProcessProxy>&& process, 
 
     auto transaction = m_pageLoadState.transaction();
 
-    m_pageLoadState.setPendingAPIRequestURL(transaction, !baseURL.isEmpty() ? baseURL : WTF::blankURL().string());
+    m_pageLoadState.setPendingAPIRequest(transaction, { navigation.navigationID(), !baseURL.isEmpty() ? baseURL : WTF::blankURL().string() });
 
     LoadParameters loadParameters;
     loadParameters.navigationID = navigation.navigationID();
@@ -1251,7 +1266,7 @@ void WebPageProxy::loadAlternateHTML(const IPC::DataReference& htmlData, const S
 
     auto transaction = m_pageLoadState.transaction();
 
-    m_pageLoadState.setPendingAPIRequestURL(transaction, unreachableURL);
+    m_pageLoadState.setPendingAPIRequest(transaction, { 0, unreachableURL });
     m_pageLoadState.setUnreachableURL(transaction, unreachableURL);
 
     if (m_mainFrame)
@@ -1287,7 +1302,7 @@ void WebPageProxy::loadWebArchiveData(API::Data* webArchiveData, API::Object* us
         launchProcess({ });
 
     auto transaction = m_pageLoadState.transaction();
-    m_pageLoadState.setPendingAPIRequestURL(transaction, WTF::blankURL().string());
+    m_pageLoadState.setPendingAPIRequest(transaction, { 0, WTF::blankURL().string() });
 
     LoadParameters loadParameters;
     loadParameters.navigationID = 0;
@@ -1345,9 +1360,6 @@ RefPtr<API::Navigation> WebPageProxy::reload(OptionSet<WebCore::ReloadOption> op
 
     String url = currentURL();
     if (!url.isEmpty()) {
-        auto transaction = m_pageLoadState.transaction();
-        m_pageLoadState.setPendingAPIRequestURL(transaction, url);
-
         // We may not have an extension yet if back/forward list was reinstated after a WebProcess crash or a browser relaunch
         maybeInitializeSandboxExtensionHandle(m_process, URL(URL(), url), currentResourceDirectoryURL(), sandboxExtensionHandle);
     }
@@ -1356,6 +1368,11 @@ RefPtr<API::Navigation> WebPageProxy::reload(OptionSet<WebCore::ReloadOption> op
         return launchProcessForReload();
     
     auto navigation = m_navigationState->createReloadNavigation();
+
+    if (!url.isEmpty()) {
+        auto transaction = m_pageLoadState.transaction();
+        m_pageLoadState.setPendingAPIRequest(transaction, { navigation->navigationID(), url });
+    }
 
     // Store decision to reload without content blockers on the navigation so that we can later set the corresponding
     // WebsitePolicies flag in WebPageProxy::receivedNavigationPolicyDecision().
@@ -1424,13 +1441,12 @@ RefPtr<API::Navigation> WebPageProxy::goToBackForwardItem(WebBackForwardListItem
     if (!hasRunningProcess())
         return launchProcessWithItem(item);
 
-    auto transaction = m_pageLoadState.transaction();
-
-    m_pageLoadState.setPendingAPIRequestURL(transaction, item.url());
-
     RefPtr<API::Navigation> navigation;
     if (!m_backForwardList->currentItem()->itemIsInSameDocument(item))
         navigation = m_navigationState->createBackForwardNavigation(item, m_backForwardList->currentItem(), frameLoadType);
+
+    auto transaction = m_pageLoadState.transaction();
+    m_pageLoadState.setPendingAPIRequest(transaction, { navigation ? navigation->navigationID() : 0, item.url() });
 
     m_process->send(Messages::WebPage::GoToBackForwardItem(navigation ? navigation->navigationID() : 0, item.itemID(), frameLoadType, ShouldTreatAsContinuingLoad::No, WTF::nullopt), m_pageID);
     m_process->responsivenessTimer().start();
@@ -1711,7 +1727,7 @@ void WebPageProxy::viewDidLeaveWindow()
     closeOverlayedViews();
 #if PLATFORM(IOS_FAMILY) && HAVE(AVKIT) || (PLATFORM(MAC) && ENABLE(VIDEO_PRESENTATION_MODE))
     // When leaving the current page, close the video fullscreen.
-    if (m_videoFullscreenManager)
+    if (m_videoFullscreenManager && m_videoFullscreenManager->hasMode(WebCore::HTMLMediaElementEnums::VideoFullscreenModeStandard))
         m_videoFullscreenManager->requestHideAndExitFullscreen();
 #endif
 }
@@ -2670,8 +2686,10 @@ void WebPageProxy::handleTouchEventSynchronously(NativeWebTouchEvent& event)
     pageClient().doneWithTouchEvent(event, handled);
     m_process->responsivenessTimer().stop();
 
-    if (event.allTouchPointsAreReleased())
+    if (event.allTouchPointsAreReleased()) {
         m_touchAndPointerEventTracking.reset();
+        didReleaseAllTouchPoints();
+    }
 }
 
 void WebPageProxy::resetPotentialTapSecurityOrigin()
@@ -2693,8 +2711,10 @@ void WebPageProxy::handleTouchEventAsynchronously(const NativeWebTouchEvent& eve
 
     m_process->send(Messages::EventDispatcher::TouchEvent(m_pageID, event), 0);
 
-    if (event.allTouchPointsAreReleased())
+    if (event.allTouchPointsAreReleased()) {
         m_touchAndPointerEventTracking.reset();
+        didReleaseAllTouchPoints();
+    }
 }
 
 #elif ENABLE(TOUCH_EVENTS)
@@ -2727,8 +2747,10 @@ void WebPageProxy::handleTouchEvent(const NativeWebTouchEvent& event)
         }
     }
 
-    if (event.allTouchPointsAreReleased())
+    if (event.allTouchPointsAreReleased()) {
         m_touchAndPointerEventTracking.reset();
+        didReleaseAllTouchPoints();
+    }
 }
 #endif // ENABLE(TOUCH_EVENTS)
 
@@ -2877,8 +2899,8 @@ void WebPageProxy::receivedPolicyDecision(PolicyAction action, API::Navigation* 
 
     auto transaction = m_pageLoadState.transaction();
 
-    if (action == PolicyAction::Ignore && willContinueLoadInNewProcess == WillContinueLoadInNewProcess::No)
-        m_pageLoadState.clearPendingAPIRequestURL(transaction);
+    if (action == PolicyAction::Ignore && willContinueLoadInNewProcess == WillContinueLoadInNewProcess::No && navigation && navigation->navigationID() == m_pageLoadState.pendingAPIRequest().navigationID)
+        m_pageLoadState.clearPendingAPIRequest(transaction);
 
     DownloadID downloadID = { };
     if (action == PolicyAction::Download) {
@@ -2956,7 +2978,7 @@ void WebPageProxy::continueNavigationInNewProcess(API::Navigation& navigation, s
         LOG(Loading, "WebPageProxy %p continueNavigationInNewProcess to back item URL %s", this, item->url().utf8().data());
 
         auto transaction = m_pageLoadState.transaction();
-        m_pageLoadState.setPendingAPIRequestURL(transaction, item->url());
+        m_pageLoadState.setPendingAPIRequest(transaction, { navigation.navigationID(), item->url() });
 
         m_provisionalPage->goToBackForwardItem(navigation, *item, WTFMove(websitePolicies));
         return;
@@ -3976,7 +3998,7 @@ void WebPageProxy::didStartProvisionalLoadForFrameShared(Ref<WebProcessProxy>&& 
 
     auto transaction = m_pageLoadState.transaction();
 
-    m_pageLoadState.clearPendingAPIRequestURL(transaction);
+    m_pageLoadState.clearPendingAPIRequest(transaction);
 
     if (frame->isMainFrame()) {
         process->didStartProvisionalLoadForMainFrame(url);
@@ -4441,7 +4463,7 @@ void WebPageProxy::didSameDocumentNavigationForFrame(uint64_t frameID, uint64_t 
             automationSession->navigationOccurredForFrame(*frame);
     }
 
-    m_pageLoadState.clearPendingAPIRequestURL(transaction);
+    m_pageLoadState.clearPendingAPIRequest(transaction);
     frame->didSameDocumentNavigation(url);
 
     m_pageLoadState.commitChanges();
@@ -4625,7 +4647,7 @@ void WebPageProxy::decidePolicyForNavigationAction(Ref<WebProcessProxy>&& proces
 
     bool fromAPI = request.url() == m_pageLoadState.pendingAPIRequestURL();
     if (!fromAPI)
-        m_pageLoadState.clearPendingAPIRequestURL(transaction);
+        m_pageLoadState.clearPendingAPIRequest(transaction);
 
     if (!checkURLReceivedFromCurrentOrPreviousWebProcess(process, request.url())) {
         RELEASE_LOG_ERROR_IF_ALLOWED(Process, "Ignoring request to load this main resource because it is outside the sandbox");
@@ -4684,7 +4706,7 @@ void WebPageProxy::decidePolicyForNavigationAction(Ref<WebProcessProxy>&& proces
 
     auto listener = makeRef(frame.setUpPolicyListenerProxy([this, protectedThis = makeRef(*this), frame = makeRef(frame), sender = WTFMove(sender), navigation] (PolicyAction policyAction, API::WebsitePolicies* policies, ProcessSwapRequestedByClient processSwapRequestedByClient, RefPtr<SafeBrowsingWarning>&& safeBrowsingWarning) mutable {
 
-        auto completionHandler = [this, protectedThis = protectedThis.copyRef(), frame = frame.copyRef(), sender = WTFMove(sender), navigation = WTFMove(navigation), processSwapRequestedByClient, policies = makeRefPtr(policies)] (PolicyAction policyAction) mutable {
+        auto completionHandler = [this, protectedThis = protectedThis.copyRef(), frame = frame.copyRef(), sender = WTFMove(sender), navigation, processSwapRequestedByClient, policies = makeRefPtr(policies)] (PolicyAction policyAction) mutable {
             if (frame->isMainFrame()) {
                 if (!policies) {
                     if (auto* defaultPolicies = m_configuration->defaultWebsitePolicies())
@@ -4704,7 +4726,7 @@ void WebPageProxy::decidePolicyForNavigationAction(Ref<WebProcessProxy>&& proces
         if (safeBrowsingWarning) {
             if (frame->isMainFrame() && safeBrowsingWarning->url().isValid()) {
                 auto transaction = m_pageLoadState.transaction();
-                m_pageLoadState.setPendingAPIRequestURL(transaction, safeBrowsingWarning->url());
+                m_pageLoadState.setPendingAPIRequest(transaction, { navigation->navigationID(), safeBrowsingWarning->url() });
                 m_pageLoadState.commitChanges();
             }
 
@@ -7204,8 +7226,6 @@ WebPageCreationParameters WebPageProxy::creationParameters(WebProcessProxy& proc
     parameters.keyboardIsAttached = isInHardwareKeyboardMode();
     parameters.overrideViewportArguments = m_overrideViewportArguments;
     parameters.canShowWhileLocked = m_configuration->canShowWhileLocked();
-    parameters.doubleTapForDoubleClickDelay = pageClient().doubleTapForDoubleClickDelay();
-    parameters.doubleTapForDoubleClickRadius = pageClient().doubleTapForDoubleClickRadius();
 #endif
 
 #if PLATFORM(MAC)
@@ -7407,6 +7427,11 @@ UserMediaPermissionRequestManagerProxy& WebPageProxy::userMediaPermissionRequest
 
     m_userMediaPermissionRequestManager = std::make_unique<UserMediaPermissionRequestManagerProxy>(*this);
     return *m_userMediaPermissionRequestManager;
+}
+
+void WebPageProxy::setMockCaptureDevicesEnabledOverride(Optional<bool> enabled)
+{
+    userMediaPermissionRequestManager().setMockCaptureDevicesEnabledOverride(enabled);
 }
 #endif
 

@@ -560,6 +560,11 @@ void PageClientImpl::elementDidFocus(const FocusedElementInformation& nodeInform
     [m_contentView _elementDidFocus:nodeInformation userIsInteracting:userIsInteracting blurPreviousNode:blurPreviousNode activityStateChanges:activityStateChanges userObject:userObject];
 }
 
+void PageClientImpl::updateInputContextAfterBlurringAndRefocusingElement()
+{
+    [m_contentView _updateInputContextAfterBlurringAndRefocusingElement];
+}
+
 bool PageClientImpl::isFocusingElement()
 {
     return [m_contentView isFocusingElement];
@@ -841,16 +846,6 @@ void PageClientImpl::didChangeDragCaretRect(const IntRect& previousCaretRect, co
     [m_contentView _didChangeDragCaretRect:previousCaretRect currentRect:caretRect];
 }
 #endif
-
-Seconds PageClientImpl::doubleTapForDoubleClickDelay()
-{
-    return Seconds { [m_contentView _doubleTapForDoubleClickDelay] };
-}
-
-float PageClientImpl::doubleTapForDoubleClickRadius()
-{
-    return [m_contentView _doubleTapForDoubleClickRadius];
-}
 
 #if USE(QUICK_LOOK)
 void PageClientImpl::requestPasswordForQuickLookDocument(const String& fileName, WTF::Function<void(const String&)>&& completionHandler)

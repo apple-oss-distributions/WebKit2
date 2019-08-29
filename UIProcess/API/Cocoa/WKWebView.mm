@@ -690,6 +690,11 @@ static void validate(WKWebViewConfiguration *configuration)
     [_scrollView setInternalDelegate:self];
     [_scrollView setBouncesZoom:YES];
 
+    if ([_scrollView respondsToSelector:@selector(_setAvoidsJumpOnInterruptedBounce:)]) {
+        [_scrollView setTracksImmediatelyWhileDecelerating:NO];
+        [_scrollView _setAvoidsJumpOnInterruptedBounce:YES];
+    }
+
     if ([_configuration _editableImagesEnabled])
         [_scrollView panGestureRecognizer].allowedTouchTypes = @[ @(UITouchTypeDirect) ];
 
@@ -707,7 +712,7 @@ static void validate(WKWebViewConfiguration *configuration)
     [self _dispatchSetDeviceOrientation:deviceOrientation()];
 
     if (!self.opaque || !pageConfiguration->drawsBackground())
-        self.opaque = NO;
+        [self _setOpaqueInternal:NO];
 
     [_contentView layer].anchorPoint = CGPointZero;
     [_contentView setFrame:bounds];
@@ -1626,6 +1631,7 @@ static CGSize roundScrollViewContentSize(const WebKit::WebPageProxy& page, CGSiz
 
         _scrollViewBackgroundColor = WebCore::Color();
         [_scrollView setContentOffset:[self _initialContentOffsetForScrollView]];
+        [_scrollView _setScrollEnabledInternal:YES];
 
         [self _setAvoidsUnsafeArea:NO];
     } else if (_customContentView) {
@@ -2571,15 +2577,11 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     _page->webViewDidMoveToWindow();
 }
 
-- (void)setOpaque:(BOOL)opaque
+- (void)_setOpaqueInternal:(BOOL)opaque
 {
-    BOOL oldOpaque = self.opaque;
-
     [super setOpaque:opaque];
-    [_contentView setOpaque:opaque];
 
-    if (oldOpaque == opaque)
-        return;
+    [_contentView setOpaque:opaque];
 
     if (!_page)
         return;
@@ -2588,7 +2590,16 @@ static WebCore::FloatPoint constrainContentOffset(WebCore::FloatPoint contentOff
     if (!opaque)
         backgroundColor = WebCore::Color(WebCore::Color::transparent);
     _page->setBackgroundColor(backgroundColor);
+
     [self _updateScrollViewBackground];
+}
+
+- (void)setOpaque:(BOOL)opaque
+{
+    if (opaque == self.opaque)
+        return;
+
+    [self _setOpaqueInternal:opaque];
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor

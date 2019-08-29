@@ -300,6 +300,7 @@ void WebPageProxy::dynamicViewportSizeUpdate(const FloatSize& viewLayoutSize, co
 
     hideValidationMessage();
 
+    m_viewportConfigurationViewLayoutSize = viewLayoutSize;
     m_process->send(Messages::WebPage::DynamicViewportSizeUpdate(viewLayoutSize,
         maximumUnobscuredSize, targetExposedContentRect, targetUnobscuredRect,
         targetUnobscuredRectInScrollViewCoordinates, unobscuredSafeAreaInsets,
@@ -838,6 +839,11 @@ void WebPageProxy::didRecognizeLongPress()
     process().send(Messages::WebPage::DidRecognizeLongPress(), m_pageID);
 }
 
+void WebPageProxy::handleDoubleTapForDoubleClickAtPoint(const WebCore::IntPoint& point, OptionSet<WebEvent::Modifier> modifiers, uint64_t layerTreeTransactionIdAtLastTouchStart)
+{
+    process().send(Messages::WebPage::HandleDoubleTapForDoubleClickAtPoint(point, modifiers, layerTreeTransactionIdAtLastTouchStart), m_pageID);
+}
+
 void WebPageProxy::inspectorNodeSearchMovedToPosition(const WebCore::FloatPoint& position)
 {
     process().send(Messages::WebPage::InspectorNodeSearchMovedToPosition(position), m_pageID);
@@ -898,8 +904,14 @@ void WebPageProxy::setIsShowingInputViewForFocusedElement(bool showingInputView)
     process().send(Messages::WebPage::SetIsShowingInputViewForFocusedElement(showingInputView), m_pageID);
 }
 
+void WebPageProxy::updateInputContextAfterBlurringAndRefocusingElement()
+{
+    pageClient().updateInputContextAfterBlurringAndRefocusingElement();
+}
+
 void WebPageProxy::elementDidFocus(const FocusedElementInformation& information, bool userIsInteracting, bool blurPreviousNode, OptionSet<WebCore::ActivityState::Flag> activityStateChanges, const UserData& userData)
 {
+    m_pendingInputModeChange = WTF::nullopt;
     m_waitingForPostLayoutEditorStateUpdateAfterFocusingElement = true;
 
     API::Object* userDataObject = process().transformHandlesToObjects(userData.object()).get();
@@ -914,6 +926,7 @@ void WebPageProxy::elementDidFocus(const FocusedElementInformation& information,
 
 void WebPageProxy::elementDidBlur()
 {
+    m_pendingInputModeChange = WTF::nullopt;
     m_waitingForPostLayoutEditorStateUpdateAfterFocusingElement = false;
     m_deferredElementDidFocusArguments = nullptr;
     pageClient().elementDidBlur();
@@ -921,7 +934,23 @@ void WebPageProxy::elementDidBlur()
 
 void WebPageProxy::focusedElementDidChangeInputMode(WebCore::InputMode mode)
 {
+#if ENABLE(TOUCH_EVENTS)
+    if (m_touchAndPointerEventTracking.isTrackingAnything()) {
+        m_pendingInputModeChange = mode;
+        return;
+    }
+#endif
+
     pageClient().focusedElementDidChangeInputMode(mode);
+}
+
+void WebPageProxy::didReleaseAllTouchPoints()
+{
+    if (!m_pendingInputModeChange)
+        return;
+
+    pageClient().focusedElementDidChangeInputMode(*m_pendingInputModeChange);
+    m_pendingInputModeChange = WTF::nullopt;
 }
 
 void WebPageProxy::autofillLoginCredentials(const String& username, const String& password)
@@ -1308,6 +1337,31 @@ static bool desktopClassBrowsingRecommendedForRequest(const WebCore::ResourceReq
 
     if (equalLettersIgnoringASCIICase(host, "trello.com") || host.endsWithIgnoringASCIICase(".trello.com"))
         return false;
+
+    if (host.containsIgnoringASCIICase("hsbc.")) {
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.au") || host.endsWithIgnoringASCIICase(".hsbc.com.au"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.eg") || host.endsWithIgnoringASCIICase(".hsbc.com.eg"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.lk") || host.endsWithIgnoringASCIICase(".hsbc.lk"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.co.uk") || host.endsWithIgnoringASCIICase(".hsbc.co.uk"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.hk") || host.endsWithIgnoringASCIICase(".hsbc.com.hk"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.mx") || host.endsWithIgnoringASCIICase(".hsbc.com.mx"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.ca") || host.endsWithIgnoringASCIICase(".hsbc.ca"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.ar") || host.endsWithIgnoringASCIICase(".hsbc.com.ar"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.ph") || host.endsWithIgnoringASCIICase(".hsbc.com.ph"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com") || host.endsWithIgnoringASCIICase(".hsbc.com"))
+            return false;
+        if (equalLettersIgnoringASCIICase(host, "hsbc.com.cn") || host.endsWithIgnoringASCIICase(".hsbc.com.cn"))
+            return false;
+    }
 
     return true;
 }
