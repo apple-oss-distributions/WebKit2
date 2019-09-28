@@ -1309,6 +1309,7 @@ private:
     void tryClose();
     void platformDidReceiveLoadParameters(const LoadParameters&);
     void loadRequest(LoadParameters&&);
+    NO_RETURN void loadRequestWaitingForPID(LoadParameters&&, URL&&, WebCore::PageIdentifier);
     void loadData(LoadParameters&&);
     void loadAlternateHTML(LoadParameters&&);
     void navigateToPDFLinkWithSimulatedClick(const String& url, WebCore::IntPoint documentPoint, WebCore::IntPoint screenPoint);

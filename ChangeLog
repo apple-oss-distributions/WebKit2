@@ -1,3 +1,274 @@
+2019-09-20  Alan Coon  <alancoon@apple.com>
+
+        Apply patch. rdar://problem/55564031
+
+    2019-09-20  Chris Dumez  <cdumez@apple.com>
+
+            Regression(r248832): Unable to quicklook HTML files in Mail
+            https://bugs.webkit.org/show_bug.cgi?id=202012
+            <rdar://problem/55285295>
+
+            Reviewed by Geoff Garen and Brent Fulgham.
+
+            r248832 inadvertently reverted the fix for Mail that landed in r247400 by not using
+            the same logic to initialize the sandbox extension if the process had already
+            finished launching or not. In particular, the new code path that happens on process
+            launch unconditionally used '/' as resource directory for the sandbox extension if
+            the client did not provide one. The logic in maybeInitializeSandboxExtensionHandle()
+            would use the file URL's base URL as resource directory when creating a sandbox
+            extension for '/' would fail (which it often does).
+
+            To address the issue, have the logic that runs on process launch call
+            maybeInitializeSandboxExtensionHandle() so avoid duplicating code and make sure
+            both cases now have the Mail fix.
+
+            * UIProcess/AuxiliaryProcessProxy.cpp:
+            (WebKit::AuxiliaryProcessProxy::didFinishLaunching):
+            * UIProcess/AuxiliaryProcessProxy.h:
+            (WebKit::AuxiliaryProcessProxy::isLaunching const):
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::maybeInitializeSandboxExtensionHandle):
+            (WebKit::WebPageProxy::loadRequestWithNavigationShared):
+            (WebKit::WebPageProxy::loadFile):
+            * UIProcess/WebPageProxy.h:
+            * WebProcess/WebPage/WebPage.messages.in:
+
+2019-09-19  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r250069. rdar://problem/55524978
+
+    Eagerly create and add the m_layerHostingView to WKWebView.
+    https://bugs.webkit.org/show_bug.cgi?id=201942
+    
+    Reviewed by Tim Horton.
+    
+    Some apps will add subviews to WKWebView, and by the time we add our m_layerHostingView view we might be
+    adding it behind a view that should have been added behind our layer hosting view subview. This affected
+    the Spark email app, due to changes in order of loading delegate calls and when compositing is enabled.
+    Instead of delayed creation of m_layerHostingView, always create it and add it to to the WKWebView.
+    This ensures proper ordering of subviews when clients add a view behind all existing subviews.
+    
+    * UIProcess/Cocoa/WebViewImpl.mm:
+    (WebKit::WebViewImpl::WebViewImpl): Create and add m_layerHostingView here.
+    (WebKit::WebViewImpl::setAcceleratedCompositingRootLayer): Remove creation and removal of m_layerHostingView.
+    Just set the sublayers of m_layerHostingView's layer here.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@250069 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-09-18  Timothy Hatcher  <timothy@apple.com>
+
+            Eagerly create and add the m_layerHostingView to WKWebView.
+            https://bugs.webkit.org/show_bug.cgi?id=201942
+
+            Reviewed by Tim Horton.
+
+            Some apps will add subviews to WKWebView, and by the time we add our m_layerHostingView view we might be
+            adding it behind a view that should have been added behind our layer hosting view subview. This affected
+            the Spark email app, due to changes in order of loading delegate calls and when compositing is enabled.
+            Instead of delayed creation of m_layerHostingView, always create it and add it to to the WKWebView.
+            This ensures proper ordering of subviews when clients add a view behind all existing subviews.
+
+            * UIProcess/Cocoa/WebViewImpl.mm:
+            (WebKit::WebViewImpl::WebViewImpl): Create and add m_layerHostingView here.
+            (WebKit::WebViewImpl::setAcceleratedCompositingRootLayer): Remove creation and removal of m_layerHostingView.
+            Just set the sublayers of m_layerHostingView's layer here.
+
+2019-09-11  Alan Coon  <alancoon@apple.com>
+
+        Apply patch. rdar://problem/55240886
+
+    2019-09-11  Chris Dumez  <cdumez@apple.com>
+
+            Nullptr crash in Page::sessionID() via WebKit::WebFrameLoaderClient::detachedFromParent2()
+            https://bugs.webkit.org/show_bug.cgi?id=201625
+
+            Reviewed by Ryosuke Niwa.
+
+            This is based on a patch from Ryosuke Niwa.
+
+            The crash was caused by WebFrameLoaderClient::sessionID() calling WebPage::sessionID() without
+            checking the nullity of WebPage::m_page which can be null. Added a null check.
+
+            Because passing a wrong session to RemoveStorageAccessForFrame could result in a leak, this patch
+            also replaces m_hasFrameSpecificStorageAccess boolean with an optioanl struct which stores
+            session ID, frame ID, and page ID even after WebCore::Frame or WebCore::Page had been cleared
+            or before WebFrameLoaderClient::m_frame is set.
+
+            * WebProcess/WebCoreSupport/WebFrameLoaderClient.cpp:
+            (WebKit::WebFrameLoaderClient::sessionID const):
+            (WebKit::WebFrameLoaderClient::setHasFrameSpecificStorageAccess):
+            (WebKit::WebFrameLoaderClient::detachedFromParent2):
+            (WebKit::WebFrameLoaderClient::dispatchWillChangeDocument):
+            * WebProcess/WebCoreSupport/WebFrameLoaderClient.h:
+            * WebProcess/WebPage/WebFrame.h:
+            (WebKit::WebFrame::frameLoaderClient const):
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::requestStorageAccess):
+
+2019-09-09  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r249649. rdar://problem/55198064
+
+    [macOS] Pid is sometimes invalid when creating sandbox extensions by pid.
+    https://bugs.webkit.org/show_bug.cgi?id=201543
+    <rdar://problem/54733465>
+    
+    Reviewed by Brent Fulgham.
+    
+    There is a race condition when starting a load of a local file, where the WebContent process has not finished
+    launching yet, and its pid is not available. When we try to create a sandbox extension by using the pid of the
+    WebContent process, it is not available in the cases where the WebContent process has just launched and has not
+    finished launching yet. This patch creates a new dummy Web page message, 'LoadRequestWaitingForPID', which will
+    be sent instead of a normal 'LoadRequest' message, and only when the WebContent process has not finished
+    launching. When the WebContent process has finished launching, and we are about to actually send the pending
+    messages, we can detect that a 'LoadRequestWaitingForPID' has been appended for sending, and replace it with a
+    normal 'LoadReqest' message where we have created the sandbox extension issue with a valid pid. The message
+    'LoadRequestWaitingForPID' is never intended to reach the WebContent process, it is just there to replace with
+    a normal 'LoadRequest' message with a new sandbox extension. In the implementation of the message handler on
+    the WebContent process side, we assert that the method is never called. This patch makes sure the ordering of
+    the Web page messages are the same, even when we modify the message.
+    
+    * UIProcess/AuxiliaryProcessProxy.cpp:
+    (WebKit::AuxiliaryProcessProxy::didFinishLaunching):
+    * UIProcess/WebPageProxy.cpp:
+    (WebKit::WebPageProxy::maybeInitializeSandboxExtensionHandle):
+    (WebKit::WebPageProxy::loadRequestWithNavigationShared):
+    (WebKit::WebPageProxy::loadFile):
+    * WebProcess/WebPage/WebPage.cpp:
+    (WebKit::WebPage::fileLoadRequest):
+    * WebProcess/WebPage/WebPage.h:
+    * WebProcess/WebPage/WebPage.messages.in:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249649 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-09-09  Per Arne Vollan  <pvollan@apple.com>
+
+            [macOS] Pid is sometimes invalid when creating sandbox extensions by pid.
+            https://bugs.webkit.org/show_bug.cgi?id=201543
+            <rdar://problem/54733465>
+
+            Reviewed by Brent Fulgham.
+
+            There is a race condition when starting a load of a local file, where the WebContent process has not finished
+            launching yet, and its pid is not available. When we try to create a sandbox extension by using the pid of the
+            WebContent process, it is not available in the cases where the WebContent process has just launched and has not
+            finished launching yet. This patch creates a new dummy Web page message, 'LoadRequestWaitingForPID', which will
+            be sent instead of a normal 'LoadRequest' message, and only when the WebContent process has not finished
+            launching. When the WebContent process has finished launching, and we are about to actually send the pending
+            messages, we can detect that a 'LoadRequestWaitingForPID' has been appended for sending, and replace it with a
+            normal 'LoadReqest' message where we have created the sandbox extension issue with a valid pid. The message
+            'LoadRequestWaitingForPID' is never intended to reach the WebContent process, it is just there to replace with
+            a normal 'LoadRequest' message with a new sandbox extension. In the implementation of the message handler on
+            the WebContent process side, we assert that the method is never called. This patch makes sure the ordering of
+            the Web page messages are the same, even when we modify the message.
+
+            * UIProcess/AuxiliaryProcessProxy.cpp:
+            (WebKit::AuxiliaryProcessProxy::didFinishLaunching):
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::maybeInitializeSandboxExtensionHandle):
+            (WebKit::WebPageProxy::loadRequestWithNavigationShared):
+            (WebKit::WebPageProxy::loadFile):
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::fileLoadRequest):
+            * WebProcess/WebPage/WebPage.h:
+            * WebProcess/WebPage/WebPage.messages.in:
+
+2019-09-09  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r249454. rdar://problem/55198064
+
+    [macOS] Unable to open local file from favorites bar
+    https://bugs.webkit.org/show_bug.cgi?id=201444
+    
+    Reviewed by Brent Fulgham.
+    
+    The sandbox extension handle should be created providing the pid of the receiving process.
+    
+    * UIProcess/WebPageProxy.cpp:
+    (WebKit::WebPageProxy::maybeInitializeSandboxExtensionHandle):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249454 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-09-03  Per Arne Vollan  <pvollan@apple.com>
+
+            [macOS] Unable to open local file from favorites bar
+            https://bugs.webkit.org/show_bug.cgi?id=201444
+
+            Reviewed by Brent Fulgham.
+
+            The sandbox extension handle should be created providing the pid of the receiving process.
+
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::maybeInitializeSandboxExtensionHandle):
+
+2019-09-04  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r249430. rdar://problem/55031098
+
+    [macOS] Correct sandbox violation in Flash plugin
+    https://bugs.webkit.org/show_bug.cgi?id=201228
+    <rdar://problem/54347503>
+    
+    Reviewed by Alex Christensen.
+    
+    * PluginProcess/mac/com.apple.WebKit.plugin-common.sb.in:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249430 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-08-28  Brent Fulgham  <bfulgham@apple.com>
+
+            [macOS] Correct sandbox violation in Flash plugin
+            https://bugs.webkit.org/show_bug.cgi?id=201228
+            <rdar://problem/54347503>
+
+            Reviewed by Alex Christensen.
+
+            * PluginProcess/mac/com.apple.WebKit.plugin-common.sb.in:
+
+2019-08-28  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r249224. rdar://problem/54819205
+
+    Null check webFrame when creating a print preview to prevent a crash.
+    https://bugs.webkit.org/show_bug.cgi?id=201237
+    <rdar://problem/51618863>
+    
+    Reviewed by Tim Horton.
+    
+    Source/WebKit:
+    
+    Move and expend a null check to keep from crashing when making a print preview.
+    
+    * UIProcess/mac/WKPrintingView.mm:
+    (-[WKPrintingView _drawPreview:]):
+    (-[WKPrintingView drawRect:]):
+    
+    Tools:
+    
+    Test to verify that if we don't have the WebPageProxy, we will not crash when making a print preview.
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/UIDelegate.mm:
+    (TEST):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@249224 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2019-08-28  Megan Gardner  <megan_gardner@apple.com>
+
+            Null check webFrame when creating a print preview to prevent a crash.
+            https://bugs.webkit.org/show_bug.cgi?id=201237
+            <rdar://problem/51618863>
+
+            Reviewed by Tim Horton.
+
+            Move and expend a null check to keep from crashing when making a print preview.
+
+            * UIProcess/mac/WKPrintingView.mm:
+            (-[WKPrintingView _drawPreview:]):
+            (-[WKPrintingView drawRect:]):
+
 2019-08-27  Alan Coon  <alancoon@apple.com>
 
         Revert r249147. rdar://problem/54751753
