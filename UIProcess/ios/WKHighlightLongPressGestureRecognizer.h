@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,36 +27,12 @@
 
 #if PLATFORM(IOS_FAMILY)
 
-#include "ArgumentCoders.h"
-#include "ShareableBitmap.h"
-#include <WebCore/IntPoint.h>
-#include <WebCore/SelectionRect.h>
-#include <WebCore/TextIndicator.h>
-#include <wtf/text/WTFString.h>
+#import "UIKitSPI.h"
 
-namespace WebKit {
+@interface WKHighlightLongPressGestureRecognizer : _UIWebHighlightLongPressGestureRecognizer
 
-struct InteractionInformationRequest {
-    WebCore::IntPoint point;
+@property (nonatomic, readonly, weak) UIScrollView *lastTouchedScrollView;
 
-    bool includeSnapshot { false };
-    bool includeLinkIndicator { false };
+@end
 
-    bool linkIndicatorShouldHaveLegacyMargins { false };
-
-    InteractionInformationRequest() { }
-    explicit InteractionInformationRequest(WebCore::IntPoint point)
-    {
-        this->point = point;
-    }
-
-    bool isValidForRequest(const InteractionInformationRequest&, int radius = 0);
-    bool isApproximatelyValidForRequest(const InteractionInformationRequest&, int radius);
-
-    void encode(IPC::Encoder&) const;
-    static bool decode(IPC::Decoder&, InteractionInformationRequest&);
-};
-
-}
-
-#endif // PLATFORM(IOS_FAMILY)
+#endif

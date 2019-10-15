@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016 Apple Inc. All rights reserved.
+ * Copyright (C) 2019 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,41 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#import "config.h"
+#import "WKHighlightLongPressGestureRecognizer.h"
 
 #if PLATFORM(IOS_FAMILY)
 
-#include "ArgumentCoders.h"
-#include "ShareableBitmap.h"
-#include <WebCore/IntPoint.h>
-#include <WebCore/SelectionRect.h>
-#include <WebCore/TextIndicator.h>
-#include <wtf/text/WTFString.h>
+#import <wtf/WeakObjCPtr.h>
 
-namespace WebKit {
-
-struct InteractionInformationRequest {
-    WebCore::IntPoint point;
-
-    bool includeSnapshot { false };
-    bool includeLinkIndicator { false };
-
-    bool linkIndicatorShouldHaveLegacyMargins { false };
-
-    InteractionInformationRequest() { }
-    explicit InteractionInformationRequest(WebCore::IntPoint point)
-    {
-        this->point = point;
-    }
-
-    bool isValidForRequest(const InteractionInformationRequest&, int radius = 0);
-    bool isApproximatelyValidForRequest(const InteractionInformationRequest&, int radius);
-
-    void encode(IPC::Encoder&) const;
-    static bool decode(IPC::Decoder&, InteractionInformationRequest&);
-};
-
+@implementation WKHighlightLongPressGestureRecognizer {
+    WeakObjCPtr<UIScrollView> _lastTouchedScrollView;
 }
+
+- (void)reset
+{
+    [super reset];
+
+    _lastTouchedScrollView = nil;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+    [super touchesBegan:touches withEvent:event];
+
+    for (UITouch *touch in touches) {
+        if ([touch.view isKindOfClass:UIScrollView.class]) {
+            _lastTouchedScrollView = (UIScrollView *)touch.view;
+            break;
+        }
+    }
+}
+
+- (UIScrollView *)lastTouchedScrollView
+{
+    return _lastTouchedScrollView.get().get();
+}
+
+@end
 
 #endif // PLATFORM(IOS_FAMILY)
