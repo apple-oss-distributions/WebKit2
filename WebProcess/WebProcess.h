@@ -62,7 +62,6 @@
 
 #if PLATFORM(IOS_FAMILY)
 #include "ProcessTaskStateObserver.h"
-OBJC_CLASS BKSProcessAssertion;
 #endif
 
 #if PLATFORM(WAYLAND) && USE(WPE_RENDERER)
@@ -531,8 +530,6 @@ private:
 #if PLATFORM(IOS_FAMILY)
     WebSQLiteDatabaseTracker m_webSQLiteDatabaseTracker;
     Ref<ProcessTaskStateObserver> m_taskStateObserver;
-    Lock m_unexpectedlyResumedUIAssertionLock;
-    RetainPtr<BKSProcessAssertion> m_unexpectedlyResumedUIAssertion;
 #endif
 
     enum PageMarkingLayersAsVolatileCounterType { };
