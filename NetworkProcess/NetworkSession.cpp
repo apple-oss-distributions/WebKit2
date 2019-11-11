@@ -130,8 +130,6 @@ void NetworkSession::invalidateAndCancel()
 void NetworkSession::setResourceLoadStatisticsEnabled(bool enable)
 {
     ASSERT(!m_isInvalidated);
-    if (auto* storageSession = networkStorageSession())
-        storageSession->setResourceLoadStatisticsEnabled(enable);
     if (!enable) {
         destroyResourceLoadStatistics();
         return;
