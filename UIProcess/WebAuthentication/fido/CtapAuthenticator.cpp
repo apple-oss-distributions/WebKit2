@@ -24,15 +24,17 @@
  */
 
 #include "config.h"
-#include "CtapHidAuthenticator.h"
+#include "CtapAuthenticator.h"
 
-#if ENABLE(WEB_AUTHN) && PLATFORM(MAC)
+#if ENABLE(WEB_AUTHN)
 
+#include "CtapDriver.h"
 #include "CtapHidDriver.h"
-#include "U2fHidAuthenticator.h"
+#include "U2fAuthenticator.h"
 #include <WebCore/DeviceRequestConverter.h>
 #include <WebCore/DeviceResponseConverter.h>
 #include <WebCore/ExceptionData.h>
+#include <WebCore/U2fCommandConstructor.h>
 #include <wtf/RunLoop.h>
 #include <wtf/text/StringConcatenateNumbers.h>
 
@@ -40,19 +42,19 @@ namespace WebKit {
 using namespace WebCore;
 using namespace fido;
 
-CtapHidAuthenticator::CtapHidAuthenticator(std::unique_ptr<CtapHidDriver>&& driver, AuthenticatorGetInfoResponse&& info)
-    : m_driver(WTFMove(driver))
+CtapAuthenticator::CtapAuthenticator(std::unique_ptr<CtapDriver>&& driver, AuthenticatorGetInfoResponse&& info)
+    : FidoAuthenticator(WTFMove(driver))
     , m_info(WTFMove(info))
 {
-    // FIXME(191520): We need a way to convert std::unique_ptr to UniqueRef.
-    ASSERT(m_driver);
 }
 
-void CtapHidAuthenticator::makeCredential()
+void CtapAuthenticator::makeCredential()
 {
     ASSERT(!m_isDowngraded);
-    auto cborCmd = encodeMakeCredenitalRequestAsCBOR(requestData().hash, requestData().creationOptions, m_info.options().userVerificationAvailability());
-    m_driver->transact(WTFMove(cborCmd), [weakThis = makeWeakPtr(*this)](Vector<uint8_t>&& data) {
+    if (processGoogleLegacyAppIdSupportExtension())
+        return;
+    auto cborCmd = encodeMakeCredenitalRequestAsCBOR(requestData().hash, WTF::get<PublicKeyCredentialCreationOptions>(requestData().options), m_info.options().userVerificationAvailability());
+    driver().transact(WTFMove(cborCmd), [weakThis = makeWeakPtr(*this)](Vector<uint8_t>&& data) {
         ASSERT(RunLoop::isMain());
         if (!weakThis)
             return;
@@ -60,9 +62,9 @@ void CtapHidAuthenticator::makeCredential()
     });
 }
 
-void CtapHidAuthenticator::continueMakeCredentialAfterResponseReceived(Vector<uint8_t>&& data) const
+void CtapAuthenticator::continueMakeCredentialAfterResponseReceived(Vector<uint8_t>&& data) const
 {
-    auto response = readCTAPMakeCredentialResponse(data, requestData().creationOptions.attestation);
+    auto response = readCTAPMakeCredentialResponse(data, WTF::get<PublicKeyCredentialCreationOptions>(requestData().options).attestation);
     if (!response) {
         auto error = getResponseCode(data);
         if (error == CtapDeviceResponseCode::kCtap2ErrCredentialExcluded)
@@ -74,11 +76,11 @@ void CtapHidAuthenticator::continueMakeCredentialAfterResponseReceived(Vector<ui
     receiveRespond(WTFMove(*response));
 }
 
-void CtapHidAuthenticator::getAssertion()
+void CtapAuthenticator::getAssertion()
 {
     ASSERT(!m_isDowngraded);
-    auto cborCmd = encodeGetAssertionRequestAsCBOR(requestData().hash, requestData().requestOptions, m_info.options().userVerificationAvailability());
-    m_driver->transact(WTFMove(cborCmd), [weakThis = makeWeakPtr(*this)](Vector<uint8_t>&& data) {
+    auto cborCmd = encodeGetAssertionRequestAsCBOR(requestData().hash, WTF::get<PublicKeyCredentialRequestOptions>(requestData().options), m_info.options().userVerificationAvailability());
+    driver().transact(WTFMove(cborCmd), [weakThis = makeWeakPtr(*this)](Vector<uint8_t>&& data) {
         ASSERT(RunLoop::isMain());
         if (!weakThis)
             return;
@@ -86,32 +88,54 @@ void CtapHidAuthenticator::getAssertion()
     });
 }
 
-void CtapHidAuthenticator::continueGetAssertionAfterResponseReceived(Vector<uint8_t>&& data)
+void CtapAuthenticator::continueGetAssertionAfterResponseReceived(Vector<uint8_t>&& data)
 {
     auto response = readCTAPGetAssertionResponse(data);
     if (!response) {
         auto error = getResponseCode(data);
         if (error != CtapDeviceResponseCode::kCtap2ErrInvalidCBOR && tryDowngrade())
             return;
+        if (error == CtapDeviceResponseCode::kCtap2ErrNoCredentials && observer())
+            observer()->authenticatorStatusUpdated(WebAuthenticationStatus::NoCredentialsFound);
         receiveRespond(ExceptionData { UnknownError, makeString("Unknown internal error. Error code: ", static_cast<uint8_t>(error)) });
         return;
     }
     receiveRespond(WTFMove(*response));
 }
 
-bool CtapHidAuthenticator::tryDowngrade()
+bool CtapAuthenticator::tryDowngrade()
 {
     if (m_info.versions().find(ProtocolVersion::kU2f) == m_info.versions().end())
         return false;
     if (!observer())
         return false;
 
+    bool isConvertible = false;
+    WTF::switchOn(requestData().options, [&](const PublicKeyCredentialCreationOptions& options) {
+        isConvertible = isConvertibleToU2fRegisterCommand(options);
+    }, [&](const PublicKeyCredentialRequestOptions& options) {
+        isConvertible = isConvertibleToU2fSignCommand(options);
+    });
+    if (!isConvertible)
+        return false;
+
     m_isDowngraded = true;
-    m_driver->setProtocol(ProtocolVersion::kU2f);
-    observer()->downgrade(this, U2fHidAuthenticator::create(WTFMove(m_driver)));
+    driver().setProtocol(ProtocolVersion::kU2f);
+    observer()->downgrade(this, U2fAuthenticator::create(releaseDriver()));
     return true;
+}
+
+// Only U2F protocol is supported for Google legacy AppID support.
+bool CtapAuthenticator::processGoogleLegacyAppIdSupportExtension()
+{
+    // AuthenticatorCoordinator::create should always set it.
+    auto& extensions = WTF::get<PublicKeyCredentialCreationOptions>(requestData().options).extensions;
+    ASSERT(!!extensions);
+    if (extensions->googleLegacyAppidSupport)
+        tryDowngrade();
+    return extensions->googleLegacyAppidSupport;
 }
 
 } // namespace WebKit
 
-#endif // ENABLE(WEB_AUTHN) && PLATFORM(MAC)
+#endif // ENABLE(WEB_AUTHN)

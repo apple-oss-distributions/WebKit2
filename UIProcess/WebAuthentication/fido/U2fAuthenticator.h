@@ -25,9 +25,9 @@
 
 #pragma once
 
-#if ENABLE(WEB_AUTHN) && PLATFORM(MAC)
+#if ENABLE(WEB_AUTHN)
 
-#include "Authenticator.h"
+#include "FidoAuthenticator.h"
 #include <wtf/RunLoop.h>
 
 namespace apdu {
@@ -36,17 +36,17 @@ class ApduResponse;
 
 namespace WebKit {
 
-class CtapHidDriver;
+class CtapDriver;
 
-class U2fHidAuthenticator final : public Authenticator {
+class U2fAuthenticator final : public FidoAuthenticator {
 public:
-    static Ref<U2fHidAuthenticator> create(std::unique_ptr<CtapHidDriver>&& driver)
+    static Ref<U2fAuthenticator> create(std::unique_ptr<CtapDriver>&& driver)
     {
-        return adoptRef(*new U2fHidAuthenticator(WTFMove(driver)));
+        return adoptRef(*new U2fAuthenticator(WTFMove(driver)));
     }
 
 private:
-    explicit U2fHidAuthenticator(std::unique_ptr<CtapHidDriver>&&);
+    explicit U2fAuthenticator(std::unique_ptr<CtapDriver>&&);
 
     void makeCredential() final;
     void checkExcludeList(size_t index);
@@ -69,8 +69,7 @@ private:
     void continueBogusCommandAfterResponseReceived(apdu::ApduResponse&&);
     void continueSignCommandAfterResponseReceived(apdu::ApduResponse&&);
 
-    std::unique_ptr<CtapHidDriver> m_driver;
-    RunLoop::Timer<U2fHidAuthenticator> m_retryTimer;
+    RunLoop::Timer<U2fAuthenticator> m_retryTimer;
     Vector<uint8_t> m_lastCommand;
     CommandType m_lastCommandType;
     size_t m_nextListIndex { 0 };
@@ -79,4 +78,4 @@ private:
 
 } // namespace WebKit
 
-#endif // ENABLE(WEB_AUTHN) && PLATFORM(MAC)
+#endif // ENABLE(WEB_AUTHN)
