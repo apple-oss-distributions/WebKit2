@@ -1,70 +1,106 @@
-2020-02-24  Alan Coon  <alancoon@apple.com>
+2020-02-26  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r257106. rdar://problem/59676872
+        Cherry-pick r257013. rdar://problem/59789394
 
-    Add fidelity.com to the desktop class quirks list
-    https://bugs.webkit.org/show_bug.cgi?id=208037
-    <rdar://problem/59480381>
+    Crash in WebPageProxy::didStartProvisionalLoadForFrameShared
+    https://bugs.webkit.org/show_bug.cgi?id=207973
     
-    Reviewed by Brent Fulgham.
+    Reviewed by Chris Dumez.
     
-    No new tests. This patch just adds a domain name to a quirks function.
+    Use RefPtr to store Frame*.
     
-    * UIProcess/ios/WebPageProxyIOS.mm:
-    (WebKit::desktopClassBrowsingRecommendedForRequest):
-        fidelity.com and its subdomains now return false.
+    * UIProcess/WebPageProxy.cpp:
+    (WebKit::WebPageProxy::didStartProvisionalLoadForFrameShared):
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@257106 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@257013 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2020-02-20  John Wilander  <wilander@apple.com>
+    2020-02-19  Ryosuke Niwa  <rniwa@webkit.org>
 
-            Add fidelity.com to the desktop class quirks list
-            https://bugs.webkit.org/show_bug.cgi?id=208037
-            <rdar://problem/59480381>
+            Crash in WebPageProxy::didStartProvisionalLoadForFrameShared
+            https://bugs.webkit.org/show_bug.cgi?id=207973
 
-            Reviewed by Brent Fulgham.
+            Reviewed by Chris Dumez.
 
-            No new tests. This patch just adds a domain name to a quirks function.
+            Use RefPtr to store Frame*.
 
-            * UIProcess/ios/WebPageProxyIOS.mm:
-            (WebKit::desktopClassBrowsingRecommendedForRequest):
-                fidelity.com and its subdomains now return false.
+            * UIProcess/WebPageProxy.cpp:
+            (WebKit::WebPageProxy::didStartProvisionalLoadForFrameShared):
 
-2020-02-24  Alan Coon  <alancoon@apple.com>
+2020-02-24  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r257103. rdar://problem/59676894
+        Cherry-pick r257089. rdar://problem/59676917
 
-    WebIDBServer resume should return early if suspend does not happen
-    https://bugs.webkit.org/show_bug.cgi?id=208027
-    <rdar://problem/59617654>
+    NetworkCache should use 4KB threshold for mmap-ed files instead of 16KB
+    https://bugs.webkit.org/show_bug.cgi?id=207882
     
-    Reviewed by Geoffrey Garen.
+    Reviewed by Alex Christensen.
     
-    We should not try releasing a lock that is not held.
+    Source/WebKit:
     
-    * NetworkProcess/IndexedDB/WebIDBServer.cpp:
-    (WebKit::WebIDBServer::resume):
+    We found that a lot of Vectors in Membuster is holding resource content. This is because we have 16KB threshold for mmap-ed files.
+    If a file is smaller than 16KB, it is copied to Vector instead. But this is costly in terms of memory. If we use mmap-ed files,
+    it becomes named-pages instead of anonymous-pages. File-backed non-dirty named-pages have a lot of benefit.
     
+    1. The application is offering a hint that pages are file-backed. This means that OS can purge them at any time since the content can be recovered
+       from the disk. This is cheaper than swapping / compressing anonymous pages since just discarding works.
+    2. The application is offering a hint that pages have spatial locality. Purging pages in one named-pages region is better compared to purging
+       the same # of anonymous pages randomly. Anonymous pages are split by malloc implementation and access pattern of pages in one VA is random. On
+       the other hand, named-pages are accessed together because it is file, and file typically has sequential locality. And recovery of named pages are
+       also cheap compared to anonymous pages since OS can prefetch pages once access happens because of sequential locality of files. This tendency makes
+       OS like purging named pages instead of anonymous pages. In WebKit use case, this works perfectly. CachedResource typically has decoded content. So
+       typically WebProcess does not access SharedBuffer after the content is decoded.
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@257103 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    This patch reduces the threshold from 16KB to page size (4KB in macOS, 16KB in iOS). This is pre-2015 behavior.
+    This offers 2.56% progression with 98% probability in Membuster.
+    
+    * NetworkProcess/cache/NetworkCacheStorage.cpp:
+    (WebKit::NetworkCache::maximumInlineBodySize):
+    (WebKit::NetworkCache::estimateRecordsSize):
+    (WebKit::NetworkCache::Storage::shouldStoreBodyAsBlob):
+    
+    LayoutTests:
+    
+    The test is assuming that 12KB file is served via non-mmap-file.
+    This assumption is flaky and broken by this change. For now, we pick smaller
+    file to meet this assumption.
+    
+    * http/tests/inspector/network/resource-sizes-disk-cache-expected.txt:
+    * http/tests/inspector/network/resource-sizes-disk-cache.html:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@257089 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2020-02-20  Sihui Liu  <sihui_liu@apple.com>
+    2020-02-20  Yusuke Suzuki  <ysuzuki@apple.com>
 
-            WebIDBServer resume should return early if suspend does not happen
-            https://bugs.webkit.org/show_bug.cgi?id=208027
-            <rdar://problem/59617654>
+            NetworkCache should use 4KB threshold for mmap-ed files instead of 16KB
+            https://bugs.webkit.org/show_bug.cgi?id=207882
 
-            Reviewed by Geoffrey Garen.
+            Reviewed by Alex Christensen.
 
-            We should not try releasing a lock that is not held.
+            We found that a lot of Vectors in Membuster is holding resource content. This is because we have 16KB threshold for mmap-ed files.
+            If a file is smaller than 16KB, it is copied to Vector instead. But this is costly in terms of memory. If we use mmap-ed files,
+            it becomes named-pages instead of anonymous-pages. File-backed non-dirty named-pages have a lot of benefit.
 
-            * NetworkProcess/IndexedDB/WebIDBServer.cpp:
-            (WebKit::WebIDBServer::resume):
+            1. The application is offering a hint that pages are file-backed. This means that OS can purge them at any time since the content can be recovered
+               from the disk. This is cheaper than swapping / compressing anonymous pages since just discarding works.
+            2. The application is offering a hint that pages have spatial locality. Purging pages in one named-pages region is better compared to purging
+               the same # of anonymous pages randomly. Anonymous pages are split by malloc implementation and access pattern of pages in one VA is random. On
+               the other hand, named-pages are accessed together because it is file, and file typically has sequential locality. And recovery of named pages are
+               also cheap compared to anonymous pages since OS can prefetch pages once access happens because of sequential locality of files. This tendency makes
+               OS like purging named pages instead of anonymous pages. In WebKit use case, this works perfectly. CachedResource typically has decoded content. So
+               typically WebProcess does not access SharedBuffer after the content is decoded.
 
-2020-02-24  Alan Coon  <alancoon@apple.com>
+            This patch reduces the threshold from 16KB to page size (4KB in macOS, 16KB in iOS). This is pre-2015 behavior.
+            This offers 2.56% progression with 98% probability in Membuster.
 
-        Cherry-pick r257077. rdar://problem/59676884
+            * NetworkProcess/cache/NetworkCacheStorage.cpp:
+            (WebKit::NetworkCache::maximumInlineBodySize):
+            (WebKit::NetworkCache::estimateRecordsSize):
+            (WebKit::NetworkCache::Storage::shouldStoreBodyAsBlob):
+
+2020-02-24  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r257077. rdar://problem/59676877
 
     REGRESSION (r255677): Reloading tab with beforeunload prompt closes tab when asking to stay on page
     https://bugs.webkit.org/show_bug.cgi?id=208015
@@ -106,9 +142,9 @@
             * UIProcess/WebPageProxy.cpp:
             (WebKit::WebPageProxy::runBeforeUnloadConfirmPanel):
 
-2020-02-24  Alan Coon  <alancoon@apple.com>
+2020-02-24  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r256967. rdar://problem/59654620
+        Cherry-pick r256967. rdar://problem/59654605
 
     Regression(r247567) HTTP Disk cache capacity is no longer set
     https://bugs.webkit.org/show_bug.cgi?id=207959
@@ -195,9 +231,9 @@
             * UIProcess/WebProcessPool.cpp:
             (WebKit::WebProcessPool::setCacheModel):
 
-2020-02-24  Alan Coon  <alancoon@apple.com>
+2020-02-24  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r256881. rdar://problem/59654584
+        Cherry-pick r256881. rdar://problem/59654289
 
     Drop getSandboxExtensionsForBlobFiles() as it is dead code
     https://bugs.webkit.org/show_bug.cgi?id=207909
@@ -228,9 +264,9 @@
             * UIProcess/Network/NetworkProcessProxy.h:
             * UIProcess/Network/NetworkProcessProxy.messages.in:
 
-2020-02-24  Alan Coon  <alancoon@apple.com>
+2020-02-24  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r256857. rdar://problem/59654285
+        Cherry-pick r256857. rdar://problem/59654274
 
     NetworkDataTask should not expect its session wrapper to be always live
     https://bugs.webkit.org/show_bug.cgi?id=207903
@@ -267,92 +303,292 @@
             (WebKit::NetworkDataTaskCocoa::NetworkDataTaskCocoa):
             (WebKit::NetworkDataTaskCocoa::~NetworkDataTaskCocoa):
 
-2020-02-20  Alan Coon  <alancoon@apple.com>
+2020-02-21  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r256933. rdar://problem/59618839
+        Apply patch. rdar://problem/59680470
 
-    [iOS] Safari sometimes crashes under ViewGestureController::beginSwipeGesture
-    https://bugs.webkit.org/show_bug.cgi?id=207929
-    <rdar://problem/59493326>
-    
-    Reviewed by Tim Horton.
-    
-    Make ViewGestureController::beginSwipeGesture robust in the case where the target back/forward item no longer
-    exists. This means that a back/forward target item existed when UIKit called into us in canSwipeInDirection, but
-    this item was removed by the time beginSwipeGesture is called.
-    
-    A couple of conditions could make this possible, such as handling incoming synchronous IPC in the UI process
-    that could change the back/forward list before sending outgoing IPC to the web process; alternately, an SPI
-    client could be overriding -_webViewDidBeginNavigationGesture: to run some logic that removes the would-be
-    target back/forward item.
-    
-    To protect against these scenarios, null-check targetItem before attempting to dereference it; if it is null,
-    then reset some state that might've been set as a result of beginning the swipe (that is, m_activeGestureType
-    and m_currentGestureID) and then immediately bail before attempting to install the snapshot view and proceed
-    with the swipe.
-    
-    * UIProcess/ios/ViewGestureControllerIOS.mm:
-    (WebKit::ViewGestureController::beginSwipeGesture):
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256933 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    2020-02-21  Chris Dumez  <cdumez@apple.com>
 
-    2020-02-18  Wenson Hsieh  <wenson_hsieh@apple.com>
-
-            [iOS] Safari sometimes crashes under ViewGestureController::beginSwipeGesture
-            https://bugs.webkit.org/show_bug.cgi?id=207929
-            <rdar://problem/59493326>
+            REGRESSION (r255533) Null Deref of _sessionWrapper under [WKNetworkSessionDelegate URLSession:task:didReceiveChallenge:completionHandler:]
+            https://bugs.webkit.org/show_bug.cgi?id=208029
+            <rdar://problem/59404381>
 
             Reviewed by Tim Horton.
 
-            Make ViewGestureController::beginSwipeGesture robust in the case where the target back/forward item no longer
-            exists. This means that a back/forward target item existed when UIKit called into us in canSwipeInDirection, but
-            this item was removed by the time beginSwipeGesture is called.
+            r255533 started dereferencing _sessionWrapper without null check in didReceiveChallenge. All other delegates
+            in this file null check _sessionWrapper before using it because it is a weak pointer. Add a null check to
+            avoid crashing.
 
-            A couple of conditions could make this possible, such as handling incoming synchronous IPC in the UI process
-            that could change the back/forward list before sending outgoing IPC to the web process; alternately, an SPI
-            client could be overriding -_webViewDidBeginNavigationGesture: to run some logic that removes the would-be
-            target back/forward item.
-
-            To protect against these scenarios, null-check targetItem before attempting to dereference it; if it is null,
-            then reset some state that might've been set as a result of beginning the swipe (that is, m_activeGestureType
-            and m_currentGestureID) and then immediately bail before attempting to install the snapshot view and proceed
-            with the swipe.
-
-            * UIProcess/ios/ViewGestureControllerIOS.mm:
-            (WebKit::ViewGestureController::beginSwipeGesture):
+            * NetworkProcess/cocoa/NetworkSessionCocoa.mm:
+            (-[WKNetworkSessionDelegate URLSession:task:didReceiveChallenge:completionHandler:]):
 
 2020-02-20  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r257013. rdar://problem/59614284
+        Cherry-pick r256932. rdar://problem/59618840
 
-    Crash in WebPageProxy::didStartProvisionalLoadForFrameShared
-    https://bugs.webkit.org/show_bug.cgi?id=207973
+    Disable the process cache when process-per-tab is disabled in the debug menu
+    https://bugs.webkit.org/show_bug.cgi?id=207949
+    <rdar://problem/57094837>
     
-    Reviewed by Chris Dumez.
+    Reviewed by Geoffrey Garen.
     
-    Use RefPtr to store Frame*.
+    Disable the process cache when process-per-tab is disabled in the debug menu. The process cache is a
+    process-swap-on-navigation optimization and process-swap-on-navigation is already disabled when
+    process-per-tab is disabled. The process cache is not useful with such configuration and actually
+    leads to crashes too.
     
-    * UIProcess/WebPageProxy.cpp:
-    (WebKit::WebPageProxy::didStartProvisionalLoadForFrameShared):
+    * UIProcess/WebProcessCache.cpp:
+    (WebKit::WebProcessCache::updateCapacity):
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@257013 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256932 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2020-02-19  Ryosuke Niwa  <rniwa@webkit.org>
+    2020-02-19  Chris Dumez  <cdumez@apple.com>
 
-            Crash in WebPageProxy::didStartProvisionalLoadForFrameShared
-            https://bugs.webkit.org/show_bug.cgi?id=207973
+            Disable the process cache when process-per-tab is disabled in the debug menu
+            https://bugs.webkit.org/show_bug.cgi?id=207949
+            <rdar://problem/57094837>
 
-            Reviewed by Chris Dumez.
+            Reviewed by Geoffrey Garen.
 
-            Use RefPtr to store Frame*.
+            Disable the process cache when process-per-tab is disabled in the debug menu. The process cache is a
+            process-swap-on-navigation optimization and process-swap-on-navigation is already disabled when
+            process-per-tab is disabled. The process cache is not useful with such configuration and actually
+            leads to crashes too.
 
-            * UIProcess/WebPageProxy.cpp:
-            (WebKit::WebPageProxy::didStartProvisionalLoadForFrameShared):
+            * UIProcess/WebProcessCache.cpp:
+            (WebKit::WebProcessCache::updateCapacity):
+
+2020-02-20  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256859. rdar://problem/59612087
+
+    [macOS] Web process may crash under ServicesOverlayController::buildPotentialHighlightsIfNeeded
+    https://bugs.webkit.org/show_bug.cgi?id=207899
+    <rdar://problem/55658207>
+    
+    Reviewed by Tim Horton and Simon Fraser.
+    
+    Source/WebCore:
+    
+    Mitigates a null pointer crash in ServicesOverlayController::buildPotentialHighlightsIfNeeded(), wherein the
+    focused frame may not have a FrameView when the ServicesOverlayController's selection invalidation timer fires.
+    This is possible if, while being focused, the newly focused subframe is unparented and reparented, which causes
+    it to momentarily have a null view. During this time, if a selection change had occurred earlier in the runloop,
+    it will schedule the page overlay controller invalidation timer, which will fire and discover that the currently
+    focused frame no longer has a FrameView.
+    
+    Test: editing/selection/selection-change-in-disconnected-frame-crash.html
+    
+    * page/mac/ServicesOverlayController.mm:
+    (WebCore::ServicesOverlayController::buildSelectionHighlight):
+    
+    Source/WebKit:
+    
+    Add another missing null check on iOS, for the case where FrameView is null.
+    
+    * WebProcess/WebPage/ios/WebPageIOS.mm:
+    (WebKit::WebPage::platformEditorState const):
+    
+    Tools:
+    
+    Make it possible to run tests on macOS with services controls enabled, via a new TestOptions flag.
+    
+    * WebKitTestRunner/TestController.cpp:
+    (WTR::updateTestOptionsFromTestHeader):
+    * WebKitTestRunner/TestOptions.h:
+    (WTR::TestOptions::hasSameInitializationOptions const):
+    * WebKitTestRunner/cocoa/TestControllerCocoa.mm:
+    (WTR::TestController::platformCreateWebView):
+    
+    LayoutTests:
+    
+    Add a new layout test to verify that we don't crash under this circumstance.
+    
+    * editing/selection/selection-change-in-disconnected-frame-crash-expected.txt: Added.
+    * editing/selection/selection-change-in-disconnected-frame-crash.html: Added.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256859 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-18  Wenson Hsieh  <wenson_hsieh@apple.com>
+
+            [macOS] Web process may crash under ServicesOverlayController::buildPotentialHighlightsIfNeeded
+            https://bugs.webkit.org/show_bug.cgi?id=207899
+            <rdar://problem/55658207>
+
+            Reviewed by Tim Horton and Simon Fraser.
+
+            Add another missing null check on iOS, for the case where FrameView is null.
+
+            * WebProcess/WebPage/ios/WebPageIOS.mm:
+            (WebKit::WebPage::platformEditorState const):
+
+2020-02-20  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256790. rdar://problem/59575905
+
+    Data detectors do not trigger on macCatalyst
+    https://bugs.webkit.org/show_bug.cgi?id=207860
+    <rdar://problem/59038913>
+    
+    Reviewed by Tim Horton.
+    
+    The lookup gesture which run data detection needs touch information to function. Allow touches to be sent to the gesture.
+    
+    * UIProcess/ios/WKContentViewInteraction.mm:
+    (-[WKContentView gestureRecognizer:shouldReceiveTouch:]):
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256790 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-17  Megan Gardner  <megan_gardner@apple.com>
+
+            Data detectors do not trigger on macCatalyst
+            https://bugs.webkit.org/show_bug.cgi?id=207860
+            <rdar://problem/59038913>
+
+            Reviewed by Tim Horton.
+
+            The lookup gesture which run data detection needs touch information to function. Allow touches to be sent to the gesture.
+
+            * UIProcess/ios/WKContentViewInteraction.mm:
+            (-[WKContentView gestureRecognizer:shouldReceiveTouch:]):
 
 2020-02-19  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r256632. rdar://problem/59478906
+        Cherry-pick r255881. rdar://problem/59576819
+
+    Adopt MTOverrideShouldPlayHDRVideo()
+    https://bugs.webkit.org/show_bug.cgi?id=207275
+    <rdar://problem/58837093>
+    
+    Reviewed by Eric Carlson.
+    
+    Source/WebCore:
+    
+    * platform/PlatformScreen.h:
+    * platform/mac/PlatformScreenMac.mm:
+    (WebCore::setShouldOverrideScreenSupportsHighDynamicRange):
+    
+    Source/WebCore/PAL:
+    
+    * pal/cocoa/MediaToolboxSoftLink.cpp:
+    * pal/cocoa/MediaToolboxSoftLink.h:
+    
+    Source/WebKit:
+    
+    The WebProcess sandbox can block access to the services necessary for MediaToolbox to determine whether
+    the current display is capable of displaying HDR. Rather than opening up the sandbox, provide the information
+    gathered by the UIProcess by way of MTOverrideShouldPlayHDRVideo().
+    
+    * WebProcess/WebPage/WebPage.cpp:
+    (WebKit::WebPage::windowScreenDidChange):
+    (WebKit::WebPage::displayID const):
+    * WebProcess/WebPage/WebPage.h:
+    * WebProcess/WebProcess.cpp:
+    (WebKit::WebProcess::setScreenProperties): Deleted.
+    * WebProcess/WebProcess.h:
+    * WebProcess/cocoa/WebProcessCocoa.mm:
+    (WebKit::WebProcess::setScreenProperties):
+    (WebKit::WebProcess::updatePageScreenProperties):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@255881 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-05  Jer Noble  <jer.noble@apple.com>
+
+            Adopt MTOverrideShouldPlayHDRVideo()
+            https://bugs.webkit.org/show_bug.cgi?id=207275
+            <rdar://problem/58837093>
+
+            Reviewed by Eric Carlson.
+
+            The WebProcess sandbox can block access to the services necessary for MediaToolbox to determine whether
+            the current display is capable of displaying HDR. Rather than opening up the sandbox, provide the information
+            gathered by the UIProcess by way of MTOverrideShouldPlayHDRVideo().
+
+            * WebProcess/WebPage/WebPage.cpp:
+            (WebKit::WebPage::windowScreenDidChange):
+            (WebKit::WebPage::displayID const):
+            * WebProcess/WebPage/WebPage.h:
+            * WebProcess/WebProcess.cpp:
+            (WebKit::WebProcess::setScreenProperties): Deleted.
+            * WebProcess/WebProcess.h:
+            * WebProcess/cocoa/WebProcessCocoa.mm:
+            (WebKit::WebProcess::setScreenProperties):
+            (WebKit::WebProcess::updatePageScreenProperties):
+
+2020-02-19  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256432. rdar://problem/59576791
+
+    WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
+    https://bugs.webkit.org/show_bug.cgi?id=207537
+    
+    Reviewed by Chris Dumez.
+    
+    Source/WebKit:
+    
+    Covered by added API test.
+    
+    * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
+    (WebKit::WebSWServerConnection::registerServiceWorkerClient):
+    Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
+    
+    Tools:
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/ServiceWorkerBasic.mm:
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256432 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-12  Youenn Fablet  <youenn@apple.com>
+
+            WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
+            https://bugs.webkit.org/show_bug.cgi?id=207537
+
+            Reviewed by Chris Dumez.
+
+            Covered by added API test.
+
+            * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
+            (WebKit::WebSWServerConnection::registerServiceWorkerClient):
+            Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
+
+2020-02-19  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256383. rdar://problem/59576791
+
+    Unreviewed, rolling out r256314.
+    https://bugs.webkit.org/show_bug.cgi?id=207594
+    
+    It is breaking an API test (Requested by youenn on #webkit).
+    
+    Reverted changeset:
+    
+    "WebSWServerConnection::registerServiceWorkerClient is not
+    sending IPC message to UIProcess when it should"
+    https://bugs.webkit.org/show_bug.cgi?id=207537
+    https://trac.webkit.org/changeset/256314
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256383 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-11  Commit Queue  <commit-queue@webkit.org>
+
+            Unreviewed, rolling out r256314.
+            https://bugs.webkit.org/show_bug.cgi?id=207594
+
+            It is breaking an API test (Requested by youenn on #webkit).
+
+            Reverted changeset:
+
+            "WebSWServerConnection::registerServiceWorkerClient is not
+            sending IPC message to UIProcess when it should"
+            https://bugs.webkit.org/show_bug.cgi?id=207537
+            https://trac.webkit.org/changeset/256314
+
+2020-02-19  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256632. rdar://problem/59576783
 
     NetworkLoadMetrics should be shared by multiple ResourceResponse instances
     https://bugs.webkit.org/show_bug.cgi?id=207747
@@ -472,7 +708,79 @@
 
 2020-02-19  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r256191. rdar://problem/59447003
+        Cherry-pick r256426. rdar://problem/59576790
+
+    [ Mac Debug wk2 ] ASSERTION FAILED: m_wasConstructedOnMainThread == isMainThread()
+    https://bugs.webkit.org/show_bug.cgi?id=207509
+    <rdar://problem/59325466>
+    
+    Reviewed by Chris Dumez.
+    
+    Covered by existing tests.
+    
+    * NetworkProcess/cache/CacheStorageEngine.cpp:
+    (WebKit::CacheStorage::Engine::writeSizeFile):
+    Make sure completion handler is always called on the main thread.
+    Minor refactoring to make things more efficient.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256426 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-11  Youenn Fablet  <youenn@apple.com>
+
+            [ Mac Debug wk2 ] ASSERTION FAILED: m_wasConstructedOnMainThread == isMainThread()
+            https://bugs.webkit.org/show_bug.cgi?id=207509
+            <rdar://problem/59325466>
+
+            Reviewed by Chris Dumez.
+
+            Covered by existing tests.
+
+            * NetworkProcess/cache/CacheStorageEngine.cpp:
+            (WebKit::CacheStorage::Engine::writeSizeFile):
+            Make sure completion handler is always called on the main thread.
+            Minor refactoring to make things more efficient.
+
+2020-02-19  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256314. rdar://problem/59576791
+
+    WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
+    https://bugs.webkit.org/show_bug.cgi?id=207537
+    
+    Reviewed by Chris Dumez.
+    
+    Source/WebKit:
+    
+    Covered by added API test.
+    
+    * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
+    (WebKit::WebSWServerConnection::registerServiceWorkerClient):
+    Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
+    
+    Tools:
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/ServiceWorkerBasic.mm:
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256314 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-02-11  Youenn Fablet  <youenn@apple.com>
+
+            WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
+            https://bugs.webkit.org/show_bug.cgi?id=207537
+
+            Reviewed by Chris Dumez.
+
+            Covered by added API test.
+
+            * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
+            (WebKit::WebSWServerConnection::registerServiceWorkerClient):
+            Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
+
+2020-02-19  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r256191. rdar://problem/59576820
 
     Disallow setting base URL to a data or JavaScript URL
     https://bugs.webkit.org/show_bug.cgi?id=207136
@@ -598,7 +906,7 @@
 
 2020-02-19  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r255037. rdar://problem/59446986
+        Cherry-pick r255037. rdar://problem/59576794
 
     Fixed elements no longer stay fixed with elastic overscroll
     https://bugs.webkit.org/show_bug.cgi?id=206227
@@ -737,191 +1045,50 @@
     
     git-svn-id: https://svn.webkit.org/repository/webkit/trunk@255037 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2020-02-19  Russell Epstein  <repstein@apple.com>
+    2020-02-14  Russell Epstein  <repstein@apple.com>
 
-            Cherry-pick r256432. rdar://problem/59446974
+            Cherry-pick r252849. rdar://problem/59446998
 
-        WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
-        https://bugs.webkit.org/show_bug.cgi?id=207537
+        Crash in WebCore::ServiceWorkerRegistrationKey::hash() const
+        https://bugs.webkit.org/show_bug.cgi?id=204497
+        <rdar://problem/57348603>
 
-        Reviewed by Chris Dumez.
+        Reviewed by Alex Christensen.
+
+        Source/WebCore:
+
+        Update ServiceWorkerContainer::jobResolvedWithRegistration to handle the case of a
+        ServiceWorkerContainer that might have a job whose promise is not related to the same context.
+        In that case, the ServiceWorkerContainer might get stopped, thus its m_ongoingSettledRegistrations be cleared.
+        But the promise may get settled shortly after since its context is not stopped and will then retrieve an empty registration data key.
+        This is difficult to test given we do not control when the resolvedWithRegistration task is posted to the client.
+
+        * workers/service/ServiceWorkerContainer.cpp:
+        (WebCore::ServiceWorkerContainer::jobResolvedWithRegistration):
+        * workers/service/ServiceWorkerRegistrationKey.h:
+        (WebCore::ServiceWorkerRegistrationKey::encode const):
+        Add release asserts to make sure we do not store/transfer empty registration keys.
 
         Source/WebKit:
 
-        Covered by added API test.
-
-        * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
-        (WebKit::WebSWServerConnection::registerServiceWorkerClient):
-        Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
-
-        Tools:
-
-        * TestWebKitAPI/Tests/WebKitCocoa/ServiceWorkerBasic.mm:
+        * WebProcess/Storage/WebSWClientConnection.cpp:
+        (WebKit::WebSWClientConnection::scheduleJobInServer):
+        Add a release assert to be able to further debug the crash.
 
 
-        git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256432 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+        git-svn-id: https://svn.webkit.org/repository/webkit/trunk@252849 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-        2020-02-12  Youenn Fablet  <youenn@apple.com>
+        2019-11-25  Youenn Fablet  <youenn@apple.com>
 
-                WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
-                https://bugs.webkit.org/show_bug.cgi?id=207537
+                Crash in WebCore::ServiceWorkerRegistrationKey::hash() const
+                https://bugs.webkit.org/show_bug.cgi?id=204497
+                <rdar://problem/57348603>
 
-                Reviewed by Chris Dumez.
+                Reviewed by Alex Christensen.
 
-                Covered by added API test.
-
-                * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
-                (WebKit::WebSWServerConnection::registerServiceWorkerClient):
-                Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
-
-2020-02-19  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r256426. rdar://problem/59447008
-
-    [ Mac Debug wk2 ] ASSERTION FAILED: m_wasConstructedOnMainThread == isMainThread()
-    https://bugs.webkit.org/show_bug.cgi?id=207509
-    <rdar://problem/59325466>
-    
-    Reviewed by Chris Dumez.
-    
-    Covered by existing tests.
-    
-    * NetworkProcess/cache/CacheStorageEngine.cpp:
-    (WebKit::CacheStorage::Engine::writeSizeFile):
-    Make sure completion handler is always called on the main thread.
-    Minor refactoring to make things more efficient.
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256426 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2020-02-11  Youenn Fablet  <youenn@apple.com>
-
-            [ Mac Debug wk2 ] ASSERTION FAILED: m_wasConstructedOnMainThread == isMainThread()
-            https://bugs.webkit.org/show_bug.cgi?id=207509
-            <rdar://problem/59325466>
-
-            Reviewed by Chris Dumez.
-
-            Covered by existing tests.
-
-            * NetworkProcess/cache/CacheStorageEngine.cpp:
-            (WebKit::CacheStorage::Engine::writeSizeFile):
-            Make sure completion handler is always called on the main thread.
-            Minor refactoring to make things more efficient.
-
-2020-02-19  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r256383. rdar://problem/59446974
-
-    Unreviewed, rolling out r256314.
-    https://bugs.webkit.org/show_bug.cgi?id=207594
-    
-    It is breaking an API test (Requested by youenn on #webkit).
-    
-    Reverted changeset:
-    
-    "WebSWServerConnection::registerServiceWorkerClient is not
-    sending IPC message to UIProcess when it should"
-    https://bugs.webkit.org/show_bug.cgi?id=207537
-    https://trac.webkit.org/changeset/256314
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256383 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2020-02-11  Commit Queue  <commit-queue@webkit.org>
-
-            Unreviewed, rolling out r256314.
-            https://bugs.webkit.org/show_bug.cgi?id=207594
-
-            It is breaking an API test (Requested by youenn on #webkit).
-
-            Reverted changeset:
-
-            "WebSWServerConnection::registerServiceWorkerClient is not
-            sending IPC message to UIProcess when it should"
-            https://bugs.webkit.org/show_bug.cgi?id=207537
-            https://trac.webkit.org/changeset/256314
-
-2020-02-19  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r256314. rdar://problem/59446974
-
-    WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
-    https://bugs.webkit.org/show_bug.cgi?id=207537
-    
-    Reviewed by Chris Dumez.
-    
-    Source/WebKit:
-    
-    Covered by added API test.
-    
-    * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
-    (WebKit::WebSWServerConnection::registerServiceWorkerClient):
-    Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
-    
-    Tools:
-    
-    * TestWebKitAPI/Tests/WebKitCocoa/ServiceWorkerBasic.mm:
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@256314 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2020-02-11  Youenn Fablet  <youenn@apple.com>
-
-            WebSWServerConnection::registerServiceWorkerClient is not sending IPC message to UIProcess when it should
-            https://bugs.webkit.org/show_bug.cgi?id=207537
-
-            Reviewed by Chris Dumez.
-
-            Covered by added API test.
-
-            * NetworkProcess/ServiceWorker/WebSWServerConnection.cpp:
-            (WebKit::WebSWServerConnection::registerServiceWorkerClient):
-            Fix use after move so that we can get the context connection and send the IPC message to UIProcess as expected.
-
-2020-02-14  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r252849. rdar://problem/59446998
-
-    Crash in WebCore::ServiceWorkerRegistrationKey::hash() const
-    https://bugs.webkit.org/show_bug.cgi?id=204497
-    <rdar://problem/57348603>
-    
-    Reviewed by Alex Christensen.
-    
-    Source/WebCore:
-    
-    Update ServiceWorkerContainer::jobResolvedWithRegistration to handle the case of a
-    ServiceWorkerContainer that might have a job whose promise is not related to the same context.
-    In that case, the ServiceWorkerContainer might get stopped, thus its m_ongoingSettledRegistrations be cleared.
-    But the promise may get settled shortly after since its context is not stopped and will then retrieve an empty registration data key.
-    This is difficult to test given we do not control when the resolvedWithRegistration task is posted to the client.
-    
-    * workers/service/ServiceWorkerContainer.cpp:
-    (WebCore::ServiceWorkerContainer::jobResolvedWithRegistration):
-    * workers/service/ServiceWorkerRegistrationKey.h:
-    (WebCore::ServiceWorkerRegistrationKey::encode const):
-    Add release asserts to make sure we do not store/transfer empty registration keys.
-    
-    Source/WebKit:
-    
-    * WebProcess/Storage/WebSWClientConnection.cpp:
-    (WebKit::WebSWClientConnection::scheduleJobInServer):
-    Add a release assert to be able to further debug the crash.
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@252849 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2019-11-25  Youenn Fablet  <youenn@apple.com>
-
-            Crash in WebCore::ServiceWorkerRegistrationKey::hash() const
-            https://bugs.webkit.org/show_bug.cgi?id=204497
-            <rdar://problem/57348603>
-
-            Reviewed by Alex Christensen.
-
-            * WebProcess/Storage/WebSWClientConnection.cpp:
-            (WebKit::WebSWClientConnection::scheduleJobInServer):
-            Add a release assert to be able to further debug the crash.
+                * WebProcess/Storage/WebSWClientConnection.cpp:
+                (WebKit::WebSWClientConnection::scheduleJobInServer):
+                Add a release assert to be able to further debug the crash.
 
 2020-02-14  Russell Epstein  <repstein@apple.com>
 
@@ -1130,44 +1297,6 @@
             <rdar://problem/59043436>
 
             Reviewed by Brent Fulgham.
-2020-01-22  Simon Fraser  <simon.fraser@apple.com>
-
-        Fixed elements no longer stay fixed with elastic overscroll
-        https://bugs.webkit.org/show_bug.cgi?id=206227
-        rdar://problem/58707084
-
-        Reviewed by Antti Koivisto.
-
-        Intended behavior on iOS and macOS is for position:fixed and sticky elements to maintain
-        their position relative to the view bounds when rubber-banding ("overscrolling"). This broke
-        some time back. This change restores the correct behavior with the call to layoutViewportRespectingRubberBanding()
-        in ScrollingTreeFixedNode::applyLayerPositions() and ScrollingTreeStickyNode::computeLayerPosition().
-        layoutViewportRespectingRubberBanding() computes a layout viewport without clamping.
-
-        The rest of the changes are to support testing. internals.unconstrainedScrollTo()
-        didn't work for main frame scrolling because of scroll position clamping in various places,
-        so propagate ScrollClamping in more places (and replace the redundant ScrollPositionClamp with ScrollClamping).
-
-        "requested scroll position" updates now carry along both clamping and "is programmatic" data, wrapped in a struct
-        which is passed around the scrolling tree. This allows us to not clamp the scroll position (for testing) in more places.
-
-        * Shared/RemoteLayerTree/RemoteScrollingCoordinatorTransaction.cpp:
-        (ArgumentCoder<ScrollingStateScrollingNode>::encode):
-        (ArgumentCoder<ScrollingStateScrollingNode>::decode):
-        (ArgumentCoder<RequestedScrollData>::encode):
-        (ArgumentCoder<RequestedScrollData>::decode):
-        (WebKit::dump):
-        * UIProcess/RemoteLayerTree/RemoteScrollingCoordinatorProxy.cpp:
-        (WebKit::RemoteScrollingCoordinatorProxy::scrollingTreeNodeRequestsScroll):
-        * UIProcess/RemoteLayerTree/RemoteScrollingCoordinatorProxy.h:
-        * UIProcess/RemoteLayerTree/RemoteScrollingTree.cpp:
-        (WebKit::RemoteScrollingTree::scrollingTreeNodeRequestsScroll):
-        * UIProcess/RemoteLayerTree/RemoteScrollingTree.h:
-        * UIProcess/RemoteLayerTree/ios/ScrollingTreeFrameScrollingNodeRemoteIOS.mm:
-        (WebKit::ScrollingTreeFrameScrollingNodeRemoteIOS::commitStateAfterChildren):
-        * UIProcess/RemoteLayerTree/ios/ScrollingTreeScrollingNodeDelegateIOS.mm:
-        (WebKit::ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren):
-
 
             * UIProcess/Cocoa/WebProcessPoolCocoa.mm:
             (WebKit::WebProcessPool::initializeClassesForParameterCoding):
@@ -1309,6 +1438,44 @@
             Test: UIWKInteractionViewProtocol.UpdateSelectionWithExtentPoint
 
             * Platform/spi/ios/UIKitSPI.h:
+2020-01-22  Simon Fraser  <simon.fraser@apple.com>
+
+        Fixed elements no longer stay fixed with elastic overscroll
+        https://bugs.webkit.org/show_bug.cgi?id=206227
+        rdar://problem/58707084
+
+        Reviewed by Antti Koivisto.
+
+        Intended behavior on iOS and macOS is for position:fixed and sticky elements to maintain
+        their position relative to the view bounds when rubber-banding ("overscrolling"). This broke
+        some time back. This change restores the correct behavior with the call to layoutViewportRespectingRubberBanding()
+        in ScrollingTreeFixedNode::applyLayerPositions() and ScrollingTreeStickyNode::computeLayerPosition().
+        layoutViewportRespectingRubberBanding() computes a layout viewport without clamping.
+
+        The rest of the changes are to support testing. internals.unconstrainedScrollTo()
+        didn't work for main frame scrolling because of scroll position clamping in various places,
+        so propagate ScrollClamping in more places (and replace the redundant ScrollPositionClamp with ScrollClamping).
+
+        "requested scroll position" updates now carry along both clamping and "is programmatic" data, wrapped in a struct
+        which is passed around the scrolling tree. This allows us to not clamp the scroll position (for testing) in more places.
+
+        * Shared/RemoteLayerTree/RemoteScrollingCoordinatorTransaction.cpp:
+        (ArgumentCoder<ScrollingStateScrollingNode>::encode):
+        (ArgumentCoder<ScrollingStateScrollingNode>::decode):
+        (ArgumentCoder<RequestedScrollData>::encode):
+        (ArgumentCoder<RequestedScrollData>::decode):
+        (WebKit::dump):
+        * UIProcess/RemoteLayerTree/RemoteScrollingCoordinatorProxy.cpp:
+        (WebKit::RemoteScrollingCoordinatorProxy::scrollingTreeNodeRequestsScroll):
+        * UIProcess/RemoteLayerTree/RemoteScrollingCoordinatorProxy.h:
+        * UIProcess/RemoteLayerTree/RemoteScrollingTree.cpp:
+        (WebKit::RemoteScrollingTree::scrollingTreeNodeRequestsScroll):
+        * UIProcess/RemoteLayerTree/RemoteScrollingTree.h:
+        * UIProcess/RemoteLayerTree/ios/ScrollingTreeFrameScrollingNodeRemoteIOS.mm:
+        (WebKit::ScrollingTreeFrameScrollingNodeRemoteIOS::commitStateAfterChildren):
+        * UIProcess/RemoteLayerTree/ios/ScrollingTreeScrollingNodeDelegateIOS.mm:
+        (WebKit::ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren):
+
             * Scripts/webkit/messages.py:
             * Shared/ios/GestureTypes.h:
 
