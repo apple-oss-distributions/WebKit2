@@ -37,6 +37,7 @@ namespace WebKit {
 class WebPage;
 
 class WebEditorClient final : public WebCore::EditorClient, public WebCore::TextCheckerClient {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     WebEditorClient(WebPage* page)
         : m_page(page)
@@ -112,6 +113,7 @@ private:
     void textWillBeDeletedInTextField(WebCore::Element*) final;
     void textDidChangeInTextArea(WebCore::Element*) final;
     void overflowScrollPositionChanged() final;
+    void subFrameScrollPositionChanged() final;
 
 #if PLATFORM(COCOA)
     void setInsertionPasteboard(const String& pasteboardName) final;
@@ -172,6 +174,10 @@ private:
     bool shouldShowUnicodeMenu() final;
 #endif
 
+#if PLATFORM(GTK) || PLATFORM(WPE)
+    void didDispatchInputMethodKeydown(WebCore::KeyboardEvent&) final;
+#endif
+
 #if PLATFORM(IOS_FAMILY)
     void startDelayingAndCoalescingContentChangeNotifications() final;
     void stopDelayingAndCoalescingContentChangeNotifications() final;
@@ -180,10 +186,18 @@ private:
     RefPtr<WebCore::DocumentFragment> documentFragmentFromDelegate(int index) final;
     bool performsTwoStepPaste(WebCore::DocumentFragment*) final;
     void updateStringForFind(const String&) final;
+    bool shouldAllowSingleClickToChangeSelection(WebCore::Node&, const WebCore::VisibleSelection&) const final;
 #endif
 
     bool performTwoStepDrop(WebCore::DocumentFragment&, WebCore::Range&, bool isMove) final;
     bool supportsGlobalSelection() final;
+
+    bool canShowFontPanel() const final
+    {
+        // FIXME: Support for showing the system font panel (as well as other font styling controls) is
+        // tracked in <rdar://problem/21577518>.
+        return false;
+    }
 
     WebPage* m_page;
 };

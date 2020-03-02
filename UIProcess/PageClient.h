@@ -168,6 +168,7 @@ using LayerHostingContextID = uint32_t;
 #endif
 
 class PageClient : public CanMakeWeakPtr<PageClient> {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     virtual ~PageClient() { }
 
@@ -194,6 +195,11 @@ public:
 
     // Return whether the view is visible.
     virtual bool isViewVisible() = 0;
+
+#if PLATFORM(IOS_FAMILY)
+    // Return whether the application is visible.
+    virtual bool isApplicationVisible() = 0;
+#endif
 
     // Return whether the view is visible, or occluded by another window.
     virtual bool isViewVisibleOrOccluded() { return isViewVisible(); }
@@ -269,8 +275,11 @@ public:
 #endif
 #endif
 
-#if PLATFORM(COCOA) || PLATFORM(GTK)
+#if PLATFORM(COCOA) || PLATFORM(GTK) || PLATFORM(WPE)
     virtual void selectionDidChange() = 0;
+#endif
+
+#if PLATFORM(COCOA) || PLATFORM(GTK)
     virtual RefPtr<ViewSnapshot> takeViewSnapshot() = 0;
 #endif
 
@@ -299,6 +308,9 @@ public:
     virtual void doneWithKeyEvent(const NativeWebKeyboardEvent&, bool wasEventHandled) = 0;
 #if ENABLE(TOUCH_EVENTS)
     virtual void doneWithTouchEvent(const NativeWebTouchEvent&, bool wasEventHandled) = 0;
+#endif
+#if ENABLE(IOS_TOUCH_EVENTS)
+    virtual void doneDeferringNativeGestures(bool preventNativeGestures) = 0;
 #endif
 
     virtual RefPtr<WebPopupMenuProxy> createPopupMenuProxy(WebPageProxy&) = 0;
@@ -385,6 +397,7 @@ public:
     virtual void restorePageCenterAndScale(Optional<WebCore::FloatPoint> center, double scale) = 0;
 
     virtual void elementDidFocus(const FocusedElementInformation&, bool userIsInteracting, bool blurPreviousNode, OptionSet<WebCore::ActivityState::Flag> activityStateChanges, API::Object* userData) = 0;
+    virtual void updateInputContextAfterBlurringAndRefocusingElement() = 0;
     virtual void elementDidBlur() = 0;
     virtual void focusedElementDidChangeInputMode(WebCore::InputMode) = 0;
     virtual void didReceiveEditorStateUpdateAfterFocus() = 0;
@@ -394,7 +407,7 @@ public:
     virtual void saveImageToLibrary(Ref<WebCore::SharedBuffer>&&) = 0;
     virtual void showPlaybackTargetPicker(bool hasVideo, const WebCore::IntRect& elementRect, WebCore::RouteSharingPolicy, const String&) = 0;
     virtual void disableDoubleTapGesturesDuringTapIfNecessary(uint64_t requestID) = 0;
-    virtual void handleSmartMagnificationInformationForPotentialTap(uint64_t requestID, const WebCore::FloatRect& renderRect, bool fitEntireRect, double viewportMinimumScale, double viewportMaximumScale) = 0;
+    virtual void handleSmartMagnificationInformationForPotentialTap(uint64_t requestID, const WebCore::FloatRect& renderRect, bool fitEntireRect, double viewportMinimumScale, double viewportMaximumScale, bool nodeIsRootLevel) = 0;
     virtual double minimumZoomScale() const = 0;
     virtual WebCore::FloatRect documentRect() const = 0;
     virtual void scrollingNodeScrollViewWillStartPanGesture() = 0;
@@ -413,9 +426,6 @@ public:
     virtual void disableInspectorNodeSearch() = 0;
 
     virtual void handleAutocorrectionContext(const WebAutocorrectionContext&) = 0;
-
-    virtual Seconds doubleTapForDoubleClickDelay() = 0;
-    virtual float doubleTapForDoubleClickRadius() = 0;
 #endif
 
     // Auxiliary Client Creation
@@ -453,8 +463,6 @@ public:
     virtual NSObject *immediateActionAnimationControllerForHitTestResult(RefPtr<API::HitTestResult>, uint64_t, RefPtr<API::Object>) = 0;
     virtual void didHandleAcceptedCandidate() = 0;
 #endif
-
-    virtual void didFinishProcessingAllPendingMouseEvents() = 0;
 
     virtual void videoControlsManagerDidChange() { }
 
@@ -503,7 +511,7 @@ public:
     virtual RetainPtr<WKDrawingView> createDrawingView(WebCore::GraphicsLayer::EmbeddedViewID) { return nullptr; }
 #endif
 
-#if ENABLE(POINTER_EVENTS)
+#if ENABLE(POINTER_EVENTS) && PLATFORM(COCOA)
     virtual void cancelPointersForGestureRecognizer(UIGestureRecognizer*) { }
     virtual WTF::Optional<unsigned> activeTouchIdentifierForGestureRecognizer(UIGestureRecognizer*) { return WTF::nullopt; }
 #endif
@@ -511,6 +519,8 @@ public:
 #if USE(WPE_RENDERER)
     virtual IPC::Attachment hostFileDescriptor() = 0;
 #endif
+
+    virtual void didChangeWebPageID() const { }
 };
 
 } // namespace WebKit

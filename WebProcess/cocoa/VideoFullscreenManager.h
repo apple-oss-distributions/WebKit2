@@ -29,7 +29,7 @@
 
 #include "Connection.h"
 #include "MessageReceiver.h"
-#include "VideoFullscreenManagerMessages.h"
+#include "VideoFullscreenManagerMessagesReplies.h"
 #include <WebCore/EventListener.h>
 #include <WebCore/HTMLMediaElementEnums.h>
 #include <WebCore/PlatformCALayer.h>
@@ -73,8 +73,9 @@ public:
     LayerHostingContext* layerHostingContext() { return m_layerHostingContext.get(); }
     void setLayerHostingContext(std::unique_ptr<LayerHostingContext>&&);
 
-    bool isAnimating() const { return m_isAnimating; }
-    void setIsAnimating(bool flag) { m_isAnimating = flag; }
+    enum class AnimationType { None, IntoFullscreen, FromFullscreen };
+    AnimationType animationState() const { return m_animationType; }
+    void setAnimationState(AnimationType flag) { m_animationType = flag; }
 
     bool targetIsFullscreen() const { return m_targetIsFullscreen; }
     void setTargetIsFullscreen(bool flag) { m_targetIsFullscreen = flag; }
@@ -98,7 +99,7 @@ private:
     VideoFullscreenManager* m_manager;
     uint64_t m_contextId;
     std::unique_ptr<LayerHostingContext> m_layerHostingContext;
-    bool m_isAnimating { false };
+    AnimationType m_animationType { false };
     bool m_targetIsFullscreen { false };
     WebCore::HTMLMediaElementEnums::VideoFullscreenMode m_fullscreenMode { WebCore::HTMLMediaElementEnums::VideoFullscreenModeNone };
     bool m_fullscreenStandby { false };
@@ -153,7 +154,7 @@ protected:
     void setVideoLayerGravityEnum(uint64_t contextId, unsigned gravity);
     void fullscreenModeChanged(uint64_t contextId, WebCore::HTMLMediaElementEnums::VideoFullscreenMode);
     void fullscreenMayReturnToInline(uint64_t contextId, bool isPageVisible);
-    void requestRouteSharingPolicyAndContextUID(uint64_t contextId, Messages::VideoFullscreenManager::RequestRouteSharingPolicyAndContextUID::AsyncReply&&);
+    void requestRouteSharingPolicyAndContextUID(uint64_t contextId, Messages::VideoFullscreenManager::RequestRouteSharingPolicyAndContextUIDAsyncReply&&);
 
     WebPage* m_page;
     Ref<PlaybackSessionManager> m_playbackSessionManager;

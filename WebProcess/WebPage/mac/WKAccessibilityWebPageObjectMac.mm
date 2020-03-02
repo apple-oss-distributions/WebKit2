@@ -28,6 +28,7 @@
 
 #if PLATFORM(MAC)
 
+#import "ApplicationServicesSPI.h"
 #import "PluginView.h"
 #import "WebFrame.h"
 #import "WebPage.h"
@@ -45,7 +46,7 @@
 #import <WebCore/ScrollView.h>
 #import <WebCore/Scrollbar.h>
 #import <WebCore/WebAccessibilityObjectWrapperMac.h>
-#import <pal/spi/mac/NSAccessibilitySPI.h>
+#import <pal/spi/cocoa/NSAccessibilitySPI.h>
 #import <wtf/ObjCRuntimeExtras.h>
 
 
@@ -96,9 +97,13 @@ ALLOW_DEPRECATED_IMPLEMENTATIONS_END
 {
     return retrieveAccessibilityValueFromMainThread<id>([&self] () -> id {
         NSMutableArray *names = [NSMutableArray array];
-        auto result = m_page->corePage()->pageOverlayController().copyAccessibilityAttributesNames(true);
-        for (auto& name : result)
-            [names addObject:(NSString *)name];
+        if (!m_page)
+            return names;
+        
+        if (auto corePage = m_page->corePage()) {
+            for (auto& name : corePage->pageOverlayController().copyAccessibilityAttributesNames(true))
+                [names addObject:(NSString *)name];
+        }
         return names;
     });
 }
@@ -249,7 +254,7 @@ ALLOW_DEPRECATED_DECLARATIONS_BEGIN
 
         // Isolated tree frames have the offset encoded into them so we don't need to undo here.
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
-        bool queryingIsolatedTree = [self clientSupportsIsolatedTree] && _AXUIElementRequestServicedBySecondaryAXThread();
+        bool queryingIsolatedTree = WebCore::AXObjectCache::clientSupportsIsolatedTree() && _AXUIElementRequestServicedBySecondaryAXThread();
         applyContentOffset = !queryingIsolatedTree;
 #endif
         if (auto pluginView = WebKit::WebPage::pluginViewForFrame(m_page->mainFrame()))

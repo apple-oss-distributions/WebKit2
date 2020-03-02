@@ -48,6 +48,7 @@
 #import "WKStringCF.h"
 #import "WKViewInternal.h"
 #import "WKWebViewInternal.h"
+#import "WKWebViewPrivateForTestingMac.h"
 #import "WebColorPickerMac.h"
 #import "WebContextMenuProxyMac.h"
 #import "WebDataListSuggestionsDropdownMac.h"
@@ -108,7 +109,7 @@ PageClientImpl::PageClientImpl(NSView* view, WKWebView *webView)
     : PageClientImplCocoa(webView)
     , m_view(view)
 #if USE(DICTATION_ALTERNATIVES)
-    , m_alternativeTextUIController(std::make_unique<AlternativeTextUIController>())
+    , m_alternativeTextUIController(makeUnique<AlternativeTextUIController>())
 #endif
 {
 }
@@ -289,6 +290,7 @@ void PageClientImpl::didCommitLoadForMainFrame(const String& mimeType, bool useC
 {
     m_impl->updateSupportsArbitraryLayoutModes();
     m_impl->dismissContentRelativeChildWindowsWithAnimation(true);
+    m_impl->clearPromisedDragImage();
 }
 
 void PageClientImpl::didFinishLoadingDataForCustomContentProvider(const String& suggestedFilename, const IPC::DataReference& dataReference)
@@ -917,11 +919,6 @@ _WKRemoteObjectRegistry *PageClientImpl::remoteObjectRegistry()
     return m_impl->remoteObjectRegistry();
 }
 
-void PageClientImpl::didFinishProcessingAllPendingMouseEvents()
-{
-    m_impl->didFinishProcessingAllPendingMouseEvents();
-}
-
 void PageClientImpl::didRestoreScrollPosition()
 {
     m_impl->didRestoreScrollPosition();
@@ -952,6 +949,11 @@ bool PageClientImpl::effectiveUserInterfaceLevelIsElevated() const
 void PageClientImpl::takeFocus(WebCore::FocusDirection direction)
 {
     m_impl->takeFocus(direction);
+}
+
+void PageClientImpl::requestDOMPasteAccess(const WebCore::IntRect& elementRect, const String& originIdentifier, CompletionHandler<void(WebCore::DOMPasteAccessResponse)>&& completion)
+{
+    m_impl->requestDOMPasteAccess(elementRect, originIdentifier, WTFMove(completion));
 }
 
 } // namespace WebKit

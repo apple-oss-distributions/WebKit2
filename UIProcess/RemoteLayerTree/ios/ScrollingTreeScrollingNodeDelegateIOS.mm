@@ -228,7 +228,7 @@ void ScrollingTreeScrollingNodeDelegateIOS::resetScrollViewDelegate()
 void ScrollingTreeScrollingNodeDelegateIOS::commitStateBeforeChildren(const ScrollingStateScrollingNode& scrollingStateNode)
 {
     if (scrollingStateNode.hasChangedProperty(ScrollingStateScrollingNode::ScrollContainerLayer))
-        m_scrollLayer = scrollingStateNode.scrollContainerLayer();
+        m_scrollLayer = static_cast<CALayer*>(scrollingStateNode.scrollContainerLayer());
 }
 
 void ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren(const ScrollingStateScrollingNode& scrollingStateNode)
@@ -248,6 +248,11 @@ void ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren(const Scrol
 
             scrollView.scrollsToTop = NO;
             scrollView.delegate = m_scrollViewDelegate.get();
+
+            if ([scrollView respondsToSelector:@selector(_setAvoidsJumpOnInterruptedBounce:)]) {
+                scrollView.tracksImmediatelyWhileDecelerating = NO;
+                scrollView._avoidsJumpOnInterruptedBounce = YES;
+            }
         }
 
         bool recomputeInsets = scrollingStateNode.hasChangedProperty(ScrollingStateScrollingNode::TotalContentsSize);
@@ -294,8 +299,8 @@ void ScrollingTreeScrollingNodeDelegateIOS::commitStateAfterChildren(const Scrol
     }
 
     if (scrollingStateNode.hasChangedProperty(ScrollingStateScrollingNode::RequestedScrollPosition)) {
-        auto scrollType = scrollingStateNode.requestedScrollPositionRepresentsProgrammaticScroll() ? ScrollType::Programmatic : ScrollType::User;
-        scrollingNode().scrollTo(scrollingStateNode.requestedScrollPosition(), scrollType);
+        const auto& requestedScrollData = scrollingStateNode.requestedScrollData();
+        scrollingNode().scrollTo(requestedScrollData.scrollPosition, requestedScrollData.scrollType, requestedScrollData.clamping);
     }
 }
 

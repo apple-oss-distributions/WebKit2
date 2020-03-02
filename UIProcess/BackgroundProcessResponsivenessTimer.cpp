@@ -116,6 +116,8 @@ void BackgroundProcessResponsivenessTimer::setResponsive(bool isResponsive)
     if (m_isResponsive == isResponsive)
         return;
 
+    auto protectedClient = makeRef(client());
+
     client().willChangeIsResponsive();
     m_isResponsive = isResponsive;
     client().didChangeIsResponsive();
@@ -133,7 +135,7 @@ bool BackgroundProcessResponsivenessTimer::shouldBeActive() const
 {
 #if !PLATFORM(IOS_FAMILY)
     // Service worker process are always in the background.
-    if (m_webProcessProxy.isServiceWorkerProcess())
+    if (m_webProcessProxy.isRunningServiceWorkers())
         return true;
     return !m_webProcessProxy.visiblePageCount() && m_webProcessProxy.pageCount();
 #else

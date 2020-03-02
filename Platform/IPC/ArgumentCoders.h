@@ -28,6 +28,7 @@
 #include "Decoder.h"
 #include "Encoder.h"
 #include <utility>
+#include <wtf/Box.h>
 #include <wtf/Forward.h>
 #include <wtf/MonotonicTime.h>
 #include <wtf/SHA1.h>
@@ -120,6 +121,54 @@ template<typename T> struct ArgumentCoder<Optional<T>> {
             return Optional<Optional<T>>(WTFMove(*value));
         }
         return Optional<Optional<T>>(Optional<T>(WTF::nullopt));
+    }
+};
+
+template<typename T> struct ArgumentCoder<Box<T>> {
+    static void encode(Encoder& encoder, const Box<T>& box)
+    {
+        if (!box) {
+            encoder << false;
+            return;
+        }
+
+        encoder << true;
+        encoder << *box.get();
+    }
+
+    static bool decode(Decoder& decoder, Box<T>& box)
+    {
+        bool isEngaged;
+        if (!decoder.decode(isEngaged))
+            return false;
+
+        if (!isEngaged) {
+            box = nullptr;
+            return true;
+        }
+
+        Box<T> value = Box<T>::create();
+        if (!decoder.decode(*value))
+            return false;
+
+        box = WTFMove(value);
+        return true;
+    }
+
+    static Optional<Box<T>> decode(Decoder& decoder)
+    {
+        Optional<bool> isEngaged;
+        decoder >> isEngaged;
+        if (!isEngaged)
+            return WTF::nullopt;
+        if (*isEngaged) {
+            Optional<T> value;
+            decoder >> value;
+            if (!value)
+                return WTF::nullopt;
+            return Optional<Box<T>>(Box<T>::create(WTFMove(*value)));
+        }
+        return Optional<Box<T>>(Box<T>(nullptr));
     }
 };
 
@@ -227,7 +276,7 @@ struct TupleDecoder {
 
 template<>
 struct TupleDecoder<0> {
-    static Optional<std::tuple<>> decode(Decoder& decoder)
+    static Optional<std::tuple<>> decode(Decoder&)
     {
         return std::make_tuple();
     }
@@ -366,56 +415,30 @@ template<typename KeyArg, typename MappedArg, typename HashArg, typename KeyTrai
 
     static void encode(Encoder& encoder, const HashMapType& hashMap)
     {
-        encoder << static_cast<uint64_t>(hashMap.size());
+        encoder << static_cast<uint32_t>(hashMap.size());
         for (typename HashMapType::const_iterator it = hashMap.begin(), end = hashMap.end(); it != end; ++it)
             encoder << *it;
     }
 
-    static bool decode(Decoder& decoder, HashMapType& hashMap)
-    {
-        uint64_t hashMapSize;
-        if (!decoder.decode(hashMapSize))
-            return false;
-
-        HashMapType tempHashMap;
-        for (uint64_t i = 0; i < hashMapSize; ++i) {
-            KeyArg key;
-            MappedArg value;
-            if (!decoder.decode(key))
-                return false;
-            if (!decoder.decode(value))
-                return false;
-
-            if (!tempHashMap.add(key, value).isNewEntry) {
-                // The hash map already has the specified key, bail.
-                decoder.markInvalid();
-                return false;
-            }
-        }
-
-        hashMap.swap(tempHashMap);
-        return true;
-    }
-
     static Optional<HashMapType> decode(Decoder& decoder)
     {
-        uint64_t hashMapSize;
+        uint32_t hashMapSize;
         if (!decoder.decode(hashMapSize))
             return WTF::nullopt;
 
         HashMapType hashMap;
-        for (uint64_t i = 0; i < hashMapSize; ++i) {
+        for (uint32_t i = 0; i < hashMapSize; ++i) {
             Optional<KeyArg> key;
             decoder >> key;
-            if (!key)
+            if (UNLIKELY(!key))
                 return WTF::nullopt;
 
             Optional<MappedArg> value;
             decoder >> value;
-            if (!value)
+            if (UNLIKELY(!value))
                 return WTF::nullopt;
 
-            if (!hashMap.add(WTFMove(key.value()), WTFMove(value.value())).isNewEntry) {
+            if (UNLIKELY(!hashMap.add(WTFMove(*key), WTFMove(*value)).isNewEntry)) {
                 // The hash map already has the specified key, bail.
                 decoder.markInvalid();
                 return WTF::nullopt;
@@ -423,6 +446,16 @@ template<typename KeyArg, typename MappedArg, typename HashArg, typename KeyTrai
         }
 
         return hashMap;
+    }
+
+    static bool decode(Decoder& decoder, HashMapType& hashMap)
+    {
+        Optional<HashMapType> tempHashMap;
+        decoder >> tempHashMap;
+        if (!tempHashMap)
+            return false;
+        hashMap.swap(*tempHashMap);
+        return true;
     }
 };
 
@@ -635,5 +668,12 @@ template<> struct ArgumentCoder<SHA1::Digest> {
     static void encode(Encoder&, const SHA1::Digest&);
     static bool decode(Decoder&, SHA1::Digest&);
 };
+
+#if HAVE(AUDIT_TOKEN)
+template<> struct ArgumentCoder<audit_token_t> {
+    static void encode(Encoder&, const audit_token_t&);
+    static bool decode(Decoder&, audit_token_t&);
+};
+#endif
 
 } // namespace IPC

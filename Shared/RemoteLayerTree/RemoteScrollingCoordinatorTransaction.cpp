@@ -29,6 +29,7 @@
 #include "ArgumentCoders.h"
 #include "WebCoreArgumentCoders.h"
 #include <WebCore/GraphicsLayer.h>
+#include <WebCore/ScrollTypes.h>
 #include <WebCore/ScrollingStateFixedNode.h>
 #include <WebCore/ScrollingStateFrameHostingNode.h>
 #include <WebCore/ScrollingStateFrameScrollingNode.h>
@@ -91,6 +92,11 @@ template<> struct ArgumentCoder<ScrollingStatePositionedNode> {
     static bool decode(Decoder&, ScrollingStatePositionedNode&);
 };
 
+template<> struct ArgumentCoder<RequestedScrollData> {
+    static void encode(Encoder&, const RequestedScrollData&);
+    static bool decode(Decoder&, RequestedScrollData&);
+};
+
 } // namespace IPC
 
 using namespace IPC;
@@ -150,8 +156,7 @@ void ArgumentCoder<ScrollingStateScrollingNode>::encode(Encoder& encoder, const 
     SCROLLING_NODE_ENCODE(ScrollingStateScrollingNode::CurrentVerticalSnapOffsetIndex, currentVerticalSnapPointIndex)
 #endif
     SCROLLING_NODE_ENCODE(ScrollingStateScrollingNode::ScrollableAreaParams, scrollableAreaParameters)
-    SCROLLING_NODE_ENCODE(ScrollingStateScrollingNode::RequestedScrollPosition, requestedScrollPosition)
-    SCROLLING_NODE_ENCODE(ScrollingStateScrollingNode::RequestedScrollPosition, requestedScrollPositionRepresentsProgrammaticScroll)
+    SCROLLING_NODE_ENCODE(ScrollingStateScrollingNode::RequestedScrollPosition, requestedScrollData)
 
     if (node.hasChangedProperty(ScrollingStateScrollingNode::ScrollContainerLayer))
         encoder << static_cast<GraphicsLayer::PlatformLayerID>(node.scrollContainerLayer());
@@ -183,6 +188,7 @@ void ArgumentCoder<ScrollingStateFrameScrollingNode>::encode(Encoder& encoder, c
     SCROLLING_NODE_ENCODE(ScrollingStateFrameScrollingNode::LayoutViewport, layoutViewport)
     SCROLLING_NODE_ENCODE(ScrollingStateFrameScrollingNode::MinLayoutViewportOrigin, minLayoutViewportOrigin)
     SCROLLING_NODE_ENCODE(ScrollingStateFrameScrollingNode::MaxLayoutViewportOrigin, maxLayoutViewportOrigin)
+    SCROLLING_NODE_ENCODE(ScrollingStateFrameScrollingNode::OverrideVisualViewportSize, overrideVisualViewportSize)
 
     if (node.hasChangedProperty(ScrollingStateFrameScrollingNode::CounterScrollingLayer))
         encoder << static_cast<GraphicsLayer::PlatformLayerID>(node.counterScrollingLayer());
@@ -249,18 +255,7 @@ bool ArgumentCoder<ScrollingStateScrollingNode>::decode(Decoder& decoder, Scroll
     SCROLLING_NODE_DECODE(ScrollingStateScrollingNode::CurrentVerticalSnapOffsetIndex, unsigned, setCurrentVerticalSnapPointIndex);
 #endif
     SCROLLING_NODE_DECODE(ScrollingStateScrollingNode::ScrollableAreaParams, ScrollableAreaParameters, setScrollableAreaParameters);
-    
-    if (node.hasChangedProperty(ScrollingStateScrollingNode::RequestedScrollPosition)) {
-        FloatPoint scrollPosition;
-        if (!decoder.decode(scrollPosition))
-            return false;
-
-        bool representsProgrammaticScroll;
-        if (!decoder.decode(representsProgrammaticScroll))
-            return false;
-
-        node.setRequestedScrollPosition(scrollPosition, representsProgrammaticScroll);
-    }
+    SCROLLING_NODE_DECODE(ScrollingStateScrollingNode::RequestedScrollPosition, RequestedScrollData, setRequestedScrollData);
 
     if (node.hasChangedProperty(ScrollingStateScrollingNode::ScrollContainerLayer)) {
         GraphicsLayer::PlatformLayerID layerID;
@@ -311,6 +306,7 @@ bool ArgumentCoder<ScrollingStateFrameScrollingNode>::decode(Decoder& decoder, S
     SCROLLING_NODE_DECODE(ScrollingStateFrameScrollingNode::LayoutViewport, FloatRect, setLayoutViewport)
     SCROLLING_NODE_DECODE(ScrollingStateFrameScrollingNode::MinLayoutViewportOrigin, FloatPoint, setMinLayoutViewportOrigin)
     SCROLLING_NODE_DECODE(ScrollingStateFrameScrollingNode::MaxLayoutViewportOrigin, FloatPoint, setMaxLayoutViewportOrigin)
+    SCROLLING_NODE_DECODE(ScrollingStateFrameScrollingNode::OverrideVisualViewportSize, Optional<FloatSize>, setOverrideVisualViewportSize)
 
     if (node.hasChangedProperty(ScrollingStateFrameScrollingNode::CounterScrollingLayer)) {
         GraphicsLayer::PlatformLayerID layerID;
@@ -447,6 +443,28 @@ bool ArgumentCoder<ScrollingStatePositionedNode>::decode(Decoder& decoder, Scrol
     return true;
 }
 
+
+void ArgumentCoder<RequestedScrollData>::encode(Encoder& encoder, const RequestedScrollData& scrollData)
+{
+    encoder << scrollData.scrollPosition;
+    encoder.encodeEnum(scrollData.scrollType);
+    encoder.encodeEnum(scrollData.clamping);
+}
+
+bool ArgumentCoder<RequestedScrollData>::decode(Decoder& decoder, RequestedScrollData& scrollData)
+{
+    if (!decoder.decode(scrollData.scrollPosition))
+        return false;
+
+    if (!decoder.decodeEnum(scrollData.scrollType))
+        return false;
+
+    if (!decoder.decodeEnum(scrollData.clamping))
+        return false;
+
+    return true;
+}
+
 namespace WebKit {
 
 static void encodeNodeAndDescendants(IPC::Encoder& encoder, const ScrollingStateNode& stateNode, int& encodedNodeCount)
@@ -520,7 +538,7 @@ bool RemoteScrollingCoordinatorTransaction::decode(IPC::Decoder& decoder)
     if (!decoder.decode(hasNewRootNode))
         return false;
     
-    m_scrollingStateTree = std::make_unique<ScrollingStateTree>();
+    m_scrollingStateTree = makeUnique<ScrollingStateTree>();
 
     bool hasChangedProperties;
     if (!decoder.decode(hasChangedProperties))
@@ -604,8 +622,10 @@ static void dump(TextStream& ts, const ScrollingStateScrollingNode& node, bool c
         ts.dumpProperty("scroll-origin", node.scrollOrigin());
 
     if (!changedPropertiesOnly || node.hasChangedProperty(ScrollingStateScrollingNode::RequestedScrollPosition)) {
-        ts.dumpProperty("requested-scroll-position", node.requestedScrollPosition());
-        ts.dumpProperty("requested-scroll-position-is-programatic", node.requestedScrollPositionRepresentsProgrammaticScroll());
+        const auto& requestedScrollData = node.requestedScrollData();
+        ts.dumpProperty("requested-scroll-position", requestedScrollData.scrollPosition);
+        ts.dumpProperty("requested-scroll-position-is-programatic", requestedScrollData.scrollType);
+        ts.dumpProperty("requested-scroll-position-clamping", requestedScrollData.clamping);
     }
 
     if (!changedPropertiesOnly || node.hasChangedProperty(ScrollingStateScrollingNode::ScrollContainerLayer))
@@ -766,7 +786,7 @@ static void dump(TextStream& ts, const ScrollingStateTree& stateTree, bool chang
         recursiveDumpNodes(ts, *stateTree.rootStateNode(), changedPropertiesOnly);
 }
 
-WTF::CString RemoteScrollingCoordinatorTransaction::description() const
+String RemoteScrollingCoordinatorTransaction::description() const
 {
     TextStream ts;
 
@@ -783,12 +803,12 @@ WTF::CString RemoteScrollingCoordinatorTransaction::description() const
 
     ts.endGroup();
 
-    return ts.release().utf8();
+    return ts.release();
 }
 
 void RemoteScrollingCoordinatorTransaction::dump() const
 {
-    fprintf(stderr, "%s", description().data());
+    fprintf(stderr, "%s", description().utf8().data());
 }
 #endif
 

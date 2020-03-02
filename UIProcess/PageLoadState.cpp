@@ -99,6 +99,7 @@ void PageLoadState::commitChanges()
     bool isLoadingChanged = isLoading(m_committedState) != isLoading(m_uncommittedState);
     bool activeURLChanged = activeURL(m_committedState) != activeURL(m_uncommittedState);
     bool hasOnlySecureContentChanged = hasOnlySecureContent(m_committedState) != hasOnlySecureContent(m_uncommittedState);
+    bool negotiatedLegacyTLSChanged = m_committedState.negotiatedLegacyTLS != m_uncommittedState.negotiatedLegacyTLS;
     bool estimatedProgressChanged = estimatedProgress(m_committedState) != estimatedProgress(m_uncommittedState);
     bool networkRequestsInProgressChanged = m_committedState.networkRequestsInProgress != m_uncommittedState.networkRequestsInProgress;
     bool certificateInfoChanged = m_committedState.certificateInfo != m_uncommittedState.certificateInfo;
@@ -115,6 +116,8 @@ void PageLoadState::commitChanges()
         callObserverCallback(&Observer::willChangeActiveURL);
     if (hasOnlySecureContentChanged)
         callObserverCallback(&Observer::willChangeHasOnlySecureContent);
+    if (negotiatedLegacyTLSChanged)
+        callObserverCallback(&Observer::willChangeNegotiatedLegacyTLS);
     if (estimatedProgressChanged)
         callObserverCallback(&Observer::willChangeEstimatedProgress);
     if (networkRequestsInProgressChanged)
@@ -135,6 +138,8 @@ void PageLoadState::commitChanges()
         callObserverCallback(&Observer::didChangeEstimatedProgress);
     if (hasOnlySecureContentChanged)
         callObserverCallback(&Observer::didChangeHasOnlySecureContent);
+    if (negotiatedLegacyTLSChanged)
+        callObserverCallback(&Observer::didChangeNegotiatedLegacyTLS);
     if (activeURLChanged)
         callObserverCallback(&Observer::didChangeActiveURL);
     if (isLoadingChanged)
@@ -154,7 +159,7 @@ void PageLoadState::reset(const Transaction::Token& token)
     m_uncommittedState.state = State::Finished;
     m_uncommittedState.hasInsecureContent = false;
 
-    m_uncommittedState.pendingAPIRequestURL = String();
+    m_uncommittedState.pendingAPIRequest = { };
     m_uncommittedState.provisionalURL = String();
     m_uncommittedState.url = String();
 
@@ -182,8 +187,8 @@ String PageLoadState::activeURL(const Data& data)
     // If there is a currently pending URL, it is the active URL,
     // even when there's no main frame yet, as it might be the
     // first API request.
-    if (!data.pendingAPIRequestURL.isNull())
-        return data.pendingAPIRequestURL;
+    if (!data.pendingAPIRequest.url.isNull())
+        return data.pendingAPIRequest.url;
 
     if (!data.unreachableURL.isEmpty())
         return data.unreachableURL;
@@ -221,9 +226,20 @@ bool PageLoadState::hasOnlySecureContent() const
     return hasOnlySecureContent(m_committedState);
 }
 
+bool PageLoadState::hasNegotiatedLegacyTLS() const
+{
+    return m_committedState.negotiatedLegacyTLS;
+}
+
+void PageLoadState::negotiatedLegacyTLS(const Transaction::Token& token)
+{
+    ASSERT_UNUSED(token, &token.m_pageLoadState == this);
+    m_uncommittedState.negotiatedLegacyTLS = true;
+}
+
 double PageLoadState::estimatedProgress(const Data& data)
 {
-    if (!data.pendingAPIRequestURL.isNull())
+    if (!data.pendingAPIRequest.url.isNull())
         return initialProgressValue;
 
     return data.estimatedProgress;
@@ -236,7 +252,12 @@ double PageLoadState::estimatedProgress() const
 
 const String& PageLoadState::pendingAPIRequestURL() const
 {
-    return m_committedState.pendingAPIRequestURL;
+    return m_committedState.pendingAPIRequest.url;
+}
+
+auto PageLoadState::pendingAPIRequest() const -> const PendingAPIRequest&
+{
+    return m_committedState.pendingAPIRequest;
 }
 
 const URL& PageLoadState::resourceDirectoryURL() const
@@ -244,17 +265,17 @@ const URL& PageLoadState::resourceDirectoryURL() const
     return m_committedState.resourceDirectoryURL;
 }
 
-void PageLoadState::setPendingAPIRequestURL(const Transaction::Token& token, const String& pendingAPIRequestURL, const URL& resourceDirectoryURL)
+void PageLoadState::setPendingAPIRequest(const Transaction::Token& token, PendingAPIRequest&& pendingAPIRequest, const URL& resourceDirectoryURL)
 {
     ASSERT_UNUSED(token, &token.m_pageLoadState == this);
-    m_uncommittedState.pendingAPIRequestURL = pendingAPIRequestURL;
+    m_uncommittedState.pendingAPIRequest = WTFMove(pendingAPIRequest);
     m_uncommittedState.resourceDirectoryURL = resourceDirectoryURL;
 }
 
-void PageLoadState::clearPendingAPIRequestURL(const Transaction::Token& token)
+void PageLoadState::clearPendingAPIRequest(const Transaction::Token& token)
 {
     ASSERT_UNUSED(token, &token.m_pageLoadState == this);
-    m_uncommittedState.pendingAPIRequestURL = String();
+    m_uncommittedState.pendingAPIRequest = { };
 }
 
 void PageLoadState::didExplicitOpen(const Transaction::Token& token, const String& url)
@@ -296,7 +317,7 @@ void PageLoadState::didFailProvisionalLoad(const Transaction::Token& token)
     m_uncommittedState.unreachableURL = m_lastUnreachableURL;
 }
 
-void PageLoadState::didCommitLoad(const Transaction::Token& token, WebCertificateInfo& certificateInfo, bool hasInsecureContent)
+void PageLoadState::didCommitLoad(const Transaction::Token& token, WebCertificateInfo& certificateInfo, bool hasInsecureContent, bool usedLegacyTLS)
 {
     ASSERT_UNUSED(token, &token.m_pageLoadState == this);
     ASSERT(m_uncommittedState.state == State::Provisional);
@@ -307,6 +328,7 @@ void PageLoadState::didCommitLoad(const Transaction::Token& token, WebCertificat
 
     m_uncommittedState.url = m_uncommittedState.provisionalURL;
     m_uncommittedState.provisionalURL = String();
+    m_uncommittedState.negotiatedLegacyTLS = usedLegacyTLS;
 
     m_uncommittedState.title = String();
 }
@@ -410,7 +432,7 @@ void PageLoadState::setNetworkRequestsInProgress(const Transaction::Token& token
 
 bool PageLoadState::isLoading(const Data& data)
 {
-    if (!data.pendingAPIRequestURL.isNull())
+    if (!data.pendingAPIRequest.url.isNull())
         return true;
 
     switch (data.state) {

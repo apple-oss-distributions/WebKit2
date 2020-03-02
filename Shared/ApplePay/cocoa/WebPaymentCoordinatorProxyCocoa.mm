@@ -37,6 +37,14 @@
 #import <wtf/RunLoop.h>
 #import <wtf/URL.h>
 
+#if USE(APPLE_INTERNAL_SDK)
+#import <WebKitAdditions/WebPaymentCoordinatorProxyCocoaAdditions.mm>
+#else
+namespace WebKit {
+static void finishCreating(PKPaymentRequest *, const WebCore::ApplePaySessionPaymentRequest&) { }
+}
+#endif
+
 // FIXME: We don't support any platforms without -setThumbnailURLs:, so this can be removed.
 @interface PKPaymentRequest ()
 @property (nonatomic, strong) NSURL *thumbnailURL;
@@ -51,15 +59,14 @@
 
 namespace WebKit {
 
-void WebPaymentCoordinatorProxy::platformCanMakePaymentsWithActiveCard(const String& merchantIdentifier, const String& domainName, PAL::SessionID sessionID, WTF::Function<void(bool)>&& completionHandler)
+void WebPaymentCoordinatorProxy::platformCanMakePaymentsWithActiveCard(const String& merchantIdentifier, const String& domainName, WTF::Function<void(bool)>&& completionHandler)
 {
 #if PLATFORM(MAC)
     if (!PAL::isPassKitFrameworkAvailable())
         return completionHandler(false);
 #endif
 
-#if HAVE(PASSKIT_GRANULAR_ERRORS)
-    PKCanMakePaymentsWithMerchantIdentifierDomainAndSourceApplication(merchantIdentifier, domainName, m_client.paymentCoordinatorSourceApplicationSecondaryIdentifier(*this, sessionID), makeBlockPtr([completionHandler = WTFMove(completionHandler)](BOOL canMakePayments, NSError *error) mutable {
+    PKCanMakePaymentsWithMerchantIdentifierDomainAndSourceApplication(merchantIdentifier, domainName, m_client.paymentCoordinatorSourceApplicationSecondaryIdentifier(*this), makeBlockPtr([completionHandler = WTFMove(completionHandler)](BOOL canMakePayments, NSError *error) mutable {
         if (error)
             LOG_ERROR("PKCanMakePaymentsWithMerchantIdentifierAndDomain error %@", error);
 
@@ -67,16 +74,6 @@ void WebPaymentCoordinatorProxy::platformCanMakePaymentsWithActiveCard(const Str
             completionHandler(canMakePayments);
         });
     }).get());
-#else
-    PKCanMakePaymentsWithMerchantIdentifierAndDomain(merchantIdentifier, domainName, makeBlockPtr([completionHandler = WTFMove(completionHandler)](BOOL canMakePayments, NSError *error) mutable {
-        if (error)
-            LOG_ERROR("PKCanMakePaymentsWithMerchantIdentifierAndDomain error %@", error);
-
-        RunLoop::main().dispatch([completionHandler = WTFMove(completionHandler), canMakePayments] {
-            completionHandler(canMakePayments);
-        });
-    }).get());
-#endif
 }
 
 void WebPaymentCoordinatorProxy::platformOpenPaymentSetup(const String& merchantIdentifier, const String& domainName, WTF::Function<void(bool)>&& completionHandler)
@@ -94,7 +91,6 @@ void WebPaymentCoordinatorProxy::platformOpenPaymentSetup(const String& merchant
     }).get()];
 }
 
-#if HAVE(PASSKIT_GRANULAR_ERRORS)
 static RetainPtr<NSSet> toPKContactFields(const WebCore::ApplePaySessionPaymentRequest::ContactFields& contactFields)
 {
     Vector<NSString *> result;
@@ -112,59 +108,12 @@ static RetainPtr<NSSet> toPKContactFields(const WebCore::ApplePaySessionPaymentR
 
     return adoptNS([[NSSet alloc] initWithObjects:result.data() count:result.size()]);
 }
-#else
-static PKAddressField toPKAddressField(const WebCore::ApplePaySessionPaymentRequest::ContactFields& contactFields)
-{
-    PKAddressField result = 0;
-
-    if (contactFields.postalAddress)
-        result |= PKAddressFieldPostalAddress;
-    if (contactFields.phone)
-        result |= PKAddressFieldPhone;
-    if (contactFields.email)
-        result |= PKAddressFieldEmail;
-    if (contactFields.name)
-        result |= PKAddressFieldName;
-
-    return result;
-}
-#endif
-
-PKPaymentSummaryItemType toPKPaymentSummaryItemType(WebCore::ApplePaySessionPaymentRequest::LineItem::Type type)
-{
-    switch (type) {
-    case WebCore::ApplePaySessionPaymentRequest::LineItem::Type::Final:
-        return PKPaymentSummaryItemTypeFinal;
-
-    case WebCore::ApplePaySessionPaymentRequest::LineItem::Type::Pending:
-        return PKPaymentSummaryItemTypePending;
-    }
-}
 
 NSDecimalNumber *toDecimalNumber(const String& amount)
 {
     if (!amount)
         return [NSDecimalNumber zero];
     return [NSDecimalNumber decimalNumberWithString:amount locale:@{ NSLocaleDecimalSeparator : @"." }];
-}
-
-PKPaymentSummaryItem *toPKPaymentSummaryItem(const WebCore::ApplePaySessionPaymentRequest::LineItem& lineItem)
-{
-    return [PAL::getPKPaymentSummaryItemClass() summaryItemWithLabel:lineItem.label amount:toDecimalNumber(lineItem.amount) type:toPKPaymentSummaryItemType(lineItem.type)];
-}
-
-NSArray *toPKPaymentSummaryItems(const WebCore::ApplePaySessionPaymentRequest::TotalAndLineItems& totalAndLineItems)
-{
-    NSMutableArray *paymentSummaryItems = [NSMutableArray arrayWithCapacity:totalAndLineItems.lineItems.size() + 1];
-    for (auto& lineItem : totalAndLineItems.lineItems) {
-        if (PKPaymentSummaryItem *summaryItem = toPKPaymentSummaryItem(lineItem))
-            [paymentSummaryItems addObject:summaryItem];
-    }
-
-    if (PKPaymentSummaryItem *totalItem = toPKPaymentSummaryItem(totalAndLineItems.total))
-        [paymentSummaryItems addObject:totalItem];
-
-    return paymentSummaryItems;
 }
 
 static PKMerchantCapability toPKMerchantCapabilities(const WebCore::ApplePaySessionPaymentRequest::MerchantCapabilities& merchantCapabilities)
@@ -216,7 +165,6 @@ PKShippingMethod *toPKShippingMethod(const WebCore::ApplePaySessionPaymentReques
     return result;
 }
     
-#if HAVE(PASSKIT_GRANULAR_ERRORS)
 static RetainPtr<NSSet> toNSSet(const Vector<String>& strings)
 {
     if (strings.isEmpty())
@@ -228,7 +176,6 @@ static RetainPtr<NSSet> toNSSet(const Vector<String>& strings)
 
     return WTFMove(mutableSet);
 }
-#endif
 
 #if HAVE(PASSKIT_API_TYPE)
 static PKPaymentRequestAPIType toAPIType(WebCore::ApplePaySessionPaymentRequest::Requester requester)
@@ -242,7 +189,7 @@ static PKPaymentRequestAPIType toAPIType(WebCore::ApplePaySessionPaymentRequest:
 }
 #endif
 
-RetainPtr<PKPaymentRequest> WebPaymentCoordinatorProxy::platformPaymentRequest(const URL& originatingURL, const Vector<URL>& linkIconURLs, PAL::SessionID sessionID, const WebCore::ApplePaySessionPaymentRequest& paymentRequest)
+RetainPtr<PKPaymentRequest> WebPaymentCoordinatorProxy::platformPaymentRequest(const URL& originatingURL, const Vector<URL>& linkIconURLs, const WebCore::ApplePaySessionPaymentRequest& paymentRequest)
 {
     auto result = adoptNS([PAL::allocPKPaymentRequestInstance() init]);
 
@@ -266,13 +213,8 @@ RetainPtr<PKPaymentRequest> WebPaymentCoordinatorProxy::platformPaymentRequest(c
     [result setCurrencyCode:paymentRequest.currencyCode()];
     [result setBillingContact:paymentRequest.billingContact().pkContact()];
     [result setShippingContact:paymentRequest.shippingContact().pkContact()];
-#if HAVE(PASSKIT_GRANULAR_ERRORS)
     [result setRequiredBillingContactFields:toPKContactFields(paymentRequest.requiredBillingContactFields()).get()];
     [result setRequiredShippingContactFields:toPKContactFields(paymentRequest.requiredShippingContactFields()).get()];
-#else
-    [result setRequiredBillingAddressFields:toPKAddressField(paymentRequest.requiredBillingContactFields())];
-    [result setRequiredShippingAddressFields:toPKAddressField(paymentRequest.requiredShippingContactFields())];
-#endif
 
     [result setSupportedNetworks:toSupportedNetworks(paymentRequest.supportedNetworks()).get()];
     [result setMerchantCapabilities:toPKMerchantCapabilities(paymentRequest.merchantCapabilities())];
@@ -284,16 +226,7 @@ RetainPtr<PKPaymentRequest> WebPaymentCoordinatorProxy::platformPaymentRequest(c
         [shippingMethods addObject:toPKShippingMethod(shippingMethod)];
     [result setShippingMethods:shippingMethods.get()];
 
-    auto paymentSummaryItems = adoptNS([[NSMutableArray alloc] init]);
-    for (auto& lineItem : paymentRequest.lineItems()) {
-        if (PKPaymentSummaryItem *summaryItem = toPKPaymentSummaryItem(lineItem))
-            [paymentSummaryItems addObject:summaryItem];
-    }
-
-    if (PKPaymentSummaryItem *totalItem = toPKPaymentSummaryItem(paymentRequest.total()))
-        [paymentSummaryItems addObject:totalItem];
-
-    [result setPaymentSummaryItems:paymentSummaryItems.get()];
+    [result setPaymentSummaryItems:WebCore::platformSummaryItems(paymentRequest.total(), paymentRequest.lineItems())];
 
     [result setExpectsMerchantSession:YES];
 
@@ -302,31 +235,31 @@ RetainPtr<PKPaymentRequest> WebPaymentCoordinatorProxy::platformPaymentRequest(c
         [result setApplicationData:applicationData.get()];
     }
 
-#if HAVE(PASSKIT_GRANULAR_ERRORS)
     [result setSupportedCountries:toNSSet(paymentRequest.supportedCountries()).get()];
-#endif
 
 #if HAVE(PASSKIT_BOUND_INTERFACE_IDENTIFIER)
     // FIXME: Remove -respondsToSelector: check once rdar://problem/48041516 is widely available in SDKs.
-    auto& boundInterfaceIdentifier = m_client.paymentCoordinatorBoundInterfaceIdentifier(*this, sessionID);
+    auto& boundInterfaceIdentifier = m_client.paymentCoordinatorBoundInterfaceIdentifier(*this);
     if (!boundInterfaceIdentifier.isEmpty() && [result respondsToSelector:@selector(setBoundInterfaceIdentifier:)])
         [result setBoundInterfaceIdentifier:boundInterfaceIdentifier];
 #endif
 
     // FIXME: Instead of using respondsToSelector, this should use a proper #if version check.
-    auto& bundleIdentifier = m_client.paymentCoordinatorSourceApplicationBundleIdentifier(*this, sessionID);
+    auto& bundleIdentifier = m_client.paymentCoordinatorSourceApplicationBundleIdentifier(*this);
     if (!bundleIdentifier.isEmpty() && [result respondsToSelector:@selector(setSourceApplicationBundleIdentifier:)])
         [result setSourceApplicationBundleIdentifier:bundleIdentifier];
 
-    auto& secondaryIdentifier = m_client.paymentCoordinatorSourceApplicationSecondaryIdentifier(*this, sessionID);
+    auto& secondaryIdentifier = m_client.paymentCoordinatorSourceApplicationSecondaryIdentifier(*this);
     if (!secondaryIdentifier.isEmpty() && [result respondsToSelector:@selector(setSourceApplicationSecondaryIdentifier:)])
         [result setSourceApplicationSecondaryIdentifier:secondaryIdentifier];
 
 #if PLATFORM(IOS_FAMILY)
-    auto& serviceType = m_client.paymentCoordinatorCTDataConnectionServiceType(*this, sessionID);
+    auto& serviceType = m_client.paymentCoordinatorCTDataConnectionServiceType(*this);
     if (!serviceType.isEmpty() && [result respondsToSelector:@selector(setCTDataConnectionServiceType:)])
         [result setCTDataConnectionServiceType:serviceType];
 #endif
+
+    finishCreating(result.get(), paymentRequest);
 
     return result;
 }

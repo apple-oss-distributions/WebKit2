@@ -116,6 +116,7 @@ public:
         CookieManager,
         CustomHeaderFields,
         InternalDebugFeature,
+        DebuggableInfo,
         Download,
         ExperimentalFeature,
         FormSubmissionListener,
@@ -153,6 +154,8 @@ public:
         Preferences,
         RequestStorageAccessConfirmResultListener,
         ResourceLoadStatisticsStore,
+        ResourceLoadStatisticsFirstParty,
+        ResourceLoadStatisticsThirdParty,
         RunBeforeUnloadConfirmPanelResultListener,
         RunJavaScriptAlertResultListener,
         RunJavaScriptConfirmResultListener,
@@ -176,6 +179,10 @@ public:
 #if ENABLE(MEDIA_SESSION)
         MediaSessionFocusManager,
         MediaSessionMetadata,
+#endif
+
+#if ENABLE(WEB_AUTHN)
+        WebAuthenticationPanel,
 #endif
 
         // Bundle types

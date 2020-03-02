@@ -27,7 +27,6 @@
 
 #include "ArgumentCoders.h"
 #include <WebCore/AutoplayEvent.h>
-#include <WebCore/CacheStorageConnection.h>
 #include <WebCore/ColorSpace.h>
 #include <WebCore/DiagnosticLoggingClient.h>
 #include <WebCore/FrameLoaderTypes.h>
@@ -41,6 +40,7 @@
 #include <WebCore/ServiceWorkerTypes.h>
 #include <WebCore/StoredCredentialsPolicy.h>
 #include <WebCore/WorkerType.h>
+#include <wtf/EnumTraits.h>
 
 #if ENABLE(APPLE_PAY)
 #include <WebCore/PaymentHeaders.h>
@@ -48,6 +48,10 @@
 
 #if USE(CURL)
 #include <WebCore/CurlProxySettings.h>
+#endif
+
+#if USE(APPLE_INTERNAL_SDK)
+#include <WebKitAdditions/WebCoreArgumentCodersAdditions.h>
 #endif
 
 #if PLATFORM(COCOA)
@@ -77,6 +81,7 @@ class FloatRoundedRect;
 class FloatSize;
 class FixedPositionViewportConstraints;
 class HTTPHeaderMap;
+class ImageHandle;
 class IntPoint;
 class IntRect;
 class IntSize;
@@ -84,8 +89,9 @@ class KeyframeValueList;
 class LayoutSize;
 class LayoutPoint;
 class LinearTimingFunction;
+class NativeImageHandle;
 class Notification;
-class Path;
+class PasteboardCustomData;
 class ProtectionSpace;
 class Region;
 class ResourceError;
@@ -113,7 +119,6 @@ struct Length;
 struct GrammarDetail;
 struct MimeClassInfo;
 struct PasteboardImage;
-struct PasteboardCustomData;
 struct PasteboardURL;
 struct PluginInfo;
 struct PromisedAttachmentInfo;
@@ -180,7 +185,13 @@ struct SerializedAttachmentData;
 #if ENABLE(INDEXED_DATABASE)
 using IDBKeyPath = Variant<String, Vector<String>>;
 #endif
+
+namespace DOMCacheEngine {
+struct CacheInfo;
+struct Record;
 }
+
+} // namespace WebCore
 
 namespace IPC {
 
@@ -319,12 +330,6 @@ template<> struct ArgumentCoder<WebCore::LayoutPoint> {
     static bool decode(Decoder&, WebCore::LayoutPoint&);
 };
 
-template<> struct ArgumentCoder<WebCore::Path> {
-    static void encode(Encoder&, const WebCore::Path&);
-    static bool decode(Decoder&, WebCore::Path&);
-    static Optional<WebCore::Path> decode(Decoder&);
-};
-
 template<> struct ArgumentCoder<WebCore::Length> {
     static void encode(Encoder&, const WebCore::Length&);
     static bool decode(Decoder&, WebCore::Length&);
@@ -372,6 +377,16 @@ template<> struct ArgumentCoder<WebCore::Credential> {
 template<> struct ArgumentCoder<WebCore::Cursor> {
     static void encode(Encoder&, const WebCore::Cursor&);
     static bool decode(Decoder&, WebCore::Cursor&);
+};
+
+template<> struct ArgumentCoder<WebCore::ImageHandle> {
+    static void encode(Encoder&, const WebCore::ImageHandle&);
+    static bool decode(Decoder&, WebCore::ImageHandle&);
+};
+
+template<> struct ArgumentCoder<WebCore::NativeImageHandle> {
+    static void encode(Encoder&, const WebCore::NativeImageHandle&);
+    static bool decode(Decoder&, WebCore::NativeImageHandle&);
 };
 
 template<> struct ArgumentCoder<WebCore::ResourceRequest> {
@@ -693,6 +708,11 @@ template<> struct ArgumentCoder<WebCore::ShippingMethodUpdate> {
     static Optional<WebCore::ShippingMethodUpdate> decode(Decoder&);
 };
 
+template<> struct ArgumentCoder<WebCore::PaymentSessionError> {
+    static void encode(Encoder&, const WebCore::PaymentSessionError&);
+    static Optional<WebCore::PaymentSessionError> decode(Decoder&);
+};
+
 #endif
 
 #if ENABLE(MEDIA_STREAM)
@@ -772,9 +792,9 @@ namespace WTF {
 template<> struct EnumTraits<WebCore::ColorSpace> {
     using values = EnumValues<
     WebCore::ColorSpace,
-    WebCore::ColorSpace::ColorSpaceSRGB,
-    WebCore::ColorSpace::ColorSpaceLinearRGB,
-    WebCore::ColorSpace::ColorSpaceDisplayP3
+    WebCore::ColorSpace::SRGB,
+    WebCore::ColorSpace::LinearRGB,
+    WebCore::ColorSpace::DisplayP3
     >;
 };
 
@@ -865,7 +885,7 @@ template<> struct EnumTraits<WebCore::StoredCredentialsPolicy> {
         WebCore::StoredCredentialsPolicy,
         WebCore::StoredCredentialsPolicy::DoNotUse,
         WebCore::StoredCredentialsPolicy::Use,
-        WebCore::StoredCredentialsPolicy::EphemeralStatelessCookieless
+        WebCore::StoredCredentialsPolicy::EphemeralStateless
     >;
 };
 

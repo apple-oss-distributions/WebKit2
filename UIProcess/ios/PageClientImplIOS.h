@@ -30,6 +30,7 @@
 #import "PageClientImplCocoa.h"
 #import "WebFullScreenManagerProxy.h"
 #import <wtf/RetainPtr.h>
+#import <wtf/WeakObjCPtr.h>
 
 OBJC_CLASS WKContentView;
 OBJC_CLASS WKEditorUndoTarget;
@@ -62,6 +63,7 @@ private:
     bool isViewWindowActive() override;
     bool isViewFocused() override;
     bool isViewVisible() override;
+    bool isApplicationVisible() override;
     bool isViewInWindow() override;
     bool isViewVisibleOrOccluded() override;
     bool isVisuallyIdle() override;
@@ -103,6 +105,9 @@ private:
     void doneWithKeyEvent(const NativeWebKeyboardEvent&, bool wasEventHandled) override;
 #if ENABLE(TOUCH_EVENTS)
     void doneWithTouchEvent(const NativeWebTouchEvent&, bool wasEventHandled) override;
+#endif
+#if ENABLE(IOS_TOUCH_EVENTS)
+    void doneDeferringNativeGestures(bool preventNativeGestures) override;
 #endif
     RefPtr<WebPopupMenuProxy> createPopupMenuProxy(WebPageProxy&) override;
     Ref<WebCore::ValidationBubble> createValidationBubble(const String& message, const WebCore::ValidationBubble::Settings&) final;
@@ -149,6 +154,7 @@ private:
     void restorePageCenterAndScale(Optional<WebCore::FloatPoint>, double) override;
 
     void elementDidFocus(const FocusedElementInformation&, bool userIsInteracting, bool blurPreviousNode, OptionSet<WebCore::ActivityState::Flag> activityStateChanges, API::Object* userData) override;
+    void updateInputContextAfterBlurringAndRefocusingElement() final;
     void elementDidBlur() override;
     void focusedElementDidChangeInputMode(WebCore::InputMode) override;
     void didReceiveEditorStateUpdateAfterFocus() override;
@@ -163,7 +169,7 @@ private:
     bool showShareSheet(const WebCore::ShareDataWithParsedURL&, WTF::CompletionHandler<void(bool)>&&) override;
     
     void disableDoubleTapGesturesDuringTapIfNecessary(uint64_t requestID) override;
-    void handleSmartMagnificationInformationForPotentialTap(uint64_t requestID, const WebCore::FloatRect& renderRect, bool fitEntireRect, double viewportMinimumScale, double viewportMaximumScale) override;
+    void handleSmartMagnificationInformationForPotentialTap(uint64_t requestID, const WebCore::FloatRect& renderRect, bool fitEntireRect, double viewportMinimumScale, double viewportMaximumScale, bool nodeIsRootLevel) override;
 
     double minimumZoomScale() const override;
     WebCore::FloatRect documentRect() const override;
@@ -243,11 +249,6 @@ private:
 
     void handleAutocorrectionContext(const WebAutocorrectionContext&) final;
 
-    Seconds doubleTapForDoubleClickDelay() final;
-    float doubleTapForDoubleClickRadius() final;
-
-    void didFinishProcessingAllPendingMouseEvents() final { }
-
 #if HAVE(PENCILKIT)
     RetainPtr<WKDrawingView> createDrawingView(WebCore::GraphicsLayer::EmbeddedViewID) override;
 #endif
@@ -257,7 +258,7 @@ private:
     WTF::Optional<unsigned> activeTouchIdentifierForGestureRecognizer(UIGestureRecognizer*) override;
 #endif
 
-    WKContentView *m_contentView;
+    WeakObjCPtr<WKContentView> m_contentView;
     RetainPtr<WKEditorUndoTarget> m_undoTarget;
 };
 } // namespace WebKit

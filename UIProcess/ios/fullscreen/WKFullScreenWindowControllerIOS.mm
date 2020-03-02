@@ -33,7 +33,7 @@
 #import "WKFullscreenStackView.h"
 #import "WKWebView.h"
 #import "WKWebViewInternal.h"
-#import "WKWebViewPrivate.h"
+#import "WKWebViewPrivateForTesting.h"
 #import "WebFullScreenManagerProxy.h"
 #import "WebPageProxy.h"
 #import <Foundation/Foundation.h>
@@ -447,6 +447,7 @@ static const NSTimeInterval kAnimationDuration = 0.2;
     RetainPtr<NSString> _EVOrganizationName;
     BOOL _EVOrganizationNameIsValid;
     BOOL _inInteractiveDismiss;
+    BOOL _exitRequested;
 
     RetainPtr<id> _notificationListener;
 }
@@ -597,6 +598,13 @@ static RetainPtr<UIWindow> makeWindowFromView(UIView *)
 
         _repaintCallback = WebKit::VoidCallback::create([protectedSelf = retainPtr(self), self](WebKit::CallbackBase::Error) {
             _repaintCallback = nullptr;
+
+            if (_exitRequested) {
+                _exitRequested = NO;
+                [self _exitFullscreenImmediately];
+                return;
+            }
+
             if (auto* manager = [protectedSelf _manager]) {
                 manager->willEnterFullScreen();
                 return;
@@ -640,6 +648,12 @@ static RetainPtr<UIWindow> makeWindowFromView(UIView *)
     [_rootViewController presentViewController:_fullscreenViewController.get() animated:YES completion:^{
         _fullScreenState = WebKit::InFullScreen;
 
+        if (_exitRequested) {
+            _exitRequested = NO;
+            [self _exitFullscreenImmediately];
+            return;
+        }
+
         auto* page = [self._webView _page];
         auto* manager = self._manager;
         if (page && manager) {
@@ -657,6 +671,11 @@ static RetainPtr<UIWindow> makeWindowFromView(UIView *)
 
 - (void)requestExitFullScreen
 {
+    if (_fullScreenState != WebKit::InFullScreen) {
+        _exitRequested = YES;
+        return;
+    }
+
     if (auto* manager = self._manager) {
         manager->requestExitFullScreen();
         return;
@@ -668,8 +687,10 @@ static RetainPtr<UIWindow> makeWindowFromView(UIView *)
 
 - (void)exitFullScreen
 {
-    if (!self.isFullScreen)
+    if (_fullScreenState < WebKit::InFullScreen) {
+        _exitRequested = YES;
         return;
+    }
     _fullScreenState = WebKit::WaitingToExitFullScreen;
 
     if (auto* manager = self._manager) {
@@ -908,19 +929,20 @@ static RetainPtr<UIWindow> makeWindowFromView(UIView *)
     if (!trust)
         return nil;
 
-    NSDictionary *infoDictionary = [(__bridge NSDictionary *)SecTrustCopyInfo(trust) autorelease];
+    NSDictionary *infoDictionary = CFBridgingRelease(SecTrustCopyInfo(trust));
     // If SecTrustCopyInfo returned NULL then it's likely that the SecTrustRef has not been evaluated
     // and the only way to get the information we need is to call SecTrustEvaluate ourselves.
     if (!infoDictionary) {
+#if HAVE(SEC_TRUST_EVALUATE_WITH_ERROR)
+        if (!SecTrustEvaluateWithError(trust, nullptr))
+            return nil;
+#else
         SecTrustResultType result = kSecTrustResultProceed;
-
-        // FIXME: This is deprecated <rdar://problem/45894288>.
-        ALLOW_DEPRECATED_DECLARATIONS_BEGIN
         OSStatus err = SecTrustEvaluate(trust, &result);
-        ALLOW_DEPRECATED_DECLARATIONS_END
-
-        if (err == noErr)
-            infoDictionary = [(__bridge NSDictionary *)SecTrustCopyInfo(trust) autorelease];
+        if (err != noErr)
+            return nil;
+#endif
+        infoDictionary = CFBridgingRelease(SecTrustCopyInfo(trust));
         if (!infoDictionary)
             return nil;
     }

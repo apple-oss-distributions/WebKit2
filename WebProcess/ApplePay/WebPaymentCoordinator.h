@@ -43,6 +43,7 @@ class DataReference;
 namespace WebCore {
 class PaymentCoordinator;
 class PaymentContact;
+class PaymentSessionError;
 }
 
 namespace WebKit {
@@ -51,6 +52,7 @@ class NetworkProcessConnection;
 class WebPage;
 
 class WebPaymentCoordinator final : public WebCore::PaymentCoordinatorClient, private IPC::MessageReceiver, private IPC::MessageSender {
+    WTF_MAKE_FAST_ALLOCATED;
 public:
     friend class NetworkProcessConnection;
     explicit WebPaymentCoordinator(WebPage&);
@@ -81,6 +83,8 @@ private:
     bool isAlwaysOnLoggingAllowed() const override;
     bool supportsUnrestrictedApplePay() const override;
 
+    String userAgentScriptsBlockedErrorMessage() const final;
+
     // IPC::MessageReceiver.
     void didReceiveMessage(IPC::Connection&, IPC::Decoder&) override;
 
@@ -94,7 +98,7 @@ private:
     void didSelectShippingMethod(const WebCore::ApplePaySessionPaymentRequest::ShippingMethod&);
     void didSelectShippingContact(const WebCore::PaymentContact&);
     void didSelectPaymentMethod(const WebCore::PaymentMethod&);
-    void didCancelPaymentSession();
+    void didCancelPaymentSession(WebCore::PaymentSessionError&&);
 
     WebCore::PaymentCoordinator& paymentCoordinator();
 
