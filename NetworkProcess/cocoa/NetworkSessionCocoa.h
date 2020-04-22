@@ -48,7 +48,6 @@ namespace WebKit {
 enum class NegotiatedLegacyTLS : bool;
 class LegacyCustomProtocolManager;
 class NetworkSessionCocoa;
-using HostAndPort = std::pair<String, uint16_t>;
 
 struct SessionWrapper : public CanMakeWeakPtr<SessionWrapper> {
     void initialize(NSURLSessionConfiguration *, NetworkSessionCocoa&, WebCore::StoredCredentialsPolicy);
@@ -96,11 +95,6 @@ public:
 
     SessionWrapper& sessionWrapperForTask(const WebCore::ResourceRequest&, WebCore::StoredCredentialsPolicy);
 
-    void clientCertificateSuggestedForHost(NetworkDataTaskCocoa::TaskIdentifier, NSURLCredential *, const String& host, uint16_t port);
-    void taskReceivedBytes(NetworkDataTaskCocoa::TaskIdentifier);
-    void taskFailed(NetworkDataTaskCocoa::TaskIdentifier);
-    NSURLCredential *successfulClientCertificateForHost(const String& host, uint16_t port) const;
-
 private:
     void invalidateAndCancel() override;
     void clearCredentials() override;
@@ -139,14 +133,6 @@ private:
     Seconds m_loadThrottleLatency;
     bool m_fastServerTrustEvaluationEnabled { false };
     String m_dataConnectionServiceType;
-    
-    struct SuggestedClientCertificate {
-        String host;
-        uint16_t port { 0 };
-        RetainPtr<NSURLCredential> credential;
-    };
-    HashMap<NetworkDataTaskCocoa::TaskIdentifier, SuggestedClientCertificate> m_suggestedClientCertificates;
-    HashMap<HostAndPort, RetainPtr<NSURLCredential>> m_successfulClientCertificates;
 };
 
 } // namespace WebKit

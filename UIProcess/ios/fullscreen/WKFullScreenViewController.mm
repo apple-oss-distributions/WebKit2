@@ -265,7 +265,7 @@ ALLOW_DEPRECATED_DECLARATIONS_END
 
     WebCore::PlaybackSessionModel* playbackSessionModel = playbackSessionInterface ? playbackSessionInterface->playbackSessionModel() : nullptr;
     self.playing = playbackSessionModel ? playbackSessionModel->isPlaying() : NO;
-    [_pipButton setHidden:!playbackSessionModel || !playbackSessionModel->isPictureInPictureSupported()];
+    [_pipButton setHidden:!playbackSessionModel];
 }
 
 - (void)setPrefersStatusBarHidden:(BOOL)value
