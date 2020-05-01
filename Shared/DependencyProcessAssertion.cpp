@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,22 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#include "config.h"
+#include "DependencyProcessAssertion.h"
 
-#if PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
-
-#include "MessageReceiver.h"
-#include <WebCore/MotionManagerClient.h>
+#if !PLATFORM(IOS_FAMILY)
 
 namespace WebKit {
 
-class WebPageProxy;
+DependencyProcessAssertion::DependencyProcessAssertion(ProcessID, ASCIILiteral description)
+{
+    UNUSED_PARAM(description);
+}
 
-class WebDeviceOrientationUpdateProviderProxy : public WebCore::MotionManagerClient, private IPC::MessageReceiver {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    WebDeviceOrientationUpdateProviderProxy(WebPageProxy&);
-    ~WebDeviceOrientationUpdateProviderProxy();
-
-    void startUpdatingDeviceOrientation();
-    void stopUpdatingDeviceOrientation();
-
-    void startUpdatingDeviceMotion();
-    void stopUpdatingDeviceMotion();
-
-private:
-    // WebCore::WebCoreMotionManagerClient
-    void orientationChanged(double, double, double, double, double) final;
-    void motionChanged(double, double, double, double, double, double, Optional<double>, Optional<double>, Optional<double>) final;
-
-    // IPC::MessageReceiver
-    void didReceiveMessage(IPC::Connection&, IPC::Decoder&) override;
-
-    WebPageProxy& m_page;
-};
+DependencyProcessAssertion::~DependencyProcessAssertion()
+{
+}
 
 } // namespace WebKit
 
-#endif // PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
+#endif

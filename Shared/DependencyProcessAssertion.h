@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Apple Inc. All rights reserved.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,50 +25,26 @@
 
 #pragma once
 
-#include <wtf/HashMap.h>
-#include <wtf/Ref.h>
+#include <wtf/ProcessID.h>
+#include <wtf/RetainPtr.h>
+#include <wtf/text/ASCIILiteral.h>
 
-namespace API {
-class Navigation;
-struct SubstituteData;
-}
-
-namespace WebCore {
-class ResourceRequest;
-
-enum class FrameLoadType : uint8_t;
-}
+#if PLATFORM(IOS_FAMILY)
+OBJC_CLASS RBSAssertion;
+#endif
 
 namespace WebKit {
 
-class WebPageProxy;
-class WebBackForwardListItem;
-
-class WebNavigationState {
+class DependencyProcessAssertion {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit WebNavigationState();
-    ~WebNavigationState();
-
-    Ref<API::Navigation> createBackForwardNavigation(WebBackForwardListItem& targetItem, WebBackForwardListItem* currentItem, WebCore::FrameLoadType);
-    Ref<API::Navigation> createLoadRequestNavigation(WebCore::ResourceRequest&&, WebBackForwardListItem* currentItem);
-    Ref<API::Navigation> createReloadNavigation(WebBackForwardListItem* currentAndTargetItem);
-    Ref<API::Navigation> createLoadDataNavigation(std::unique_ptr<API::SubstituteData>&&);
-
-    bool hasNavigation(uint64_t navigationID) const { return m_navigations.contains(navigationID); }
-    API::Navigation* navigation(uint64_t navigationID);
-    RefPtr<API::Navigation> takeNavigation(uint64_t navigationID);
-    void didDestroyNavigation(uint64_t navigationID);
-    void clearAllNavigations();
-
-    uint64_t generateNavigationID()
-    {
-        return ++m_navigationID;
-    }
+    DependencyProcessAssertion(ProcessID targetPID, ASCIILiteral description);
+    ~DependencyProcessAssertion();
 
 private:
-    HashMap<uint64_t, RefPtr<API::Navigation>> m_navigations;
-    uint64_t m_navigationID { 0 };
+#if PLATFORM(IOS_FAMILY)
+    RetainPtr<RBSAssertion> m_assertion;
+#endif
 };
 
 } // namespace WebKit

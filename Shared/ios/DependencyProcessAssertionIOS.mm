@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 Apple Inc. All rights reserved.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,40 +23,32 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
+#import "config.h"
+#import "DependencyProcessAssertion.h"
 
-#if PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
+#if PLATFORM(IOS_FAMILY)
 
-#include "MessageReceiver.h"
-#include <WebCore/MotionManagerClient.h>
+#import "RunningBoardServicesSPI.h"
 
 namespace WebKit {
 
-class WebPageProxy;
+DependencyProcessAssertion::DependencyProcessAssertion(ProcessID targetPID, ASCIILiteral description)
+{
+    RBSTarget *target = [RBSTarget targetWithPid:targetPID];
+    RBSDomainAttribute *domainAttribute = [RBSDomainAttribute attributeWithDomain:@"com.apple.webkit" name:@"DependentProcessLink"];
+    m_assertion = adoptNS([[RBSAssertion alloc] initWithExplanation:String { description } target:target attributes:@[domainAttribute]]);
+    NSError *acquisitionError = nil;
+    if (![m_assertion acquireWithError:&acquisitionError])
+        RELEASE_LOG_ERROR(Process, "DependencyProcessAssertion::DependencyProcessAssertion: Failed to acquire dependency process assertion '%{public}s', error: %{public}@", description.characters(), acquisitionError);
+    else
+        RELEASE_LOG(Process, "DependencyProcessAssertion::DependencyProcessAssertion: Successfully took a dependency process assertion '%{public}s' for target process with PID %d", description.characters(), targetPID);
+}
 
-class WebDeviceOrientationUpdateProviderProxy : public WebCore::MotionManagerClient, private IPC::MessageReceiver {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    WebDeviceOrientationUpdateProviderProxy(WebPageProxy&);
-    ~WebDeviceOrientationUpdateProviderProxy();
-
-    void startUpdatingDeviceOrientation();
-    void stopUpdatingDeviceOrientation();
-
-    void startUpdatingDeviceMotion();
-    void stopUpdatingDeviceMotion();
-
-private:
-    // WebCore::WebCoreMotionManagerClient
-    void orientationChanged(double, double, double, double, double) final;
-    void motionChanged(double, double, double, double, double, double, Optional<double>, Optional<double>, Optional<double>) final;
-
-    // IPC::MessageReceiver
-    void didReceiveMessage(IPC::Connection&, IPC::Decoder&) override;
-
-    WebPageProxy& m_page;
-};
+DependencyProcessAssertion::~DependencyProcessAssertion()
+{
+    [m_assertion invalidate];
+}
 
 } // namespace WebKit
 
-#endif // PLATFORM(IOS_FAMILY) && ENABLE(DEVICE_ORIENTATION)
+#endif // PLATFORM(IOS_FAMILY)

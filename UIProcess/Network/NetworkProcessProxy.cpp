@@ -1184,19 +1184,9 @@ void NetworkProcessProxy::removeSession(PAL::SessionID sessionID)
 
 WebsiteDataStore* NetworkProcessProxy::websiteDataStoreFromSessionID(PAL::SessionID sessionID)
 {
-    auto iterator = m_websiteDataStores.find(sessionID);
-    if (iterator != m_websiteDataStores.end())
-        return iterator->value.get();
-
-    if (auto* websiteDataStore = m_processPool.websiteDataStore()) {
-        if (sessionID == websiteDataStore->sessionID())
-            return websiteDataStore;
-    }
-
-    if (sessionID != PAL::SessionID::defaultSessionID())
-        return nullptr;
-
-    return WebKit::WebsiteDataStore::defaultDataStore().ptr();
+    if (sessionID == PAL::SessionID::defaultSessionID())
+        return WebsiteDataStore::defaultDataStore().ptr();
+    return WebsiteDataStore::existingNonDefaultDataStoreForSessionID(sessionID);
 }
 
 void NetworkProcessProxy::retrieveCacheStorageParameters(PAL::SessionID sessionID)
