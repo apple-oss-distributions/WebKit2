@@ -40,6 +40,7 @@
 #include "WebProcessPool.h"
 #include "WebProtectionSpace.h"
 #include <WebCore/MIMETypeRegistry.h>
+#include <WebCore/ResourceResponseBase.h>
 #include <wtf/FileSystem.h>
 #include <wtf/text/CString.h>
 #include <wtf/text/WTFString.h>
@@ -165,12 +166,12 @@ void DownloadProxy::didReceiveResponse(const ResourceResponse& response)
     m_processPool->downloadClient().didReceiveResponse(*this, response);
 }
 
-void DownloadProxy::didReceiveData(uint64_t length)
+void DownloadProxy::didReceiveData(uint64_t bytesWritten, uint64_t totalBytesWritten, uint64_t totalBytesExpectedToWrite)
 {
     if (!m_processPool)
         return;
 
-    m_processPool->downloadClient().didReceiveData(*this, length);
+    m_processPool->downloadClient().didReceiveData(*this, bytesWritten, totalBytesWritten, totalBytesExpectedToWrite);
 }
 
 void DownloadProxy::decideDestinationWithSuggestedFilenameAsync(DownloadID downloadID, const String& suggestedFilename)
@@ -178,7 +179,7 @@ void DownloadProxy::decideDestinationWithSuggestedFilenameAsync(DownloadID downl
     if (!m_processPool)
         return;
     
-    m_processPool->downloadClient().decideDestinationWithSuggestedFilename(*this, suggestedFilename, [this, protectedThis = makeRef(*this), downloadID = downloadID] (AllowOverwrite allowOverwrite, String destination) {
+    m_processPool->downloadClient().decideDestinationWithSuggestedFilename(*this, ResourceResponseBase::sanitizeSuggestedFilename(suggestedFilename), [this, protectedThis = makeRef(*this), downloadID = downloadID] (AllowOverwrite allowOverwrite, String destination) {
         SandboxExtension::Handle sandboxExtensionHandle;
         if (!destination.isNull())
             SandboxExtension::createHandle(destination, SandboxExtension::Type::ReadWrite, sandboxExtensionHandle);

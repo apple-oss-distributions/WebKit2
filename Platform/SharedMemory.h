@@ -73,10 +73,11 @@ public:
 
         bool isNull() const;
 
-        void clear();
+#if OS(DARWIN) || OS(WINDOWS)
+        size_t size() const { return m_size; }
+#endif
 
-        void encode(IPC::Encoder&) const;
-        static bool decode(IPC::Decoder&, Handle&);
+        void clear();
 
 #if USE(UNIX_DOMAIN_SOCKETS)
         IPC::Attachment releaseAttachment() const;
@@ -97,6 +98,20 @@ public:
         mutable HANDLE m_handle;
         size_t m_size;
 #endif
+    };
+
+    struct IPCHandle {
+        IPCHandle() = default;
+        IPCHandle(Handle&& handle, uint64_t dataSize)
+            : handle(WTFMove(handle))
+            , dataSize(dataSize)
+        {
+        }
+        void encode(IPC::Encoder&) const;
+        static WARN_UNUSED_RETURN bool decode(IPC::Decoder&, IPCHandle&);
+
+        Handle handle;
+        uint64_t dataSize { 0 };
     };
 
     static RefPtr<SharedMemory> allocate(size_t);

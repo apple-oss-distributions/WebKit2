@@ -27,6 +27,7 @@
 #include "config.h"
 #include "WebPageProxy.h"
 
+#include "InputMethodState.h"
 #include "PageClientImpl.h"
 #include "WebKitUserMessage.h"
 #include "WebKitWebViewBasePrivate.h"
@@ -38,8 +39,11 @@
 #include <WebCore/NotImplemented.h>
 #include <WebCore/PlatformDisplay.h>
 #include <WebCore/UserAgent.h>
-#include <gtk/gtkx.h>
 #include <wtf/NeverDestroyed.h>
+
+#if PLATFORM(X11) && ENABLE(NETSCAPE_PLUGIN_API)
+#include <gtk/gtkx.h>
+#endif
 
 namespace WebKit {
 
@@ -92,7 +96,7 @@ void WebPageProxy::updateEditorState(const EditorState& editorState)
     pageClient().selectionDidChange();
 }
 
-#if PLATFORM(X11)
+#if PLATFORM(X11) && ENABLE(NETSCAPE_PLUGIN_API)
 typedef HashMap<uint64_t, GtkWidget* > PluginWindowMap;
 static PluginWindowMap& pluginWindowMap()
 {
@@ -146,16 +150,16 @@ void WebPageProxy::windowedPluginVisibilityDidChange(bool isVisible, uint64_t wi
     else
         gtk_widget_hide(plugin);
 }
-#endif // PLATFORM(X11)
+#endif // PLATFORM(X11) && ENABLE(NETSCAPE_PLUGIN_API)
 
-void WebPageProxy::setInputMethodState(bool enabled)
+void WebPageProxy::setInputMethodState(Optional<InputMethodState>&& state)
 {
-    webkitWebViewBaseSetInputMethodState(WEBKIT_WEB_VIEW_BASE(viewWidget()), enabled);
+    webkitWebViewBaseSetInputMethodState(WEBKIT_WEB_VIEW_BASE(viewWidget()), WTFMove(state));
 }
 
 void WebPageProxy::getCenterForZoomGesture(const WebCore::IntPoint& centerInViewCoordinates, WebCore::IntPoint& center)
 {
-    process().sendSync(Messages::WebPage::GetCenterForZoomGesture(centerInViewCoordinates), Messages::WebPage::GetCenterForZoomGesture::Reply(center), m_webPageID);
+    sendSync(Messages::WebPage::GetCenterForZoomGesture(centerInViewCoordinates), Messages::WebPage::GetCenterForZoomGesture::Reply(center));
 }
 
 bool WebPageProxy::makeGLContextCurrent()
@@ -181,6 +185,15 @@ void WebPageProxy::sendMessageToWebViewWithReply(UserMessage&& message, Completi
 void WebPageProxy::sendMessageToWebView(UserMessage&& message)
 {
     sendMessageToWebViewWithReply(WTFMove(message), [](UserMessage&&) { });
+}
+
+void WebPageProxy::themeDidChange()
+{
+    if (!hasRunningProcess())
+        return;
+
+    send(Messages::WebPage::ThemeDidChange(pageClient().themeName()));
+    effectiveAppearanceDidChange();
 }
 
 } // namespace WebKit

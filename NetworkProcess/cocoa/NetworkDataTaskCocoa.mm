@@ -38,73 +38,17 @@
 #import <WebCore/AuthenticationChallenge.h>
 #import <WebCore/NetworkStorageSession.h>
 #import <WebCore/NotImplemented.h>
-#import <WebCore/RegistrableDomain.h>
 #import <WebCore/ResourceRequest.h>
 #import <pal/spi/cf/CFNetworkSPI.h>
-#import <pal/spi/cocoa/OSVariantSPI.h>
 #import <wtf/BlockPtr.h>
 #import <wtf/FileSystem.h>
 #import <wtf/MainThread.h>
 #import <wtf/ProcessPrivilege.h>
+#import <wtf/SystemTracing.h>
 #import <wtf/text/Base64.h>
 
 #if HAVE(NW_ACTIVITY)
-#import <CFNetwork/CFNSURLConnection.h>
-#endif
-
-#if HAVE(OS_SIGNPOST)
-
-#import <os/signpost.h>
-
-static os_log_t signpostLogHandle()
-{
-    static dispatch_once_t once;
-    static os_log_t handle;
-
-    dispatch_once(&once, ^{
-        handle = os_log_create(LOG_CHANNEL_WEBKIT_SUBSYSTEM, "DataTask");
-    });
-
-    return handle;
-}
-
-static bool signpostsEnabled()
-{
-    static dispatch_once_t once;
-    static bool enabled;
-
-    dispatch_once(&once, ^{
-        if (os_variant_allows_internal_security_policies("com.apple.WebKit"))
-            enabled = !strcmp(getenv("WEBKIT_DATA_TASK_SIGNPOSTS") ?: "0", "1");
-    });
-
-    return enabled;
-}
-
-#define EMIT_SIGNPOST_WITH_FUNCTION(emitFunc, task, ...) \
-    do { \
-        if (signpostsEnabled()) { \
-            os_log_t handle = signpostLogHandle(); \
-            os_signpost_id_t signpostID = os_signpost_id_make_with_pointer(signpostLogHandle(), (task).get()); \
-            emitFunc(handle, signpostID, "DataTask", ##__VA_ARGS__); \
-        } \
-    } while (0)
-
-#define BEGIN_SIGNPOST(task, ...) \
-    EMIT_SIGNPOST_WITH_FUNCTION(os_signpost_interval_begin, (task), ##__VA_ARGS__)
-
-#define END_SIGNPOST(task, ...) \
-    EMIT_SIGNPOST_WITH_FUNCTION(os_signpost_interval_end, (task), ##__VA_ARGS__)
-
-#define EMIT_SIGNPOST(task, ...) \
-    EMIT_SIGNPOST_WITH_FUNCTION(os_signpost_event_emit, (task), ##__VA_ARGS__)
-
-#else
-
-#define BEGIN_SIGNPOST(task, ...) do { } while (0)
-#define END_SIGNPOST(task, ...) do { } while (0)
-#define EMIT_SIGNPOST(task, ...) do { } while (0)
-
+#import <pal/spi/cocoa/NSURLConnectionSPI.h>
 #endif
 
 namespace WebKit {
@@ -144,13 +88,11 @@ void NetworkDataTaskCocoa::applySniffingPoliciesAndBindRequestToInferfaceIfNeede
 
     auto& cocoaSession = static_cast<NetworkSessionCocoa&>(*m_session);
     auto& boundInterfaceIdentifier = cocoaSession.boundInterfaceIdentifier();
-    auto* proxyConfiguration = cocoaSession.proxyConfiguration();
     if (shouldContentSniff
 #if USE(CFNETWORK_CONTENT_ENCODING_SNIFFING_OVERRIDE)
         && shouldContentEncodingSniff
 #endif
-        && boundInterfaceIdentifier.isNull()
-        && !proxyConfiguration)
+        && boundInterfaceIdentifier.isNull())
         return;
 
     auto mutableRequest = adoptNS([nsRequest mutableCopy]);
@@ -165,9 +107,6 @@ void NetworkDataTaskCocoa::applySniffingPoliciesAndBindRequestToInferfaceIfNeede
 
     if (!boundInterfaceIdentifier.isNull())
         [mutableRequest setBoundInterfaceIdentifier:boundInterfaceIdentifier];
-
-    if (proxyConfiguration)
-        CFURLRequestSetProxySettings([mutableRequest _CFURLRequest], proxyConfiguration);
 
     nsRequest = mutableRequest.autorelease();
 }
@@ -200,12 +139,44 @@ void NetworkDataTaskCocoa::blockCookies()
     [m_task _setExplicitCookieStorage:statelessCookieStorage()._cookieStorage];
     m_hasBeenSetToUseStatelessCookieStorage = true;
 }
-#endif
 
-bool NetworkDataTaskCocoa::isThirdPartyRequest(const WebCore::ResourceRequest& request) const
+void NetworkDataTaskCocoa::unblockCookies()
 {
-    return !WebCore::areRegistrableDomainsEqual(request.url(), request.firstPartyForCookies());
+    ASSERT(hasProcessPrivilege(ProcessPrivilege::CanAccessRawCookies));
+
+    if (!m_hasBeenSetToUseStatelessCookieStorage)
+        return;
+
+    if (auto* storageSession = m_session->networkStorageSession()) {
+        [m_task _setExplicitCookieStorage:storageSession->nsCookieStorage()._cookieStorage];
+        m_hasBeenSetToUseStatelessCookieStorage = false;
+    }
 }
+
+// FIXME: Temporary fix for <rdar://problem/60089022> until content can be updated.
+bool NetworkDataTaskCocoa::needsFirstPartyCookieBlockingLatchModeQuirk(const URL& firstPartyURL, const URL& requestURL, const URL& redirectingURL) const
+{
+    using RegistrableDomain = WebCore::RegistrableDomain;
+    static NeverDestroyed<HashMap<RegistrableDomain, RegistrableDomain>> quirkPairs = [] {
+        HashMap<RegistrableDomain, RegistrableDomain> map;
+        map.add(RegistrableDomain::uncheckedCreateFromRegistrableDomainString("ymail.com"_s), RegistrableDomain::uncheckedCreateFromRegistrableDomainString("yahoo.com"_s));
+        map.add(RegistrableDomain::uncheckedCreateFromRegistrableDomainString("aolmail.com"_s), RegistrableDomain::uncheckedCreateFromRegistrableDomainString("aol.com"_s));
+        return map;
+    }();
+
+    RegistrableDomain firstPartyDomain { firstPartyURL };
+    RegistrableDomain requestDomain { requestURL };
+    if (firstPartyDomain != requestDomain)
+        return false;
+
+    RegistrableDomain redirectingDomain { redirectingURL };
+    auto quirk = quirkPairs.get().find(redirectingDomain);
+    if (quirk == quirkPairs.get().end())
+        return false;
+
+    return quirk->value == requestDomain;
+}
+#endif
 
 static void updateTaskWithFirstPartyForSameSiteCookies(NSURLSessionDataTask* task, const WebCore::ResourceRequest& request)
 {
@@ -228,22 +199,20 @@ static inline bool computeIsAlwaysOnLoggingAllowed(NetworkSession& session)
     return session.sessionID().isAlwaysOnLoggingAllowed();
 }
 
-NetworkDataTaskCocoa::NetworkDataTaskCocoa(NetworkSession& session, NetworkDataTaskClient& client, const WebCore::ResourceRequest& requestWithCredentials, WebCore::FrameIdentifier frameID, WebCore::PageIdentifier pageID, WebCore::StoredCredentialsPolicy storedCredentialsPolicy, WebCore::ContentSniffingPolicy shouldContentSniff, WebCore::ContentEncodingSniffingPolicy shouldContentEncodingSniff, bool shouldClearReferrerOnHTTPSToHTTPRedirect, PreconnectOnly shouldPreconnectOnly, bool dataTaskIsForMainFrameNavigation, bool dataTaskIsForMainResourceNavigationForAnyFrame, Optional<NetworkActivityTracker> networkActivityTracker)
+NetworkDataTaskCocoa::NetworkDataTaskCocoa(NetworkSession& session, NetworkDataTaskClient& client, const WebCore::ResourceRequest& requestWithCredentials, WebCore::FrameIdentifier frameID, WebCore::PageIdentifier pageID, WebCore::StoredCredentialsPolicy storedCredentialsPolicy, WebCore::ContentSniffingPolicy shouldContentSniff, WebCore::ContentEncodingSniffingPolicy shouldContentEncodingSniff, bool shouldClearReferrerOnHTTPSToHTTPRedirect, PreconnectOnly shouldPreconnectOnly, bool dataTaskIsForMainFrameNavigation, bool dataTaskIsForMainResourceNavigationForAnyFrame, Optional<NetworkActivityTracker> networkActivityTracker, Optional<NavigatingToAppBoundDomain> isNavigatingToAppBoundDomain, WebCore::ShouldRelaxThirdPartyCookieBlocking shouldRelaxThirdPartyCookieBlocking)
     : NetworkDataTask(session, client, requestWithCredentials, storedCredentialsPolicy, shouldClearReferrerOnHTTPSToHTTPRedirect, dataTaskIsForMainFrameNavigation)
-    , m_sessionWrapper(makeWeakPtr(static_cast<NetworkSessionCocoa&>(session).sessionWrapperForTask(requestWithCredentials, storedCredentialsPolicy)))
+    , m_sessionWrapper(makeWeakPtr(static_cast<NetworkSessionCocoa&>(session).sessionWrapperForTask(requestWithCredentials, storedCredentialsPolicy, isNavigatingToAppBoundDomain)))
     , m_frameID(frameID)
     , m_pageID(pageID)
     , m_isForMainResourceNavigationForAnyFrame(dataTaskIsForMainResourceNavigationForAnyFrame)
     , m_isAlwaysOnLoggingAllowed(computeIsAlwaysOnLoggingAllowed(session))
+    , m_shouldRelaxThirdPartyCookieBlocking(shouldRelaxThirdPartyCookieBlocking)
 {
-    if (m_scheduledFailureType != NoFailure)
-        return;
-
     auto request = requestWithCredentials;
     auto url = request.url();
     if (storedCredentialsPolicy == WebCore::StoredCredentialsPolicy::Use && url.protocolIsInHTTPFamily()) {
         m_user = url.user();
-        m_password = url.pass();
+        m_password = url.password();
         request.removeCredentials();
         url = request.url();
     
@@ -269,7 +238,7 @@ NetworkDataTaskCocoa::NetworkDataTaskCocoa(NetworkSession& session, NetworkDataT
     shouldBlockCookies = storedCredentialsPolicy == WebCore::StoredCredentialsPolicy::EphemeralStateless;
     if (auto* networkStorageSession = session.networkStorageSession()) {
         if (!shouldBlockCookies)
-            shouldBlockCookies = networkStorageSession->shouldBlockCookies(request, frameID, pageID);
+            shouldBlockCookies = networkStorageSession->shouldBlockCookies(request, frameID, pageID, m_shouldRelaxThirdPartyCookieBlocking);
     }
 #endif
     restrictRequestReferrerToOriginIfNeeded(request);
@@ -279,7 +248,7 @@ NetworkDataTaskCocoa::NetworkDataTaskCocoa(NetworkSession& session, NetworkDataT
 
     m_task = [m_sessionWrapper->session dataTaskWithRequest:nsRequest];
 
-    BEGIN_SIGNPOST(m_task, "%{public}s pri: %f preconnect: %d", url.string().ascii().data(), toNSURLSessionTaskPriority(request.priority()), shouldPreconnectOnly == PreconnectOnly::Yes);
+    WTFBeginSignpost(m_task.get(), "DataTask", "%{public}s pri: %.2f preconnect: %d", url.string().ascii().data(), toNSURLSessionTaskPriority(request.priority()), shouldPreconnectOnly == PreconnectOnly::Yes);
 
     RELEASE_ASSERT(!m_sessionWrapper->dataTaskMap.contains([m_task taskIdentifier]));
     m_sessionWrapper->dataTaskMap.add([m_task taskIdentifier], this);
@@ -325,15 +294,9 @@ NetworkDataTaskCocoa::~NetworkDataTaskCocoa()
     m_sessionWrapper->dataTaskMap.remove([m_task taskIdentifier]);
 }
 
-void NetworkDataTaskCocoa::restrictRequestReferrerToOriginIfNeeded(WebCore::ResourceRequest& request)
-{
-    if ((m_session->sessionID().isEphemeral() || m_session->isResourceLoadStatisticsEnabled()) && m_session->shouldDowngradeReferrer() && isThirdPartyRequest(request))
-        request.setExistingHTTPReferrerToOriginString();
-}
-
 void NetworkDataTaskCocoa::didSendData(uint64_t totalBytesSent, uint64_t totalBytesExpectedToSend)
 {
-    EMIT_SIGNPOST(m_task, "sent %llu bytes (expected %llu bytes)", totalBytesSent, totalBytesExpectedToSend);
+    WTFEmitSignpost(m_task.get(), "DataTask", "sent %llu bytes (expected %llu bytes)", totalBytesSent, totalBytesExpectedToSend);
 
     if (m_client)
         m_client->didSendData(totalBytesSent, totalBytesExpectedToSend);
@@ -341,7 +304,7 @@ void NetworkDataTaskCocoa::didSendData(uint64_t totalBytesSent, uint64_t totalBy
 
 void NetworkDataTaskCocoa::didReceiveChallenge(WebCore::AuthenticationChallenge&& challenge, NegotiatedLegacyTLS negotiatedLegacyTLS, ChallengeCompletionHandler&& completionHandler)
 {
-    EMIT_SIGNPOST(m_task, "received challenge");
+    WTFEmitSignpost(m_task.get(), "DataTask", "received challenge");
 
     if (tryPasswordBasedAuthentication(challenge, completionHandler))
         return;
@@ -354,12 +317,18 @@ void NetworkDataTaskCocoa::didReceiveChallenge(WebCore::AuthenticationChallenge&
     }
 }
 
+void NetworkDataTaskCocoa::didNegotiateModernTLS(const WebCore::AuthenticationChallenge& challenge)
+{
+    if (m_client)
+        m_client->didNegotiateModernTLS(challenge);
+}
+
 void NetworkDataTaskCocoa::didCompleteWithError(const WebCore::ResourceError& error, const WebCore::NetworkLoadMetrics& networkLoadMetrics)
 {
     if (error.isNull())
-        END_SIGNPOST(m_task, "completed");
+        WTFEndSignpost(m_task.get(), "DataTask", "completed");
     else
-        END_SIGNPOST(m_task, "failed");
+        WTFEndSignpost(m_task.get(), "DataTask", "failed");
 
     if (m_client)
         m_client->didCompleteWithError(error, networkLoadMetrics);
@@ -367,7 +336,7 @@ void NetworkDataTaskCocoa::didCompleteWithError(const WebCore::ResourceError& er
 
 void NetworkDataTaskCocoa::didReceiveData(Ref<WebCore::SharedBuffer>&& data)
 {
-    EMIT_SIGNPOST(m_task, "received %zd bytes", data->size());
+    WTFEmitSignpost(m_task.get(), "DataTask", "received %zd bytes", data->size());
 
     if (m_client)
         m_client->didReceiveData(WTFMove(data));
@@ -375,13 +344,13 @@ void NetworkDataTaskCocoa::didReceiveData(Ref<WebCore::SharedBuffer>&& data)
 
 void NetworkDataTaskCocoa::didReceiveResponse(WebCore::ResourceResponse&& response, NegotiatedLegacyTLS negotiatedLegacyTLS, WebKit::ResponseCompletionHandler&& completionHandler)
 {
-    EMIT_SIGNPOST(m_task, "received response headers");
+    WTFEmitSignpost(m_task.get(), "DataTask", "received response headers");
     NetworkDataTask::didReceiveResponse(WTFMove(response), negotiatedLegacyTLS, WTFMove(completionHandler));
 }
 
 void NetworkDataTaskCocoa::willPerformHTTPRedirection(WebCore::ResourceResponse&& redirectResponse, WebCore::ResourceRequest&& request, RedirectCompletionHandler&& completionHandler)
 {
-    EMIT_SIGNPOST(m_task, "redirect");
+    WTFEmitSignpost(m_task.get(), "DataTask", "redirect");
 
     if (redirectResponse.httpStatusCode() == 307 || redirectResponse.httpStatusCode() == 308) {
         ASSERT(m_lastHTTPMethod == request.httpMethod());
@@ -401,7 +370,7 @@ void NetworkDataTaskCocoa::willPerformHTTPRedirection(WebCore::ResourceResponse&
     
     const auto& url = request.url();
     m_user = url.user();
-    m_password = url.pass();
+    m_password = url.password();
     m_lastHTTPMethod = request.httpMethod();
     request.removeCredentials();
     
@@ -432,9 +401,10 @@ void NetworkDataTaskCocoa::willPerformHTTPRedirection(WebCore::ResourceResponse&
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     if (!m_hasBeenSetToUseStatelessCookieStorage) {
         if (m_storedCredentialsPolicy == WebCore::StoredCredentialsPolicy::EphemeralStateless
-            || (m_session->networkStorageSession() && m_session->networkStorageSession()->shouldBlockCookies(request, m_frameID, m_pageID)))
+            || (m_session->networkStorageSession() && m_session->networkStorageSession()->shouldBlockCookies(request, m_frameID, m_pageID, m_shouldRelaxThirdPartyCookieBlocking)))
             blockCookies();
-    }
+    } else if (m_storedCredentialsPolicy != WebCore::StoredCredentialsPolicy::EphemeralStateless && needsFirstPartyCookieBlockingLatchModeQuirk(request.firstPartyForCookies(), request.url(), redirectResponse.url()))
+        unblockCookies();
 #if !RELEASE_LOG_DISABLED
     if (m_session->shouldLogCookieInformation())
         RELEASE_LOG_IF(isAlwaysOnLoggingAllowed(), Network, "%p - NetworkDataTaskCocoa::willPerformHTTPRedirection::logCookieInformation: pageID = %llu, frameID = %llu, taskID = %lu: %s cookies for redirect URL %s", this, m_pageID.toUInt64(), m_frameID.toUInt64(), (unsigned long)[m_task taskIdentifier], (m_hasBeenSetToUseStatelessCookieStorage ? "Blocking" : "Not blocking"), request.url().string().utf8().data());
@@ -447,7 +417,7 @@ void NetworkDataTaskCocoa::willPerformHTTPRedirection(WebCore::ResourceResponse&
 
     if (m_client)
         m_client->willPerformHTTPRedirection(WTFMove(redirectResponse), WTFMove(request), [completionHandler = WTFMove(completionHandler), this, weakThis = makeWeakPtr(*this)] (auto&& request) mutable {
-            if (!weakThis)
+            if (!weakThis || !m_session)
                 return completionHandler({ });
             if (!request.isNull())
                 restrictRequestReferrerToOriginIfNeeded(request);
@@ -535,16 +505,13 @@ String NetworkDataTaskCocoa::suggestedFilename() const
 
 void NetworkDataTaskCocoa::cancel()
 {
-    EMIT_SIGNPOST(m_task, "cancel");
+    WTFEmitSignpost(m_task.get(), "DataTask", "cancel");
     [m_task cancel];
 }
 
 void NetworkDataTaskCocoa::resume()
 {
-    EMIT_SIGNPOST(m_task, "resume");
-
-    if (m_scheduledFailureType != NoFailure)
-        m_failureTimer.startOneShot(0_s);
+    WTFEmitSignpost(m_task.get(), "DataTask", "resume");
 
     auto& cocoaSession = static_cast<NetworkSessionCocoa&>(*m_session);
     if (cocoaSession.deviceManagementRestrictionsEnabled() && m_isForMainResourceNavigationForAnyFrame) {
@@ -608,6 +575,26 @@ bool NetworkDataTaskCocoa::isAlwaysOnLoggingAllowed() const
 String NetworkDataTaskCocoa::description() const
 {
     return String([m_task description]);
+}
+
+void NetworkDataTaskCocoa::setH2PingCallback(const URL& url, CompletionHandler<void(Expected<WTF::Seconds, WebCore::ResourceError>&&)>&& completionHandler)
+{
+#if HAVE(PRECONNECT_PING)
+    ASSERT(m_task.get()._preconnect);
+    auto handler = CompletionHandlerWithFinalizer<void(Expected<WTF::Seconds, WebCore::ResourceError>&&)>(WTFMove(completionHandler), [url] (Function<void(Expected<WTF::Seconds, WebCore::ResourceError>&&)>& completionHandler) {
+        completionHandler(makeUnexpected(WebCore::internalError(url)));
+    });
+    [m_task getUnderlyingHTTPConnectionInfoWithCompletionHandler:makeBlockPtr([completionHandler = WTFMove(handler), url] (_NSHTTPConnectionInfo *connectionInfo) mutable {
+        if (!connectionInfo.isValid)
+            return completionHandler(makeUnexpected(WebCore::internalError(url)));
+        [connectionInfo sendPingWithReceiveHandler:makeBlockPtr([completionHandler = WTFMove(completionHandler)](NSError *error, NSTimeInterval interval) mutable {
+            completionHandler(Seconds(interval));
+        }).get()];
+    }).get()];
+#else
+    ASSERT_NOT_REACHED();
+    return completionHandler(makeUnexpected(WebCore::internalError(url)));
+#endif
 }
 
 }
