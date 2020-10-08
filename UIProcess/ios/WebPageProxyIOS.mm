@@ -1246,7 +1246,7 @@ void WebPageProxy::requestDocumentEditingContext(WebKit::DocumentEditingContextR
     sendWithAsyncReply(Messages::WebPage::RequestDocumentEditingContext(request), WTFMove(completionHandler));
 }
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
 
 void WebPageProxy::didHandleDragStartRequest(bool started)
 {
@@ -1349,11 +1349,7 @@ static bool desktopClassBrowsingSupported()
     static bool supportsDesktopClassBrowsing = false;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-#if PLATFORM(MACCATALYST)
-        supportsDesktopClassBrowsing = true;
-#else
-        supportsDesktopClassBrowsing = currentUserInterfaceIdiomIsPad();
-#endif
+        supportsDesktopClassBrowsing = currentUserInterfaceIdiomIsPadOrMac();
     });
     return supportsDesktopClassBrowsing;
 }

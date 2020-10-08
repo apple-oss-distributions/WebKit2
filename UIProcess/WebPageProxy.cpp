@@ -179,6 +179,7 @@
 #include <WebCore/ValidationBubble.h>
 #include <WebCore/WindowFeatures.h>
 #include <WebCore/WritingDirection.h>
+#include <pal/HysteresisActivity.h>
 #include <stdio.h>
 #include <wtf/CallbackAggregator.h>
 #include <wtf/NeverDestroyed.h>
@@ -211,6 +212,7 @@
 #include "VideoFullscreenManagerProxyMessages.h"
 #include <WebCore/AttributedString.h>
 #include <WebCore/RunLoopObserver.h>
+#include <WebCore/SystemBattery.h>
 #include <WebCore/TextIndicatorWindow.h>
 #include <wtf/MachSendRight.h>
 #include <wtf/cocoa/Entitlements.h>
@@ -293,6 +295,10 @@
 #include "DefaultWebBrowserChecks.h"
 #endif
 
+#if ENABLE(WEBPROCESS_WINDOWSERVER_BLOCKING)
+#include "DisplayLink.h"
+#endif
+
 // This controls what strategy we use for mouse wheel coalescing.
 #define MERGE_WHEEL_EVENTS 1
 
@@ -315,6 +321,35 @@ namespace WebKit {
 using namespace WebCore;
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, webPageProxyCounter, ("WebPageProxy"));
+
+#if ENABLE(WEBPROCESS_WINDOWSERVER_BLOCKING)
+class ScrollingObserver {
+    WTF_MAKE_NONCOPYABLE(ScrollingObserver);
+    WTF_MAKE_FAST_ALLOCATED;
+    friend NeverDestroyed<ScrollingObserver>;
+public:
+    static ScrollingObserver& singleton();
+
+    void willSendWheelEvent()
+    {
+        m_hysteresis.impulse();
+    }
+
+private:
+    ScrollingObserver()
+        : m_hysteresis([](PAL::HysteresisState state) { DisplayLink::setShouldSendIPCOnBackgroundQueue(state == PAL::HysteresisState::Started); })
+    {
+    }
+
+    PAL::HysteresisActivity m_hysteresis;
+};
+
+ScrollingObserver& ScrollingObserver::singleton()
+{
+    static NeverDestroyed<ScrollingObserver> detector;
+    return detector;
+}
+#endif // ENABLE(WEBPROCESS_WINDOWSERVER_BLOCKING)
 
 class StorageRequests {
     WTF_MAKE_NONCOPYABLE(StorageRequests); WTF_MAKE_FAST_ALLOCATED;
@@ -2483,7 +2518,7 @@ void WebPageProxy::resetCurrentDragInformation()
     setDragCaretRect({ });
 }
 
-#if !ENABLE(DATA_INTERACTION)
+#if !PLATFORM(IOS_FAMILY) || !ENABLE(DRAG_SUPPORT)
 
 void WebPageProxy::setDragCaretRect(const IntRect& dragCaretRect)
 {
@@ -2698,6 +2733,10 @@ void WebPageProxy::processNextQueuedWheelEvent()
 
 void WebPageProxy::sendWheelEvent(const WebWheelEvent& event)
 {
+#if ENABLE(WEBPROCESS_WINDOWSERVER_BLOCKING)
+    ScrollingObserver::singleton().willSendWheelEvent();
+#endif
+
     send(
         Messages::EventDispatcher::WheelEvent(
             m_webPageID,
@@ -4402,7 +4441,14 @@ void WebPageProxy::preconnectTo(const URL& url)
     if (!m_websiteDataStore->configuration().allowsServerPreconnect())
         return;
 
-    m_process->processPool().ensureNetworkProcess().preconnectTo(sessionID(), identifier(), webPageID(), url, userAgent(), WebCore::StoredCredentialsPolicy::Use, m_isNavigatingToAppBoundDomain);
+    auto storedCredentialsPolicy = m_canUseCredentialStorage ? WebCore::StoredCredentialsPolicy::Use : WebCore::StoredCredentialsPolicy::DoNotUse;
+    m_process->processPool().ensureNetworkProcess().preconnectTo(sessionID(), identifier(), webPageID(), url, userAgent(), storedCredentialsPolicy, m_isNavigatingToAppBoundDomain);
+}
+
+void WebPageProxy::setCanUseCredentialStorage(bool canUseCredentialStorage)
+{
+    m_canUseCredentialStorage = canUseCredentialStorage;
+    send(Messages::WebPage::SetCanUseCredentialStorage(canUseCredentialStorage));
 }
 
 void WebPageProxy::didDestroyNavigation(uint64_t navigationID)
@@ -5932,6 +5978,7 @@ void WebPageProxy::runOpenPanel(FrameIdentifier frameID, FrameInfoData&& frameIn
 
 void WebPageProxy::showShareSheet(const ShareDataWithParsedURL& shareData, CompletionHandler<void(bool)>&& completionHandler)
 {
+    MESSAGE_CHECK(m_process, !shareData.url || shareData.url->protocolIsInHTTPFamily() || shareData.url->protocolIsData());
     MESSAGE_CHECK(m_process, shareData.files.isEmpty() || m_preferences->webShareFileAPIEnabled());
     pageClient().showShareSheet(shareData, WTFMove(completionHandler));
 }
@@ -7067,13 +7114,13 @@ void WebPageProxy::voidCallback(CallbackID callbackID)
     callback->performCallback();
 }
 
-void WebPageProxy::dataCallback(const IPC::SharedBufferDataReference& dataReference, CallbackID callbackID)
+void WebPageProxy::dataCallback(const IPC::DataReference& dataReference, CallbackID callbackID)
 {
     auto callback = m_callbacks.take<DataCallback>(callbackID);
     if (!callback)
         return;
 
-    callback->performCallbackWithReturnValue(API::Data::create(reinterpret_cast<const uint8_t*>(dataReference.data()), dataReference.size()).ptr());
+    callback->performCallbackWithReturnValue(API::Data::create(dataReference.data(), dataReference.size()).ptr());
 }
 
 void WebPageProxy::boolCallback(bool result, CallbackID callbackID)
@@ -7864,9 +7911,13 @@ WebPageCreationParameters WebPageProxy::creationParameters(WebProcessProxy& proc
     parameters.shouldCaptureVideoInGPUProcess = preferences().captureVideoInGPUProcessEnabled();
     parameters.shouldRenderCanvasInGPUProcess = preferences().renderCanvasInGPUProcessEnabled();
     parameters.shouldEnableVP9Decoder = preferences().vp9DecoderEnabled();
+#if PLATFORM(COCOA)
+    parameters.shouldEnableVP9SWDecoder = preferences().vp9DecoderEnabled() && (!WebCore::systemHasBattery() || preferences().vp9SWDecoderEnabledOnBattery());
+#endif
     parameters.shouldCaptureDisplayInUIProcess = m_process->processPool().configuration().shouldCaptureDisplayInUIProcess();
     parameters.limitsNavigationsToAppBoundDomains = m_limitsNavigationsToAppBoundDomains;
     parameters.shouldRelaxThirdPartyCookieBlocking = m_configuration->shouldRelaxThirdPartyCookieBlocking();
+    parameters.canUseCredentialStorage = m_canUseCredentialStorage;
 
 #if PLATFORM(GTK)
     parameters.themeName = pageClient().themeName();
@@ -9313,7 +9364,7 @@ void WebPageProxy::getLoadDecisionForIcon(const WebCore::LinkIcon& icon, Callbac
     });
 }
 
-void WebPageProxy::finishedLoadingIcon(CallbackID callbackID, const IPC::SharedBufferDataReference& data)
+void WebPageProxy::finishedLoadingIcon(CallbackID callbackID, const IPC::DataReference& data)
 {
     dataCallback(data, callbackID);
 }
@@ -9563,7 +9614,7 @@ void WebPageProxy::updateAttachmentIcon(const String& identifier, const RefPtr<S
 }
 #endif
 
-void WebPageProxy::registerAttachmentIdentifierFromData(const String& identifier, const String& contentType, const String& preferredFileName, const IPC::SharedBufferDataReference& data)
+void WebPageProxy::registerAttachmentIdentifierFromData(const String& identifier, const String& contentType, const String& preferredFileName, const IPC::SharedBufferCopy& data)
 {
     MESSAGE_CHECK(m_process, m_preferences->attachmentElementEnabled());
     MESSAGE_CHECK(m_process, IdentifierToAttachmentMap::isValidKey(identifier));
@@ -9681,7 +9732,7 @@ WebPageProxy::ShouldUpdateAttachmentAttributes WebPageProxy::willUpdateAttachmen
 
 #if !PLATFORM(COCOA)
 
-void WebPageProxy::platformRegisterAttachment(Ref<API::Attachment>&&, const String&, const IPC::SharedBufferDataReference&)
+void WebPageProxy::platformRegisterAttachment(Ref<API::Attachment>&&, const String&, const IPC::SharedBufferCopy&)
 {
 }
 
@@ -10176,14 +10227,14 @@ void WebPageProxy::setOrientationForMediaCapture(uint64_t orientation)
 }
 
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
-void WebPageProxy::loadedThirdPartyDomains(CompletionHandler<void(Vector<RegistrableDomain>&&)>&& completionHandler)
+void WebPageProxy::getLoadedSubresourceDomains(CompletionHandler<void(Vector<RegistrableDomain>&&)>&& completionHandler)
 {
-    sendWithAsyncReply(Messages::WebPage::LoadedThirdPartyDomains(), WTFMove(completionHandler));
+    sendWithAsyncReply(Messages::WebPage::GetLoadedSubresourceDomains(), WTFMove(completionHandler));
 }
 
-void WebPageProxy::clearLoadedThirdPartyDomains()
+void WebPageProxy::clearLoadedSubresourceDomains()
 {
-    send(Messages::WebPage::ClearLoadedThirdPartyDomains());
+    send(Messages::WebPage::ClearLoadedSubresourceDomains());
 }
 #endif
 

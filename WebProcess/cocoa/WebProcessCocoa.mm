@@ -26,8 +26,6 @@
 #import "config.h"
 #import "WebProcess.h"
 
-#import "LaunchServicesDatabaseManager.h"
-#import "LaunchServicesDatabaseXPCConstants.h"
 #import "LegacyCustomProtocolManager.h"
 #import "LogInitialization.h"
 #import "Logging.h"
@@ -45,10 +43,10 @@
 #import "WebPage.h"
 #import "WebProcessCreationParameters.h"
 #import "WebProcessDataStoreParameters.h"
+#import "WebProcessMessages.h"
 #import "WebProcessProxyMessages.h"
 #import "WebSleepDisablerClient.h"
 #import "WebsiteDataStoreParameters.h"
-#import "XPCEndpoint.h"
 #import <JavaScriptCore/ConfigFile.h>
 #import <JavaScriptCore/Options.h>
 #import <WebCore/AVAssetMIMETypeCache.h>
@@ -73,6 +71,7 @@
 #import <algorithm>
 #import <dispatch/dispatch.h>
 #import <objc/runtime.h>
+#import <pal/cocoa/MediaToolboxSoftLink.h>
 #import <pal/spi/cf/CFNetworkSPI.h>
 #import <pal/spi/cf/CFUtilitiesSPI.h>
 #import <pal/spi/cg/CoreGraphicsSPI.h>
@@ -126,6 +125,7 @@
 #import "WebSwitchingGPUClient.h"
 #import <WebCore/GraphicsContextGLOpenGLManager.h>
 #import <WebCore/ScrollbarThemeMac.h>
+#import <pal/spi/mac/HIServicesSPI.h>
 #import <pal/spi/mac/NSScrollerImpSPI.h>
 #endif
 
@@ -134,6 +134,12 @@
 #endif
 
 #import <pal/cocoa/AVFoundationSoftLink.h>
+
+#if HAVE(CATALYST_USER_INTERFACE_IDIOM_AND_SCALE_FACTOR)
+// FIXME: This is only for binary compatibility with versions of UIKit in macOS 11 that are missing the change in <rdar://problem/68524148>.
+SOFT_LINK_FRAMEWORK(UIKit)
+SOFT_LINK_FUNCTION_MAY_FAIL_FOR_SOURCE(WebKit, UIKit, _UIApplicationCatalystRequestViewServiceIdiomAndScaleFactor, void, (UIUserInterfaceIdiom idiom, CGFloat scaleFactor), (idiom, scaleFactor))
+#endif
 
 SOFT_LINK_FRAMEWORK(CoreServices)
 SOFT_LINK_CLASS(CoreServices, _LSDService)
@@ -166,47 +172,25 @@ static id NSApplicationAccessibilityFocusedUIElement(NSApplication*, SEL)
 }
 #endif
 
-void WebProcess::handleXPCEndpointMessages() const
-{
-    if (!parentProcessConnection())
-        return;
-
-    auto connection = parentProcessConnection()->xpcConnection();
-
-    if (!connection)
-        return;
-
-    RELEASE_ASSERT(xpc_get_type(connection) == XPC_TYPE_CONNECTION);
-
-    xpc_connection_suspend(connection);
-
-    xpc_connection_set_target_queue(connection, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
-    xpc_connection_set_event_handler(connection, ^(xpc_object_t event) {
-        if (xpc_get_type(event) != XPC_TYPE_DICTIONARY)
-            return;
-
-        String messageName = xpc_dictionary_get_string(event, XPCEndpoint::xpcMessageNameKey);
-        if (messageName.isEmpty())
-            return;
-
-#if HAVE(LSDATABASECONTEXT)
-        if (messageName == LaunchServicesDatabaseXPCConstants::xpcLaunchServicesDatabaseXPCEndpointMessageName) {
-            auto endpoint = xpc_dictionary_get_value(event, LaunchServicesDatabaseXPCConstants::xpcLaunchServicesDatabaseXPCEndpointNameKey);
-            LaunchServicesDatabaseManager::singleton().setEndpoint(endpoint);
-            return;
-        }
-#endif
-    });
-
-    xpc_connection_resume(connection);
-}
-
 void WebProcess::platformInitializeWebProcess(WebProcessCreationParameters& parameters)
 {
+#if HAVE(CATALYST_USER_INTERFACE_IDIOM_AND_SCALE_FACTOR)
+    if (canLoad_UIKit__UIApplicationCatalystRequestViewServiceIdiomAndScaleFactor()) {
+        auto [overrideUserInterfaceIdiom, overrideScaleFactor] = parameters.overrideUserInterfaceIdiomAndScale;
+        softLink_UIKit__UIApplicationCatalystRequestViewServiceIdiomAndScaleFactor(static_cast<UIUserInterfaceIdiom>(overrideUserInterfaceIdiom), overrideScaleFactor);
+    }
+#endif
+
     if (parameters.mobileGestaltExtensionHandle) {
         if (auto extension = SandboxExtension::create(WTFMove(*parameters.mobileGestaltExtensionHandle))) {
             bool ok = extension->consume();
             ASSERT_UNUSED(ok, ok);
+            // If we have an extension handle for MobileGestalt, it means the MobileGestalt cache is invalid.
+            // In this case, we perform a set of MobileGestalt queries while having access to the daemon,
+            // which will populate the MobileGestalt in-memory cache with correct values.
+            // The set of queries below was determined by finding all possible queries that have cachable
+            // values, and would reach out to the daemon for the answer. That way, the in-memory cache
+            // should be identical to a valid MobileGestalt cache after having queried all of these values.
 #if PLATFORM(IOS_FAMILY) && !PLATFORM(MACCATALYST)
             MGGetFloat32Answer(kMGQMainScreenScale, 0);
             MGGetSInt32Answer(kMGQMainScreenPitch, 0);
@@ -269,7 +253,7 @@ void WebProcess::platformInitializeWebProcess(WebProcessCreationParameters& para
     setEnhancedAccessibility(parameters.accessibilityEnhancedUserInterfaceEnabled);
 
 #if PLATFORM(IOS_FAMILY)
-    setCurrentUserInterfaceIdiomIsPad(parameters.currentUserInterfaceIdiomIsPad);
+    setCurrentUserInterfaceIdiomIsPadOrMac(parameters.currentUserInterfaceIdiomIsPad);
     setLocalizedDeviceModel(parameters.localizedDeviceModel);
 #if ENABLE(VIDEO_PRESENTATION_MODE)
     setSupportsPictureInPicture(parameters.supportsPictureInPicture);
@@ -352,6 +336,11 @@ void WebProcess::platformInitializeWebProcess(WebProcessCreationParameters& para
 #endif
         
     WebCore::sleepDisablerClient() = makeUnique<WebSleepDisablerClient>();
+
+#if HAVE(FIG_PHOTO_DECOMPRESSION_SET_HARDWARE_CUTOFF) && !ENABLE(HARDWARE_JPEG)
+    if (PAL::isMediaToolboxFrameworkAvailable() && PAL::canLoad_MediaToolbox_FigPhotoDecompressionSetHardwareCutoff())
+        PAL::softLinkMediaToolboxFigPhotoDecompressionSetHardwareCutoff(kPALFigPhotoContainerFormat_JFIF, INT_MAX);
+#endif
 
     updateProcessName();
 }
@@ -940,6 +929,12 @@ static const WTF::String& userHighlightColorPreferenceKey()
     static NeverDestroyed<WTF::String> userHighlightColorPreferenceKey(MAKE_STATIC_STRING_IMPL("AppleHighlightColor"));
     return userHighlightColorPreferenceKey;
 }
+
+static const WTF::String& reduceMotionPreferenceKey()
+{
+    static NeverDestroyed<WTF::String> key(MAKE_STATIC_STRING_IMPL("reduceMotion"));
+    return key;
+}
 #endif
 
 static void dispatchSimulatedNotificationsForPreferenceChange(const String& key)
@@ -950,15 +945,17 @@ static void dispatchSimulatedNotificationsForPreferenceChange(const String& key)
     // of the system, we must re-post the notification in the Web Content process after updating the default.
     
     if (key == userAccentColorPreferenceKey()) {
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        auto notificationCenter = [NSNotificationCenter defaultCenter];
         [notificationCenter postNotificationName:@"kCUINotificationAquaColorVariantChanged" object:nil];
         [notificationCenter postNotificationName:@"NSSystemColorsWillChangeNotification" object:nil];
         [notificationCenter postNotificationName:NSSystemColorsDidChangeNotification object:nil];
-    }
-    if (key == userHighlightColorPreferenceKey()) {
-        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+    } else if (key == userHighlightColorPreferenceKey()) {
+        auto notificationCenter = [NSNotificationCenter defaultCenter];
         [notificationCenter postNotificationName:@"NSSystemColorsWillChangeNotification" object:nil];
         [notificationCenter postNotificationName:NSSystemColorsDidChangeNotification object:nil];
+    } else if (key == reduceMotionPreferenceKey()) {
+        auto notificationCenter = CFNotificationCenterGetDistributedCenter();
+        CFNotificationCenterPostNotification(notificationCenter, kAXInterfaceReduceMotionStatusDidChangeNotification, nullptr, nullptr, true);
     }
 #endif
 }
@@ -967,7 +964,10 @@ static void setPreferenceValue(const String& domain, const String& key, id value
 {
     if (domain.isEmpty()) {
         CFPreferencesSetValue(key.createCFString().get(), (__bridge CFPropertyListRef)value, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        ASSERT([[[NSUserDefaults standardUserDefaults] objectForKey:key] isEqual:value]);
+#if ASSERT_ENABLED
+        id valueAfterSetting = [[NSUserDefaults standardUserDefaults] objectForKey:key];
+        ASSERT(valueAfterSetting == value || [valueAfterSetting isEqual:value]);
+#endif
     } else
         CFPreferencesSetValue(key.createCFString().get(), (__bridge CFPropertyListRef)value, domain.createCFString().get(), kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
 }
@@ -1034,14 +1034,9 @@ void WebProcess::setScreenProperties(const ScreenProperties& properties)
 #if PLATFORM(MAC)
 void WebProcess::updatePageScreenProperties()
 {
-#if HAVE(AVPLAYER_VIDEORANGEOVERRIDE)
-    // If AVPlayer.videoRangeOverride support is present, there's no need to override HDR mode
-    // at the MediaToolbox level, as the MediaToolbox override functionality is both duplicative
-    // and process global.
-    if (PAL::isAVFoundationFrameworkAvailable() && [PAL::getAVPlayerClass() instancesRespondToSelector:@selector(setVideoRangeOverride:)])
-        return;
-#endif
-
+#if !HAVE(AVPLAYER_VIDEORANGEOVERRIDE)
+    // Only override HDR support at the MediaToolbox level if AVPlayer.videoRangeOverride support is
+    // not present, as the MediaToolbox override functionality is both duplicative and process global.
     if (hasProcessPrivilege(ProcessPrivilege::CanCommunicateWithWindowServer)) {
         setShouldOverrideScreenSupportsHighDynamicRange(false, false);
         return;
@@ -1051,6 +1046,7 @@ void WebProcess::updatePageScreenProperties()
         return screenSupportsHighDynamicRange(page->mainFrameView());
     });
     setShouldOverrideScreenSupportsHighDynamicRange(true, allPagesAreOnHDRScreens);
+#endif
 }
 #endif
 
@@ -1068,6 +1064,25 @@ void WebProcess::powerSourceDidChange(bool hasAC)
     setSystemHasAC(hasAC);
 }
 
+void WebProcess::willWriteToPasteboardAsynchronously(const String& pasteboardName)
+{
+    m_pendingPasteboardWriteCounts.add(pasteboardName);
+}
+
+void WebProcess::didWriteToPasteboardAsynchronously(const String& pasteboardName)
+{
+    m_pendingPasteboardWriteCounts.remove(pasteboardName);
+}
+
+void WebProcess::waitForPendingPasteboardWritesToFinish(const String& pasteboardName)
+{
+    while (m_pendingPasteboardWriteCounts.contains(pasteboardName)) {
+        if (!parentProcessConnection()->waitForAndDispatchImmediately<Messages::WebProcess::DidWriteToPasteboardAsynchronously>(0, 1_s, IPC::WaitForOption::InterruptWaitingIfSyncMessageArrives)) {
+            m_pendingPasteboardWriteCounts.removeAll(pasteboardName);
+            break;
+        }
+    }
+}
 
 } // namespace WebKit
 

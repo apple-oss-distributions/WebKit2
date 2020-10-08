@@ -154,9 +154,11 @@ void WebPageCreationParameters::encode(IPC::Encoder& encoder) const
     encoder << shouldCaptureDisplayInUIProcess;
     encoder << shouldRenderCanvasInGPUProcess;
     encoder << shouldEnableVP9Decoder;
+    encoder << shouldEnableVP9SWDecoder;
     encoder << needsInAppBrowserPrivacyQuirks;
     encoder << limitsNavigationsToAppBoundDomains;
     encoder << shouldRelaxThirdPartyCookieBlocking;
+    encoder << canUseCredentialStorage;
 
 #if PLATFORM(GTK)
     encoder << themeName;
@@ -495,6 +497,9 @@ Optional<WebPageCreationParameters> WebPageCreationParameters::decode(IPC::Decod
     if (!decoder.decode(parameters.shouldEnableVP9Decoder))
         return WTF::nullopt;
 
+    if (!decoder.decode(parameters.shouldEnableVP9SWDecoder))
+        return WTF::nullopt;
+
     if (!decoder.decode(parameters.needsInAppBrowserPrivacyQuirks))
         return WTF::nullopt;
     
@@ -503,7 +508,10 @@ Optional<WebPageCreationParameters> WebPageCreationParameters::decode(IPC::Decod
     
     if (!decoder.decode(parameters.shouldRelaxThirdPartyCookieBlocking))
         return WTF::nullopt;
-    
+
+    if (!decoder.decode(parameters.canUseCredentialStorage))
+        return WTF::nullopt;
+
 #if PLATFORM(GTK)
     if (!decoder.decode(parameters.themeName))
         return WTF::nullopt;

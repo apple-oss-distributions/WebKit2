@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Igalia S.L.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,16 +23,12 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef PluginSearchPath_h
-#define PluginSearchPath_h
+#pragma once
 
-#include <wtf/Forward.h>
-#include <wtf/Vector.h>
+#include <wtf/spi/darwin/XPCSPI.h>
 
 namespace WebKit {
 
-Vector<String> pluginsDirectories();
+void handleXPCEndpointMessages(xpc_object_t event);
 
-} // namespace WebKit
-
-#endif // PluginSandboxProfile_h
+}

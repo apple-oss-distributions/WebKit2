@@ -1977,7 +1977,7 @@ void WebProcessPool::processStoppedUsingGamepads(WebProcessProxy& process)
 void WebProcessPool::gamepadConnected(const UIGamepad& gamepad, EventMakesGamepadsVisible eventVisibility)
 {
     for (auto& process : m_processesUsingGamepads)
-        process->send(Messages::WebProcess::GamepadConnected(gamepad.fullGamepadData(), eventVisibility), 0);
+        process->send(Messages::WebProcess::GamepadConnected(gamepad.gamepadData(), eventVisibility), 0);
 }
 
 void WebProcessPool::gamepadDisconnected(const UIGamepad& gamepad)
@@ -2395,6 +2395,14 @@ void WebProcessPool::seedResourceLoadStatisticsForTesting(const RegistrableDomai
 
     for (auto& process : processes())
         process->sendWithAsyncReply(Messages::WebProcess::SeedResourceLoadStatisticsForTesting(firstPartyDomain, thirdPartyDomain, shouldScheduleNotification), [callbackAggregator] { });
+}
+
+void WebProcessPool::sendResourceLoadStatisticsDataImmediately(CompletionHandler<void()>&& completionHandler)
+{
+    auto callbackAggregator = CallbackAggregator::create(WTFMove(completionHandler));
+
+    for (auto& process : processes())
+        process->sendWithAsyncReply(Messages::WebProcess::SendResourceLoadStatisticsDataImmediately(), [callbackAggregator] { });
 }
 #endif
 

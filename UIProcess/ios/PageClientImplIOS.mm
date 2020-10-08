@@ -849,7 +849,7 @@ RefPtr<WebDataListSuggestionsDropdown> PageClientImpl::createDataListSuggestions
 }
 #endif
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
 void PageClientImpl::didPerformDragOperation(bool handled)
 {
     [m_contentView _didPerformDragOperation:handled];

@@ -28,6 +28,7 @@
 
 #import "AccessibilitySupportSPI.h"
 #import "CookieStorageUtilsCF.h"
+#import "DefaultWebBrowserChecks.h"
 #import "LegacyCustomProtocolManagerClient.h"
 #import "Logging.h"
 #import "NetworkProcessCreationParameters.h"
@@ -440,7 +441,7 @@ void WebProcessPool::platformInitializeWebProcess(const WebProcessProxy& process
     }
 
 #if PLATFORM(IOS_FAMILY)
-    parameters.currentUserInterfaceIdiomIsPad = currentUserInterfaceIdiomIsPad();
+    parameters.currentUserInterfaceIdiomIsPad = currentUserInterfaceIdiomIsPadOrMac();
     parameters.supportsPictureInPicture = supportsPictureInPicture();
     parameters.cssValueToSystemColorMap = RenderThemeIOS::cssValueToSystemColorMap();
 #if ENABLE(FULL_KEYBOARD_ACCESS)
@@ -478,6 +479,10 @@ void WebProcessPool::platformInitializeWebProcess(const WebProcessProxy& process
         if (state == UIApplicationStateActive)
             startObservingPreferenceChanges();
     }
+#endif
+
+#if HAVE(CATALYST_USER_INTERFACE_IDIOM_AND_SCALE_FACTOR)
+    parameters.overrideUserInterfaceIdiomAndScale = { _UIApplicationCatalystUserInterfaceIdiom(), _UIApplicationCatalystScaleFactor() };
 #endif
 }
 
@@ -523,6 +528,8 @@ void WebProcessPool::platformInitializeNetworkProcess(NetworkProcessCreationPara
         parameters.shouldEnableITPDatabase = m_defaultPageGroup->preferences().isITPDatabaseEnabled();
 
     parameters.enableAdClickAttributionDebugMode = [defaults boolForKey:[NSString stringWithFormat:@"Experimental%@", WebPreferencesKey::adClickAttributionDebugModeEnabledKey().createCFString().get()]];
+
+    parameters.defaultDataStoreParameters.networkSessionParameters.appHasRequestedCrossWebsiteTrackingPermission = hasRequestedCrossWebsiteTrackingPermission();
 }
 
 void WebProcessPool::platformInvalidateContext()

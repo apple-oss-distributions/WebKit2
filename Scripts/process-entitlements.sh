@@ -19,6 +19,7 @@ function mac_process_webcontent_entitlements()
         plistbuddy Add :com.apple.rootless.storage.WebKitWebContentSandbox bool YES
         if (( "${TARGET_MAC_OS_X_VERSION_MAJOR}" >= 110000 ))
         then
+            plistbuddy Add :com.apple.developer.videotoolbox.client-sandboxed-decoder bool YES
             plistbuddy Add :com.apple.pac.shared_region_id string WebContent
             plistbuddy Add :com.apple.private.pac.exception bool YES
         fi
@@ -51,7 +52,7 @@ function mac_process_network_entitlements()
             plistbuddy Add :com.apple.private.network.socket-delegate bool YES
         fi
 
-        if (( "${TARGET_MAC_OS_X_VERSION_MAJOR}" >= 101600 ))
+        if (( "${TARGET_MAC_OS_X_VERSION_MAJOR}" >= 110000 ))
         then
             plistbuddy Add :com.apple.private.tcc.manager.check-by-audit-token array
             plistbuddy Add :com.apple.private.tcc.manager.check-by-audit-token:0 string kTCCServiceWebKitIntelligentTrackingPrevention
@@ -109,6 +110,7 @@ function maccatalyst_process_webcontent_entitlements()
     then
         plistbuddy Add :com.apple.pac.shared_region_id string WebContent
         plistbuddy Add :com.apple.private.pac.exception bool YES
+        plistbuddy Add :com.apple.UIKit.view-service-wants-custom-idiom-and-scale bool YES
     fi
 }
 

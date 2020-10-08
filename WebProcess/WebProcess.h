@@ -333,6 +333,13 @@ public:
 #endif
 
     void enableVP9Decoder();
+    void enableVP9SWDecoder();
+
+#if PLATFORM(COCOA)
+    void willWriteToPasteboardAsynchronously(const String& pasteboardName);
+    void waitForPendingPasteboardWritesToFinish(const String& pasteboardName);
+    void didWriteToPasteboardAsynchronously(const String& pasteboardName);
+#endif
 
 private:
     WebProcess();
@@ -468,6 +475,11 @@ private:
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     void setThirdPartyCookieBlockingMode(WebCore::ThirdPartyCookieBlockingMode, CompletionHandler<void()>&&);
     void setDomainsWithUserInteraction(HashSet<WebCore::RegistrableDomain>&&);
+    void sendResourceLoadStatisticsDataImmediately(CompletionHandler<void()>&&);
+#endif
+
+#if ENABLE(WEBPROCESS_WINDOWSERVER_BLOCKING)
+    void displayWasRefreshed(uint32_t displayID);
 #endif
 
     void platformInitializeProcess(const AuxiliaryProcessInitializationParameters&);
@@ -515,10 +527,6 @@ private:
 #endif
 
     bool isAlwaysOnLoggingAllowed() { return m_sessionID ? m_sessionID->isAlwaysOnLoggingAllowed() : true; }
-
-#if PLATFORM(COCOA)
-    void handleXPCEndpointMessages() const;
-#endif
 
     RefPtr<WebConnectionToUIProcess> m_webConnection;
 
@@ -648,8 +656,13 @@ private:
     RefPtr<SandboxExtension> m_assetServiceV2Extension;
 #endif
 
+#if PLATFORM(COCOA)
+    HashCountedSet<String> m_pendingPasteboardWriteCounts;
+#endif
+
     bool m_useGPUProcessForMedia { false };
     bool m_vp9DecoderEnabled { false };
+    bool m_vp9SWDecoderEnabled { false };
 };
 
 } // namespace WebKit

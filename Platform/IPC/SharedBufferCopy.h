@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Igalia S.L.
+ * Copyright (C) 2018-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,43 +23,44 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef NetscapePluginUnix_h
-#define NetscapePluginUnix_h
+// Encodes a SharedBuffer that is received as a copy of the decoded data in a new SharedBuffer.
+// To avoid copying from the Decoder, use SharedBufferDataReference to receive a DataReference instead.
 
-#if PLUGIN_ARCHITECTURE(UNIX) && ENABLE(NETSCAPE_PLUGIN_API)
+#pragma once
 
-#include <WebCore/npruntime_internal.h>
+#include <WebCore/SharedBuffer.h>
 
-namespace WebCore {
-class GraphicsContext;
-class IntRect;
-}
+namespace IPC {
 
-namespace WebKit {
+class Decoder;
+class Encoder;
 
-class WebKeyboardEvent;
-class WebMouseEvent;
-class WebWheelEvent;
-
-class NetscapePluginUnix {
+class SharedBufferCopy {
 public:
-    virtual ~NetscapePluginUnix() { }
-    virtual NPWindowType windowType() const = 0;
-    virtual void* window() const = 0;
-    virtual NPSetWindowCallbackStruct* windowSystemInfo() = 0;
-    virtual void geometryDidChange() = 0;
-    virtual void visibilityDidChange() = 0;
-    virtual void paint(WebCore::GraphicsContext&, const WebCore::IntRect&) = 0;
-    virtual bool handleMouseEvent(const WebMouseEvent&) = 0;
-    virtual bool handleWheelEvent(const WebWheelEvent&) = 0;
-    virtual bool handleMouseEnterEvent(const WebMouseEvent&) = 0;
-    virtual bool handleMouseLeaveEvent(const WebMouseEvent&) = 0;
-    virtual bool handleKeyboardEvent(const WebKeyboardEvent&) = 0;
-    virtual void setFocus(bool) = 0;
+    SharedBufferCopy() = default;
+
+    SharedBufferCopy(RefPtr<WebCore::SharedBuffer>&& buffer)
+        : m_buffer(WTFMove(buffer)) { }
+    SharedBufferCopy(Ref<WebCore::SharedBuffer>&& buffer)
+        : m_buffer(WTFMove(buffer)) { }
+    SharedBufferCopy(const WebCore::SharedBuffer& buffer)
+        : m_buffer(WebCore::SharedBuffer::create())
+    {
+        m_buffer->append(buffer);
+    }
+
+    RefPtr<WebCore::SharedBuffer>& buffer() { return m_buffer; }
+    const RefPtr<WebCore::SharedBuffer>& buffer() const { return m_buffer; }
+
+    const char* data() const { return m_buffer ? m_buffer->data() : nullptr; }
+    size_t size() const { return m_buffer ? m_buffer->size() : 0; }
+    bool isEmpty() const { return m_buffer ? m_buffer->isEmpty() : true; }
+
+    void encode(Encoder&) const;
+    static WARN_UNUSED_RETURN Optional<SharedBufferCopy> decode(Decoder&);
+
+private:
+    RefPtr<WebCore::SharedBuffer> m_buffer;
 };
 
-} // namespace WebKit
-
-#endif // PLUGIN_ARCHITECTURE(UNIX) && ENABLE(NETSCAPE_PLUGIN_API)
-
-#endif // NetscapePluginUnix_h
+} // namespace IPC

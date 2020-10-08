@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Igalia S.L.
+ * Copyright (C) 2018-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,30 +24,36 @@
  */
 
 #include "config.h"
-#include "PluginControllerProxy.h"
+#include "SharedBufferCopy.h"
 
-#if ENABLE(NETSCAPE_PLUGIN_API)
+#include "DataReference.h"
+#include "Decoder.h"
+#include "Encoder.h"
 
-#include <WebCore/NotImplemented.h>
+namespace IPC {
 
-namespace WebKit {
 using namespace WebCore;
 
-void PluginControllerProxy::platformInitialize(const PluginCreationParameters&)
+void SharedBufferCopy::encode(Encoder& encoder) const
 {
-    notImplemented();
+    uint64_t bufferSize = m_buffer ? m_buffer->size() : 0;
+    encoder.reserve(sizeof(bufferSize) + bufferSize);
+    encoder << bufferSize;
+    if (!bufferSize)
+        return;
+    for (auto& segment : *m_buffer)
+        encoder.encodeFixedLengthData(reinterpret_cast<const uint8_t*>(segment.segment->data()), segment.segment->size(), 1);
 }
 
-void PluginControllerProxy::platformDestroy()
+Optional<SharedBufferCopy> SharedBufferCopy::decode(Decoder& decoder)
 {
-    notImplemented();
+    IPC::DataReference data;
+    if (!decoder.decodeVariableLengthByteArray(data))
+        return WTF::nullopt;
+    RefPtr<SharedBuffer> buffer;
+    if (data.size())
+        buffer = SharedBuffer::create(data.data(), data.size());
+    return { WTFMove(buffer) };
 }
 
-void PluginControllerProxy::platformGeometryDidChange()
-{
-    notImplemented();
-}
-
-} // namespace WebKit
-
-#endif // ENABLE(NETSCAPE_PLUGIN_API)
+} // namespace IPC

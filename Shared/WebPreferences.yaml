@@ -282,6 +282,14 @@ MediaUserGestureInheritsFromDocument:
   type: bool
   defaultValue: false
 
+UserGesturePromisePropagationEnabled:
+    type: bool
+    defaultValue: true
+    webcoreBinding: RuntimeEnabledFeatures
+    humanReadableName: "UserGesture Promise Propagation"
+    humanReadableDescription: "UserGesture Promise Propagation"
+    category: experimental
+
 AllowsInlineMediaPlayback:
   type: bool
   defaultValue: DEFAULT_ALLOWS_INLINE_MEDIA_PLAYBACK
@@ -666,6 +674,15 @@ VP9DecoderEnabled:
   webcoreBinding: none
   humanReadableName: "VP9 decoder"
   humanReadableDescription: "Enable VP9 decoder"
+  category: experimental
+  condition: ENABLE(VP9)
+
+VP9SWDecoderEnabledOnBattery:
+  type: bool
+  defaultValue: defaultVP9SWDecoderEnabledOnBattery()
+  webcoreBinding: none
+  humanReadableName: "VP9 SW decoder on battery"
+  humanReadableDescription: "Enable VP9 SW decoder on battery"
   category: experimental
   condition: ENABLE(VP9)
 
@@ -1825,6 +1842,15 @@ InputTypeWeekEnabled:
   category: internal
   condition: ENABLE(INPUT_TYPE_WEEK)
 
+DateTimeInputsEditableComponentsEnabled:
+  type: bool
+  defaultValue: DEFAULT_DATE_TIME_INPUTS_EDITABLE_COMPONENTS_ENABLED
+  humanReadableName: "Date/Time inputs have editable components"
+  humanReadableDescription: "Enable multiple editable components in date/time inputs"
+  category: internal
+  webcoreName: dateTimeInputsEditableComponentsEnabled
+  condition: ENABLE(DATE_AND_TIME_INPUT_TYPES)
+
 DataListElementEnabled:
   type: bool
   defaultValue: DEFAULT_DATALIST_ELEMENT_ENABLED
@@ -2119,6 +2145,14 @@ WebXREnabled:
   category: experimental
   webcoreBinding: RuntimeEnabledFeatures
   condition: ENABLE(WEBXR)
+
+WritableStreamAPIEnabled:
+  type: bool
+  defaultValue: false
+  humanReadableName: "WritableStream API"
+  humanReadableDescription: "Enable Writable Stream API"
+  category: experimental
+  webcoreBinding: RuntimeEnabledFeatures
 
 # Deprecated
 

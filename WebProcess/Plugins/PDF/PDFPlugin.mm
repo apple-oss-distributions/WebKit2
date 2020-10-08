@@ -705,13 +705,14 @@ void PDFPlugin::receivedNonLinearizedPDFSentinel()
 {
     m_incrementalPDFLoadingEnabled = false;
 
+    if (m_hasBeenDestroyed)
+        return;
+
     if (!isMainThread()) {
 #if !LOG_DISABLED
         pdfLog("Disabling incremental PDF loading on background thread");
 #endif
         callOnMainThread([this, protectedThis = makeRef(*this)] {
-            if (m_hasBeenDestroyed)
-                return;
             receivedNonLinearizedPDFSentinel();
         });
         return;
@@ -873,8 +874,11 @@ void PDFPlugin::threadEntry(Ref<PDFPlugin>&& protectedPlugin)
 
     // [PDFDocument initWithProvider:] will return nil in cases where the PDF is non-linearized.
     // In those cases we'll just keep buffering the entire PDF on the main thread.
-    if (!m_backgroundThreadDocument)
+    if (!m_backgroundThreadDocument) {
+        LOG(IncrementalPDF, "Background thread [PDFDocument initWithProvider:] returned nil. PDF is not linearized. Reverting to main thread.");
+        receivedNonLinearizedPDFSentinel();
         return;
+    }
 
     if (!m_incrementalPDFLoadingEnabled) {
         m_backgroundThreadDocument = nil;
@@ -887,8 +891,6 @@ void PDFPlugin::threadEntry(Ref<PDFPlugin>&& protectedPlugin)
     [m_backgroundThreadDocument preloadDataOfPagesInRange:NSMakeRange(0, 1) onQueue:firstPageQueue->dispatchQueue() completion:[&firstPageSemaphore, this] (NSIndexSet *) mutable {
         if (m_incrementalPDFLoadingEnabled) {
             callOnMainThread([this] {
-                if (m_hasBeenDestroyed)
-                    return;
                 adoptBackgroundThreadDocument();
             });
         } else
@@ -983,6 +985,9 @@ void PDFPlugin::getResourceBytesAtPosition(size_t count, off_t position, Complet
 
 void PDFPlugin::adoptBackgroundThreadDocument()
 {
+    if (m_hasBeenDestroyed)
+        return;
+
     ASSERT(!m_pdfDocument);
     ASSERT(m_backgroundThreadDocument);
     ASSERT(isMainThread());
@@ -1216,6 +1221,9 @@ PluginInfo PDFPlugin::pluginInfo()
 
 void PDFPlugin::updateScrollbars()
 {
+    if (m_hasBeenDestroyed)
+        return;
+
     bool hadScrollbars = m_horizontalScrollbar || m_verticalScrollbar;
 
     if (m_horizontalScrollbar) {
@@ -1301,13 +1309,21 @@ Ref<Scrollbar> PDFPlugin::createScrollbar(ScrollbarOrientation orientation)
         [m_containerLayer addSublayer:m_verticalScrollbarLayer.get()];
     }
     didAddScrollbar(widget.ptr(), orientation);
+
     if (auto* frame = m_frame.coreFrame()) {
         if (Page* page = frame->page()) {
             if (page->isMonitoringWheelEvents())
                 scrollAnimator().setWheelEventTestMonitor(page->wheelEventTestMonitor());
         }
     }
-    pluginView()->frame()->view()->addChild(widget);
+
+    // Is it ever possible that the code above and the code below can ever get at different Frames?
+    // Can't we settle on one Frame accessor?
+    if (auto* frame = pluginView()->frame()) {
+        if (auto* frameView = frame->view())
+            frameView->addChild(widget);
+    }
+
     return widget;
 }
 
@@ -1524,6 +1540,9 @@ void PDFPlugin::convertPostScriptDataIfNeeded()
 
 void PDFPlugin::documentDataDidFinishLoading()
 {
+    if (m_hasBeenDestroyed)
+        return;
+
     addArchiveResource();
 
     m_documentFinishedLoading = true;
@@ -1551,6 +1570,14 @@ void PDFPlugin::installPDFDocument()
     ASSERT(m_pdfDocument);
     ASSERT(isMainThread());
     LOG(IncrementalPDF, "Installing PDF document");
+
+    if (m_hasBeenDestroyed)
+        return;
+
+    if (!controller()) {
+        RELEASE_LOG(IncrementalPDF, "PDFPlugin::installPDFDocument called - Plug-in has not been destroyed, but there's also no controller.");
+        return;
+    }
 
 #if HAVE(INCREMENTAL_PDF_APIS)
     maybeClearHighLatencyDataProviderFlag();

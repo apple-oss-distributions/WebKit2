@@ -34,7 +34,7 @@
 #include "NetworkProcessConnection.h"
 #include "NetworkResourceLoadParameters.h"
 #include "PluginInfoStore.h"
-#include "SharedBufferDataReference.h"
+#include "SharedBufferCopy.h"
 #include "WebCoreArgumentCoders.h"
 #include "WebErrors.h"
 #include "WebFrame.h"
@@ -166,6 +166,7 @@ Vector<String> WebPlatformStrategies::allStringsForType(const String& pasteboard
 int64_t WebPlatformStrategies::changeCount(const String& pasteboardName)
 {
     int64_t changeCount { 0 };
+    WebProcess::singleton().waitForPendingPasteboardWritesToFinish(pasteboardName);
     WebProcess::singleton().parentProcessConnection()->sendSync(Messages::WebPasteboardProxy::GetPasteboardChangeCount(pasteboardName), Messages::WebPasteboardProxy::GetPasteboardChangeCount::Reply(changeCount), 0);
     return changeCount;
 }
@@ -261,21 +262,25 @@ String WebPlatformStrategies::urlStringSuitableForLoading(const String& pasteboa
 
 void WebPlatformStrategies::writeToPasteboard(const PasteboardURL& url, const String& pasteboardName)
 {
+    WebProcess::singleton().willWriteToPasteboardAsynchronously(pasteboardName);
     WebProcess::singleton().parentProcessConnection()->send(Messages::WebPasteboardProxy::WriteURLToPasteboard(url, pasteboardName), 0);
 }
 
 void WebPlatformStrategies::writeToPasteboard(const WebCore::PasteboardWebContent& content, const String& pasteboardName)
 {
+    WebProcess::singleton().willWriteToPasteboardAsynchronously(pasteboardName);
     WebProcess::singleton().parentProcessConnection()->send(Messages::WebPasteboardProxy::WriteWebContentToPasteboard(content, pasteboardName), 0);
 }
 
 void WebPlatformStrategies::writeToPasteboard(const WebCore::PasteboardImage& image, const String& pasteboardName)
 {
+    WebProcess::singleton().willWriteToPasteboardAsynchronously(pasteboardName);
     WebProcess::singleton().parentProcessConnection()->send(Messages::WebPasteboardProxy::WriteImageToPasteboard(image, pasteboardName), 0);
 }
 
 void WebPlatformStrategies::writeToPasteboard(const String& pasteboardType, const String& text, const String& pasteboardName)
 {
+    WebProcess::singleton().willWriteToPasteboardAsynchronously(pasteboardName);
     WebProcess::singleton().parentProcessConnection()->send(Messages::WebPasteboardProxy::WriteStringToPasteboard(pasteboardType, text, pasteboardName), 0);
 }
 
@@ -314,7 +319,7 @@ Vector<String> WebPlatformStrategies::readFilePathsFromClipboard(const String& p
 RefPtr<SharedBuffer> WebPlatformStrategies::readBufferFromClipboard(const String& pasteboardName, const String& pasteboardType)
 {
 
-    IPC::SharedBufferDataReference data;
+    IPC::SharedBufferCopy data;
     WebProcess::singleton().parentProcessConnection()->sendSync(Messages::WebPasteboardProxy::ReadBuffer(pasteboardName, pasteboardType), Messages::WebPasteboardProxy::ReadBuffer::Reply(data), 0);
     return data.buffer();
 }

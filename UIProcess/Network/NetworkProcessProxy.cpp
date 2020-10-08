@@ -1195,6 +1195,15 @@ void NetworkProcessProxy::setToSameSiteStrictCookiesForTesting(PAL::SessionID se
     sendWithAsyncReply(Messages::NetworkProcess::SetToSameSiteStrictCookiesForTesting(sessionID, domain), WTFMove(completionHandler));
 }
 
+void NetworkProcessProxy::setFirstPartyHostCNAMEDomainForTesting(PAL::SessionID sessionID, const String& firstPartyHost, const RegistrableDomain& cnameDomain, CompletionHandler<void()>&& completionHandler)
+{
+    sendWithAsyncReply(Messages::NetworkProcess::SetFirstPartyHostCNAMEDomainForTesting(sessionID, firstPartyHost, cnameDomain), WTFMove(completionHandler));
+}
+
+void NetworkProcessProxy::setThirdPartyCNAMEDomainForTesting(PAL::SessionID sessionID, const WebCore::RegistrableDomain& domain, CompletionHandler<void()>&& completionHandler)
+{
+    sendWithAsyncReply(Messages::NetworkProcess::SetThirdPartyCNAMEDomainForTesting(sessionID, domain), WTFMove(completionHandler));
+}
 void NetworkProcessProxy::setDomainsWithUserInteraction(HashSet<WebCore::RegistrableDomain>&& domains)
 {
     processPool().setDomainsWithUserInteraction(WTFMove(domains));
@@ -1264,6 +1273,8 @@ void NetworkProcessProxy::didSyncAllCookies()
 
 void NetworkProcessProxy::addSession(Ref<WebsiteDataStore>&& store)
 {
+    m_sessionIDs.add(store->sessionID());
+
     if (canSendMessage())
         send(Messages::NetworkProcess::AddWebsiteDataStore { store->parameters() }, 0);
     auto sessionID = store->sessionID();
@@ -1274,8 +1285,15 @@ void NetworkProcessProxy::addSession(Ref<WebsiteDataStore>&& store)
     }
 }
 
+bool NetworkProcessProxy::hasSession(PAL::SessionID sessionID) const
+{
+    return m_sessionIDs.contains(sessionID);
+}
+
 void NetworkProcessProxy::removeSession(PAL::SessionID sessionID)
 {
+    m_sessionIDs.remove(sessionID);
+
     if (canSendMessage())
         send(Messages::NetworkProcess::DestroySession { sessionID }, 0);
 }

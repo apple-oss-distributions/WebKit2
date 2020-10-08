@@ -185,6 +185,8 @@ public:
     void setShouldEnbleSameSiteStrictEnforcementForTesting(PAL::SessionID, WebCore::SameSiteStrictEnforcementEnabled, CompletionHandler<void()>&&);
     void setFirstPartyWebsiteDataRemovalModeForTesting(PAL::SessionID, WebCore::FirstPartyWebsiteDataRemovalMode, CompletionHandler<void()>&&);
     void setToSameSiteStrictCookiesForTesting(PAL::SessionID, const RegistrableDomain&, CompletionHandler<void()>&&);
+    void setFirstPartyHostCNAMEDomainForTesting(PAL::SessionID, const String& firstPartyHost, const RegistrableDomain& cnameDomain, CompletionHandler<void()>&&);
+    void setThirdPartyCNAMEDomainForTesting(PAL::SessionID, const WebCore::RegistrableDomain&, CompletionHandler<void()>&&);
     void setDomainsWithUserInteraction(HashSet<WebCore::RegistrableDomain>&&);
 #endif
 
@@ -210,6 +212,7 @@ public:
 #endif
 
     void addSession(Ref<WebsiteDataStore>&&);
+    bool hasSession(PAL::SessionID) const;
     void removeSession(PAL::SessionID);
     
 #if ENABLE(INDEXED_DATABASE)
@@ -345,6 +348,8 @@ private:
         WeakPtr<NetworkProcessProxy> m_networkProcess;
     };
 #endif
+
+    HashSet<PAL::SessionID> m_sessionIDs;
 };
 
 } // namespace WebKit

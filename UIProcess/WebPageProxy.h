@@ -129,6 +129,7 @@
 #include "EndowmentStateTracker.h"
 #endif
 
+OBJC_CLASS NSTextAlternatives;
 OBJC_CLASS NSView;
 OBJC_CLASS _WKRemoteObjectRegistry;
 
@@ -206,9 +207,10 @@ enum class InspectorTargetType : uint8_t;
 }
 
 namespace IPC {
+class DataReference;
 class Decoder;
 class FormDataReference;
-class SharedBufferDataReference;
+class SharedBufferCopy;
 }
 OBJC_CLASS NSFileWrapper;
 OBJC_CLASS WKQLThumbnailLoadOperation;
@@ -304,7 +306,6 @@ class RemoteLayerTreeScrollingPerformanceData;
 class RemoteLayerTreeTransaction;
 class RemoteScrollingCoordinatorProxy;
 class SecKeyProxyStore;
-class SharedBufferDataReference;
 class UserData;
 class ViewSnapshot;
 class VisitedLinkStore;
@@ -878,6 +879,10 @@ public:
 
     void insertTextAsync(const String&, const EditingRange& replacementRange, InsertTextOptions&&);
     void insertDictatedTextAsync(const String&, const EditingRange& replacementRange, const Vector<WebCore::TextAlternativeWithRange>&, InsertTextOptions&&);
+
+#if USE(DICTATION_ALTERNATIVES)
+    NSTextAlternatives *platformDictationAlternatives(WebCore::DictationContext);
+#endif
 
     void hasMarkedText(CompletionHandler<void(bool)>&&);
     void getMarkedRangeAsync(CompletionHandler<void(const EditingRange&)>&&);
@@ -1553,7 +1558,7 @@ public:
     void didRestoreScrollPosition();
 
     void getLoadDecisionForIcon(const WebCore::LinkIcon&, WebKit::CallbackID);
-    void finishedLoadingIcon(WebKit::CallbackID, const IPC::SharedBufferDataReference&);
+    void finishedLoadingIcon(WebKit::CallbackID, const IPC::DataReference&);
 
     void setFocus(bool focused);
     void setWindowFrame(const WebCore::FloatRect&);
@@ -1603,8 +1608,8 @@ public:
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     void requestStorageAccessConfirm(const WebCore::RegistrableDomain& subFrameDomain, const WebCore::RegistrableDomain& topFrameDomain, WebCore::FrameIdentifier, CompletionHandler<void(bool)>&&);
     void didCommitCrossSiteLoadWithDataTransferFromPrevalentResource();
-    void loadedThirdPartyDomains(CompletionHandler<void(Vector<WebCore::RegistrableDomain>&&)>&&);
-    void clearLoadedThirdPartyDomains();
+    void getLoadedSubresourceDomains(CompletionHandler<void(Vector<WebCore::RegistrableDomain>&&)>&&);
+    void clearLoadedSubresourceDomains();
 #endif
 
 #if ENABLE(DEVICE_ORIENTATION)
@@ -1792,6 +1797,9 @@ public:
     WebPopupMenuProxy* activePopupMenu() const { return m_activePopupMenu.get(); }
 
     void preconnectTo(const URL&);
+
+    bool canUseCredentialStorage() { return m_canUseCredentialStorage; }
+    void setCanUseCredentialStorage(bool);
 
 private:
     WebPageProxy(PageClient&, WebProcessProxy&, Ref<API::PageConfiguration>&&);
@@ -2101,7 +2109,7 @@ private:
     void didReceiveEvent(uint32_t opaqueType, bool handled);
 
     void voidCallback(CallbackID);
-    void dataCallback(const IPC::SharedBufferDataReference&, CallbackID);
+    void dataCallback(const IPC::DataReference&, CallbackID);
     void imageCallback(const ShareableBitmap::Handle&, CallbackID);
     void boolCallback(bool result, CallbackID);
     void stringCallback(const String&, CallbackID);
@@ -2206,12 +2214,6 @@ private:
 
     void setRenderTreeSize(uint64_t treeSize) { m_renderTreeSize = treeSize; }
 
-#if PLATFORM(X11) && ENABLE(NETSCAPE_PLUGIN_API)
-    void createPluginContainer(CompletionHandler<void(uint64_t)>&&);
-    void windowedPluginGeometryDidChange(const WebCore::IntRect& frameRect, const WebCore::IntRect& clipRect, uint64_t windowID);
-    void windowedPluginVisibilityDidChange(bool isVisible, uint64_t windowID);
-#endif
-
     void processNextQueuedWheelEvent();
     void sendWheelEvent(const WebWheelEvent&);
     bool shouldProcessWheelEventNow(const WebWheelEvent&) const;
@@ -2277,12 +2279,12 @@ private:
     void stopAllURLSchemeTasks(WebProcessProxy* = nullptr);
 
 #if ENABLE(ATTACHMENT_ELEMENT)
-    void registerAttachmentIdentifierFromData(const String&, const String& contentType, const String& preferredFileName, const IPC::SharedBufferDataReference&);
+    void registerAttachmentIdentifierFromData(const String&, const String& contentType, const String& preferredFileName, const IPC::SharedBufferCopy&);
     void registerAttachmentIdentifierFromFilePath(const String&, const String& contentType, const String& filePath);
     void registerAttachmentsFromSerializedData(Vector<WebCore::SerializedAttachmentData>&&);
     void cloneAttachmentData(const String& fromIdentifier, const String& toIdentifier);
 
-    void platformRegisterAttachment(Ref<API::Attachment>&&, const String& preferredFileName, const IPC::SharedBufferDataReference&);
+    void platformRegisterAttachment(Ref<API::Attachment>&&, const String& preferredFileName, const IPC::SharedBufferCopy&);
     void platformRegisterAttachment(Ref<API::Attachment>&&, const String& filePath);
     void platformCloneAttachment(Ref<API::Attachment>&& fromAttachment, Ref<API::Attachment>&& toAttachment);
 
@@ -2850,6 +2852,7 @@ private:
     bool m_userScriptsNotified { false };
     bool m_limitsNavigationsToAppBoundDomains { false };
     bool m_hasExecutedAppBoundBehaviorBeforeNavigation { false };
+    bool m_canUseCredentialStorage { true };
 };
 
 } // namespace WebKit

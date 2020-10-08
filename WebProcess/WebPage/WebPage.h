@@ -156,9 +156,9 @@ class Array;
 
 namespace IPC {
 class Connection;
+class DataReference;
 class Decoder;
 class FormDataReference;
-class SharedBufferDataReference;
 }
 
 namespace WebCore {
@@ -193,9 +193,9 @@ class SubstituteData;
 class TextCheckingRequest;
 class VisiblePosition;
 
-enum DragApplicationFlags : uint8_t;
 enum SyntheticClickType : int8_t;
 enum class DOMPasteAccessResponse : uint8_t;
+enum class DragApplicationFlags : uint8_t;
 enum class DragHandlingMethod : uint8_t;
 enum class EventMakesGamepadsVisible : bool;
 enum class SelectionDirection : uint8_t;
@@ -230,7 +230,6 @@ class HTMLAttachmentElement;
 
 namespace WebKit {
 
-class DataReference;
 class DrawingArea;
 class DownloadID;
 class FindController;
@@ -1213,8 +1212,9 @@ public:
     void addDomainWithPageLevelStorageAccess(const WebCore::RegistrableDomain& topLevelDomain, const WebCore::RegistrableDomain& resourceDomain);
     void wasLoadedWithDataTransferFromPrevalentResource();
     void didLoadFromRegistrableDomain(WebCore::RegistrableDomain&&);
-    void clearLoadedThirdPartyDomains();
-    void loadedThirdPartyDomains(CompletionHandler<void(Vector<WebCore::RegistrableDomain>)>&&);
+    void clearLoadedSubresourceDomains();
+    void getLoadedSubresourceDomains(CompletionHandler<void(Vector<WebCore::RegistrableDomain>)>&&);
+    const HashSet<WebCore::RegistrableDomain>& loadedSubresourceDomains() const { return m_loadedSubresourceDomains; }
 #endif
 
 #if ENABLE(DEVICE_ORIENTATION)
@@ -1225,7 +1225,7 @@ public:
     
 #if ENABLE(ATTACHMENT_ELEMENT)
     void insertAttachment(const String& identifier, Optional<uint64_t>&& fileSize, const String& fileName, const String& contentType, CallbackID);
-    void updateAttachmentAttributes(const String& identifier, Optional<uint64_t>&& fileSize, const String& contentType, const String& fileName, const IPC::SharedBufferDataReference& enclosingImageData, CallbackID);
+    void updateAttachmentAttributes(const String& identifier, Optional<uint64_t>&& fileSize, const String& contentType, const String& fileName, const IPC::DataReference& enclosingImageData, CallbackID);
     void updateAttachmentIcon(const String& identifier, const ShareableBitmap::Handle& qlThumbnailHandle);
 #endif
 
@@ -1412,7 +1412,7 @@ private:
     void shrinkToFitContent(ZoomToInitialScale = ZoomToInitialScale::No);
 #endif
 
-#if PLATFORM(IOS_FAMILY) && ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
     void requestDragStart(const WebCore::IntPoint& clientPosition, const WebCore::IntPoint& globalPosition, OptionSet<WebCore::DragSourceAction> allowedActionsMask);
     void requestAdditionalItemsForDragSession(const WebCore::IntPoint& clientPosition, const WebCore::IntPoint& globalPosition, OptionSet<WebCore::DragSourceAction> allowedActionsMask);
     void insertDroppedImagePlaceholders(const Vector<WebCore::IntSize>&, CompletionHandler<void(const Vector<WebCore::IntRect>&, Optional<WebCore::TextIndicatorData>)>&& reply);
@@ -1646,6 +1646,7 @@ private:
     void platformDidSelectAll();
     
     void setHasResourceLoadClient(bool);
+    void setCanUseCredentialStorage(bool);
 
 #if ENABLE(CONTEXT_MENUS)
     void didSelectItemFromActiveContextMenu(const WebContextMenuItemData&);
@@ -1727,7 +1728,7 @@ private:
 
     void urlSchemeTaskDidPerformRedirection(uint64_t handlerIdentifier, uint64_t taskIdentifier, WebCore::ResourceResponse&&, WebCore::ResourceRequest&&);
     void urlSchemeTaskDidReceiveResponse(uint64_t handlerIdentifier, uint64_t taskIdentifier, const WebCore::ResourceResponse&);
-    void urlSchemeTaskDidReceiveData(uint64_t handlerIdentifier, uint64_t taskIdentifier, const IPC::SharedBufferDataReference&);
+    void urlSchemeTaskDidReceiveData(uint64_t handlerIdentifier, uint64_t taskIdentifier, const IPC::DataReference&);
     void urlSchemeTaskDidComplete(uint64_t handlerIdentifier, uint64_t taskIdentifier, const WebCore::ResourceError&);
 
     void setIsTakingSnapshotsForApplicationSuspension(bool);
@@ -1944,7 +1945,7 @@ private:
     OptionSet<WebCore::DragSourceAction> m_allowedDragSourceActions { WebCore::anyDragSourceAction() };
 #endif
 
-#if ENABLE(DRAG_SUPPORT) && PLATFORM(IOS_FAMILY)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
     HashSet<RefPtr<WebCore::HTMLImageElement>> m_pendingImageElementsForDropSnapshot;
     Optional<WebCore::SimpleRange> m_rangeForDropSnapshot;
 #endif
@@ -2123,7 +2124,7 @@ private:
 
 #if ENABLE(RESOURCE_LOAD_STATISTICS)
     HashMap<WebCore::RegistrableDomain, WebCore::RegistrableDomain> m_domainsWithPageLevelStorageAccess;
-    HashSet<WebCore::RegistrableDomain> m_loadedThirdPartyDomains;
+    HashSet<WebCore::RegistrableDomain> m_loadedSubresourceDomains;
 #endif
 
     String m_overriddenMediaType;
@@ -2136,6 +2137,8 @@ private:
     
     bool m_limitsNavigationsToAppBoundDomains { false };
     bool m_navigationHasOccured { false };
+    bool m_canUseCredentialStorage { true };
+
     Vector<String> m_corsDisablingPatterns;
 };
 

@@ -69,6 +69,7 @@
 #import <WebCore/DiagnosticLoggingClient.h>
 #import <WebCore/DiagnosticLoggingKeys.h>
 #import <WebCore/DocumentLoader.h>
+#import <WebCore/DocumentMarkerController.h>
 #import <WebCore/DragController.h>
 #import <WebCore/Editing.h>
 #import <WebCore/Editor.h>
@@ -121,6 +122,7 @@
 #import <WebCore/RenderLayer.h>
 #import <WebCore/RenderThemeIOS.h>
 #import <WebCore/RenderView.h>
+#import <WebCore/RenderedDocumentMarker.h>
 #import <WebCore/RuntimeApplicationChecks.h>
 #import <WebCore/Settings.h>
 #import <WebCore/ShadowRoot.h>
@@ -268,7 +270,7 @@ void WebPage::getPlatformEditorState(Frame& frame, EditorState& result) const
 
     if (frame.editor().hasComposition()) {
         if (auto compositionRange = frame.editor().compositionRange()) {
-            createLiveRange(*compositionRange)->collectSelectionRects(postLayoutData.markedTextRects);
+            postLayoutData.markedTextRects = RenderObject::collectSelectionRects(*compositionRange);
             convertContentToRootViewSelectionRects(view, postLayoutData.markedTextRects);
 
             postLayoutData.markedText = plainTextForContext(*compositionRange);
@@ -280,6 +282,7 @@ void WebPage::getPlatformEditorState(Frame& frame, EditorState& result) const
     }
 
     const auto& selection = frame.selection().selection();
+    Optional<SimpleRange> selectedRange;
     postLayoutData.isStableStateUpdate = m_isInStableState;
     bool startNodeIsInsideFixedPosition = false;
     bool endNodeIsInsideFixedPosition = false;
@@ -289,16 +292,19 @@ void WebPage::getPlatformEditorState(Frame& frame, EditorState& result) const
         postLayoutData.caretRectAtEnd = postLayoutData.caretRectAtStart;
         // FIXME: The following check should take into account writing direction.
         postLayoutData.isReplaceAllowed = result.isContentEditable && atBoundaryOfGranularity(selection.start(), TextGranularity::WordGranularity, SelectionDirection::Forward);
-        postLayoutData.wordAtSelection = plainTextForContext(wordRangeFromPosition(selection.start()));
+
+        selectedRange = wordRangeFromPosition(selection.start());
+        postLayoutData.wordAtSelection = plainTextForContext(selectedRange);
+
         if (selection.isContentEditable())
             charactersAroundPosition(selection.start(), postLayoutData.characterAfterSelection, postLayoutData.characterBeforeSelection, postLayoutData.twoCharacterBeforeSelection);
     } else if (selection.isRange()) {
         postLayoutData.caretRectAtStart = view->contentsToRootView(VisiblePosition(selection.start()).absoluteCaretBounds(&startNodeIsInsideFixedPosition));
         postLayoutData.caretRectAtEnd = view->contentsToRootView(VisiblePosition(selection.end()).absoluteCaretBounds(&endNodeIsInsideFixedPosition));
-        auto selectedRange = selection.toNormalizedRange();
+        selectedRange = selection.toNormalizedRange();
         String selectedText;
         if (selectedRange) {
-            createLiveRange(*selectedRange)->collectSelectionRects(postLayoutData.selectionRects);
+            postLayoutData.selectionRects = RenderObject::collectSelectionRects(*selectedRange);
             convertContentToRootViewSelectionRects(view, postLayoutData.selectionRects);
             selectedText = plainTextForDisplay(*selectedRange);
             postLayoutData.selectedTextLength = selectedText.length();
@@ -308,6 +314,16 @@ void WebPage::getPlatformEditorState(Frame& frame, EditorState& result) const
         // FIXME: We should disallow replace when the string contains only CJ characters.
         postLayoutData.isReplaceAllowed = result.isContentEditable && !result.isInPasswordField && !selectedText.isAllSpecialCharacters<isHTMLSpace>();
     }
+
+#if USE(DICTATION_ALTERNATIVES)
+    if (selectedRange) {
+        auto markers = frame.document()->markers().markersInRange(*selectedRange, DocumentMarker::MarkerType::DictationAlternatives);
+        postLayoutData.dictationContextsForSelection = WTF::map(markers, [] (auto* marker) {
+            return WTF::get<DocumentMarker::DictationData>(marker->data()).context;
+        });
+    }
+#endif
+
     postLayoutData.atStartOfSentence = frame.selection().selectionAtSentenceStart();
     postLayoutData.insideFixedPosition = startNodeIsInsideFixedPosition || endNodeIsInsideFixedPosition;
     if (!selection.isNone()) {
@@ -915,7 +931,7 @@ void WebPage::requestFocusedElementInformation(WebKit::CallbackID callbackID)
     send(Messages::WebPageProxy::FocusedElementInformationCallback(info, callbackID));
 }
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
 void WebPage::requestDragStart(const IntPoint& clientPosition, const IntPoint& globalPosition, OptionSet<WebCore::DragSourceAction> allowedActionsMask)
 {
     SetForScope<OptionSet<WebCore::DragSourceAction>> allowedActionsForScope(m_allowedDragSourceActions, allowedActionsMask);
@@ -1024,7 +1040,7 @@ void WebPage::computeAndSendEditDragSnapshot()
         TextIndicatorOption::IncludeSnapshotWithSelectionHighlight
     };
     if (auto range = std::exchange(m_rangeForDropSnapshot, WTF::nullopt)) {
-        if (auto textIndicator = TextIndicator::createWithRange(createLiveRange(*range), defaultTextIndicatorOptionsForEditDrag, TextIndicatorPresentationTransition::None, { }))
+        if (auto textIndicator = TextIndicator::createWithRange(*range, defaultTextIndicatorOptionsForEditDrag, TextIndicatorPresentationTransition::None, { }))
             textIndicatorData = textIndicator->data();
     }
     send(Messages::WebPageProxy::DidReceiveEditDragSnapshot(WTFMove(textIndicatorData)));
@@ -1906,7 +1922,7 @@ void WebPage::requestEvasionRectsAboveSelection(CompletionHandler<void(const Vec
 
     FloatRect selectionBoundsInRootViewCoordinates;
     if (selection.isRange())
-        selectionBoundsInRootViewCoordinates = frameView->contentsToRootView(createLiveRange(*selectedRange)->absoluteBoundingBox());
+        selectionBoundsInRootViewCoordinates = frameView->contentsToRootView(unionRect(RenderObject::absoluteTextRects(*selectedRange)));
     else
         selectionBoundsInRootViewCoordinates = frameView->contentsToRootView(frame.selection().absoluteCaretBounds());
 
@@ -1982,8 +1998,7 @@ void WebPage::getRectsForGranularityWithSelectionOffset(WebCore::TextGranularity
         return;
     }
 
-    Vector<WebCore::SelectionRect> selectionRects;
-    createLiveRange(*range)->collectSelectionRectsWithoutUnionInteriorLines(selectionRects);
+    auto selectionRects = RenderObject::collectSelectionRectsWithoutUnionInteriorLines(*range);
     convertContentToRootViewSelectionRects(*frame.view(), selectionRects);
     send(Messages::WebPageProxy::SelectionRectsCallback(selectionRects, callbackID));
 }
@@ -2029,8 +2044,7 @@ void WebPage::getRectsAtSelectionOffsetWithText(int32_t offset, const String& te
         }
     }
 
-    Vector<WebCore::SelectionRect> selectionRects;
-    createLiveRange(range)->collectSelectionRectsWithoutUnionInteriorLines(selectionRects);
+    auto selectionRects = RenderObject::collectSelectionRectsWithoutUnionInteriorLines(*range);
     convertContentToRootViewSelectionRects(*frame.view(), selectionRects);
     send(Messages::WebPageProxy::SelectionRectsCallback(selectionRects, callbackID));
 }
@@ -2332,7 +2346,7 @@ void WebPage::requestAutocorrectionData(const String& textForAutocorrection, Com
 
     Vector<SelectionRect> selectionRects;
     if (textForRange == textForAutocorrection)
-        createLiveRange(range)->collectSelectionRects(selectionRects);
+        selectionRects = RenderObject::collectSelectionRects(*range);
 
     auto rootViewSelectionRects = selectionRects.map([&](const auto& selectionRect) -> FloatRect { return frame.view()->contentsToRootView(selectionRect.rect()); });
 
@@ -4266,9 +4280,8 @@ void WebPage::requestDocumentEditingContext(DocumentEditingContextRequest reques
         const int stride = 1;
         while (!iterator.atEnd()) {
             if (!iterator.text().isEmpty()) {
-                auto currentRange = createLiveRange(iterator.range());
-                auto absoluteBoundingBox = currentRange->absoluteBoundingBox(Range::BoundingRectBehavior::IgnoreEmptyTextSelections);
-                rects.append({ currentRange->ownerDocument().view()->contentsToRootView(absoluteBoundingBox), { offsetSoFar++, stride } });
+                auto absoluteBoundingBox = unionRect(RenderObject::absoluteTextRects(iterator.range(), RenderObject::BoundingRectBehavior::IgnoreEmptyTextSelections));
+                rects.append({ iterator.range().start.container->document().view()->contentsToRootView(absoluteBoundingBox), { offsetSoFar++, stride } });
             }
             iterator.advance(stride);
         }

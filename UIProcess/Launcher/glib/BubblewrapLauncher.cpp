@@ -598,7 +598,16 @@ static int setupSeccomp()
     //    in common/flatpak-run.c
     //  https://git.gnome.org/browse/linux-user-chroot
     //    in src/setup-seccomp.c
+
+#if defined(__s390__) || defined(__s390x__) || defined(__CRIS__)
+    // Architectures with CONFIG_CLONE_BACKWARDS2: the child stack
+    // and flags arguments are reversed so the flags come second.
+    struct scmp_arg_cmp cloneArg = SCMP_A1(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER);
+#else
+    // Normally the flags come first.
     struct scmp_arg_cmp cloneArg = SCMP_A0(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER);
+#endif
+
     struct scmp_arg_cmp ttyArg = SCMP_A1(SCMP_CMP_MASKED_EQ, 0xFFFFFFFFu, TIOCSTI);
     struct {
         int scall;
@@ -708,13 +717,6 @@ static int createFlatpakInfo()
 GRefPtr<GSubprocess> bubblewrapSpawn(GSubprocessLauncher* launcher, const ProcessLauncher::LaunchOptions& launchOptions, char** argv, GError **error)
 {
     ASSERT(launcher);
-
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    // It is impossible to know what access arbitrary plugins need and since it is for legacy
-    // reasons lets just leave it unsandboxed.
-    if (launchOptions.processType == ProcessLauncher::ProcessType::Plugin)
-        return adoptGRef(g_subprocess_launcher_spawnv(launcher, argv, error));
-#endif
 
     // For now we are just considering the network process trusted as it
     // requires a lot of access but doesn't execute arbitrary code like

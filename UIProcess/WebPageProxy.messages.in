@@ -323,7 +323,7 @@ messages -> WebPageProxy {
     DidPerformDragOperation(bool handled)
 #endif
 
-#if ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
     DidHandleDragStartRequest(bool started)
     DidHandleAdditionalDragItemsRequest(bool added)
     WillReceiveEditDragSnapshot()
@@ -388,13 +388,6 @@ messages -> WebPageProxy {
     ShowDictationAlternativeUI(WebCore::FloatRect boundingBoxOfDictatedText, WebCore::DictationContext dictationContext)
     RemoveDictationAlternatives(WebCore::DictationContext dictationContext)
     DictationAlternatives(WebCore::DictationContext dictationContext) -> (Vector<String> alternatives) Synchronous
-#endif
-
-#if PLATFORM(X11) && ENABLE(NETSCAPE_PLUGIN_API)
-    # X11 windowed plugin messages
-    CreatePluginContainer() -> (uint64_t windowID) Synchronous
-    WindowedPluginGeometryDidChange(WebCore::IntRect frameRect, WebCore::IntRect clipRect, uint64_t windowID)
-    WindowedPluginVisibilityDidChange(bool isVisible, uint64_t windowID)
 #endif
 
 #if PLATFORM(IOS_FAMILY)
@@ -546,7 +539,7 @@ messages -> WebPageProxy {
 #endif
 
 #if ENABLE(ATTACHMENT_ELEMENT)
-    RegisterAttachmentIdentifierFromData(String identifier, String contentType, String preferredFileName, IPC::SharedBufferDataReference data)
+    RegisterAttachmentIdentifierFromData(String identifier, String contentType, String preferredFileName, IPC::SharedBufferCopy data)
     RegisterAttachmentIdentifierFromFilePath(String identifier, String contentType, String filePath)
     RegisterAttachmentIdentifier(String identifier)
     RegisterAttachmentsFromSerializedData(Vector<WebCore::SerializedAttachmentData> data)

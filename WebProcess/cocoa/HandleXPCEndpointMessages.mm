@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2011 Igalia S.L.
+ * Copyright (C) 2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,21 +23,33 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "config.h"
-#include "PluginProxy.h"
+#import "config.h"
+#import "HandleXPCEndpointMessages.h"
 
-#if ENABLE(PLUGIN_PROCESS)
+#import "LaunchServicesDatabaseManager.h"
+#import "LaunchServicesDatabaseXPCConstants.h"
+#import "XPCEndpoint.h"
 
-#include <WebCore/NotImplemented.h>
+#import <wtf/text/WTFString.h>
 
 namespace WebKit {
 
-bool PluginProxy::needsBackingStore() const
+void handleXPCEndpointMessages(xpc_object_t event)
 {
-    notImplemented();
-    return true;
+    if (xpc_get_type(event) != XPC_TYPE_DICTIONARY)
+        return;
+
+#if HAVE(LSDATABASECONTEXT)
+    String messageName = xpc_dictionary_get_string(event, XPCEndpoint::xpcMessageNameKey);
+    if (messageName.isEmpty())
+        return;
+
+    if (messageName == LaunchServicesDatabaseXPCConstants::xpcLaunchServicesDatabaseXPCEndpointMessageName) {
+        auto endpoint = xpc_dictionary_get_value(event, LaunchServicesDatabaseXPCConstants::xpcLaunchServicesDatabaseXPCEndpointNameKey);
+        LaunchServicesDatabaseManager::singleton().setEndpoint(endpoint);
+        return;
+    }
+#endif
 }
 
-} // namespace WebKit
-
-#endif // ENABLE(PLUGIN_PROCESS)
+}

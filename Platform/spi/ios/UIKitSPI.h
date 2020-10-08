@@ -308,6 +308,7 @@ typedef enum {
 @interface UIKeyboardImpl : UIView <UIKeyboardCandidateListDelegate>
 - (BOOL)smartInsertDeleteIsEnabled;
 - (void)updateForChangedSelection;
+- (void)setCorrectionLearningAllowed:(BOOL)allowed;
 @end
 
 @interface UIKeyboardImpl ()
@@ -732,6 +733,7 @@ typedef NS_ENUM(NSInteger, UIWKGestureType) {
 - (void)requestDictationContext:(void (^)(NSString *selectedText, NSString *prefixText, NSString *postfixText))completionHandler;
 - (BOOL)pointIsNearMarkedText:(CGPoint)point;
 - (NSString *)selectedText;
+- (NSArray<NSTextAlternatives *> *)alternativesForSelectedText;
 - (void)replaceText:(NSString *)text withText:(NSString *)word;
 - (void)selectWordForReplacement;
 - (BOOL)isReplaceAllowed;

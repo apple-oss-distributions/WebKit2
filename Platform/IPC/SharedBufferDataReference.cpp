@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Igalia S.L.
+ * Copyright (C) 2018-2020 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -23,41 +23,22 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef PluginInfoCache_h
-#define PluginInfoCache_h
+#include "config.h"
+#include "SharedBufferDataReference.h"
 
-#if ENABLE(NETSCAPE_PLUGIN_API)
+#include "Encoder.h"
 
-#include "PluginModuleInfo.h"
-#include <wtf/NeverDestroyed.h>
-#include <wtf/RunLoop.h>
-#include <wtf/glib/GUniquePtr.h>
+namespace IPC {
 
-namespace WebKit {
+void SharedBufferDataReference::encode(Encoder& encoder) const
+{
+    if (m_data.isEmpty()) {
+        SharedBufferCopy::encode(encoder);
+        return;
+    }
 
-class PluginInfoCache {
-    WTF_MAKE_NONCOPYABLE(PluginInfoCache);
-    friend NeverDestroyed<PluginInfoCache>;
-public:
-    static PluginInfoCache& singleton();
+    ASSERT(!buffer());
+    encoder << m_data;
+}
 
-    bool getPluginInfo(const String& pluginPath, PluginModuleInfo&);
-    void updatePluginInfo(const String& pluginPath, const PluginModuleInfo&);
-
-private:
-    PluginInfoCache();
-    ~PluginInfoCache();
-
-    void saveToFile();
-
-    GUniquePtr<GKeyFile> m_cacheFile;
-    GUniquePtr<char> m_cachePath;
-    RunLoop::Timer<PluginInfoCache> m_saveToFileIdle;
-    bool m_readOnlyMode;
-};
-
-} // namespace WebKit
-
-#endif // ENABLE(NETSCAPE_PLUGIN_API)
-
-#endif // PluginInfoCache_h
+} // namespace IPC

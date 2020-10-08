@@ -369,6 +369,7 @@ public:
     virtual void removeDictationAlternatives(WebCore::DictationContext) = 0;
     virtual void showDictationAlternativeUI(const WebCore::FloatRect& boundingBoxOfDictatedText, WebCore::DictationContext) = 0;
     virtual Vector<String> dictationAlternatives(WebCore::DictationContext) = 0;
+    virtual NSTextAlternatives *platformDictationAlternatives(WebCore::DictationContext) = 0;
 #endif
 
 #if PLATFORM(MAC)
@@ -506,7 +507,7 @@ public:
     virtual void requestPasswordForQuickLookDocument(const String& fileName, WTF::Function<void(const String&)>&&) = 0;
 #endif
 
-#if ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
     virtual void didHandleDragStartRequest(bool started) = 0;
     virtual void didHandleAdditionalDragItemsRequest(bool added) = 0;
     virtual void willReceiveEditDragSnapshot() = 0;

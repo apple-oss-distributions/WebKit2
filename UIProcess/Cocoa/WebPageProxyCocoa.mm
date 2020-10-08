@@ -36,13 +36,14 @@
 #import "QuickLookThumbnailLoader.h"
 #import "SafeBrowsingSPI.h"
 #import "SafeBrowsingWarning.h"
-#import "SharedBufferDataReference.h"
+#import "SharedBufferCopy.h"
 #import "WebPageMessages.h"
 #import "WebPasteboardProxy.h"
 #import "WebProcessProxy.h"
 #import "WebsiteDataStore.h"
 #import "WKErrorInternal.h"
 #import <WebCore/DragItem.h>
+#import <WebCore/GeometryUtilities.h>
 #import <WebCore/LocalCurrentGraphicsContext.h>
 #import <WebCore/NotImplemented.h>
 #import <WebCore/SearchPopupMenuCocoa.h>
@@ -238,12 +239,12 @@ void WebPageProxy::setDragCaretRect(const IntRect& dragCaretRect)
 
 #if ENABLE(ATTACHMENT_ELEMENT)
 
-void WebPageProxy::platformRegisterAttachment(Ref<API::Attachment>&& attachment, const String& preferredFileName, const IPC::SharedBufferDataReference& dataReference)
+void WebPageProxy::platformRegisterAttachment(Ref<API::Attachment>&& attachment, const String& preferredFileName, const IPC::SharedBufferCopy& bufferCopy)
 {
-    if (dataReference.isEmpty())
+    if (bufferCopy.isEmpty())
         return;
 
-    auto fileWrapper = adoptNS([pageClient().allocFileWrapperInstance() initRegularFileWithContents:dataReference.buffer()->createNSData().autorelease()]);
+    auto fileWrapper = adoptNS([pageClient().allocFileWrapperInstance() initRegularFileWithContents:bufferCopy.buffer()->createNSData().get()]);
     [fileWrapper setPreferredFilename:preferredFileName];
     attachment->setFileWrapper(fileWrapper.get());
 }
@@ -298,6 +299,15 @@ void WebPageProxy::insertDictatedTextAsync(const String& text, const EditingRang
 
     send(Messages::WebPage::InsertDictatedTextAsync { text, replacementRange, dictationAlternatives, WTFMove(options) });
 }
+
+#if USE(DICTATION_ALTERNATIVES)
+
+NSTextAlternatives *WebPageProxy::platformDictationAlternatives(WebCore::DictationContext dictationContext)
+{
+    return pageClient().platformDictationAlternatives(dictationContext);
+}
+
+#endif
 
 ResourceError WebPageProxy::errorForUnpermittedAppBoundDomainNavigation(const URL& url)
 {
@@ -426,10 +436,14 @@ void WebPageProxy::removeMediaUsageManagerSession(WebCore::MediaSessionIdentifie
 
 #if HAVE(QUICKLOOK_THUMBNAILING)
 
-static RefPtr<WebKit::ShareableBitmap> convertPlatformImageToBitmap(CocoaImage *image, const WebCore::IntSize& size)
+static RefPtr<WebKit::ShareableBitmap> convertPlatformImageToBitmap(CocoaImage *image, const WebCore::IntSize& fittingSize)
 {
+    FloatSize originalThumbnailSize([image size]);
+    auto resultRect = roundedIntRect(largestRectWithAspectRatioInsideRect(originalThumbnailSize.aspectRatio(), { { }, fittingSize }));
+    resultRect.setLocation({ });
+
     WebKit::ShareableBitmap::Configuration bitmapConfiguration;
-    auto bitmap = WebKit::ShareableBitmap::createShareable(size, bitmapConfiguration);
+    auto bitmap = WebKit::ShareableBitmap::createShareable(resultRect.size(), bitmapConfiguration);
     if (!bitmap)
         return nullptr;
 
@@ -439,9 +453,9 @@ static RefPtr<WebKit::ShareableBitmap> convertPlatformImageToBitmap(CocoaImage *
 
     LocalCurrentGraphicsContext savedContext(*graphicsContext);
 #if PLATFORM(IOS_FAMILY)
-    [image drawInRect:CGRectMake(0, 0, bitmap->size().width(), bitmap->size().height())];
+    [image drawInRect:resultRect];
 #elif USE(APPKIT)
-    [image drawInRect:NSMakeRect(0, 0, bitmap->size().width(), bitmap->size().height()) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+    [image drawInRect:resultRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
 #endif
 
     return bitmap;

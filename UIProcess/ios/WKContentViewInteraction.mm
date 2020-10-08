@@ -393,7 +393,7 @@ constexpr double fasterTapSignificantZoomThreshold = 0.8;
         [[_contentView formAccessoryView] showAutoFillButtonWithTitle:title];
     else
         [[_contentView formAccessoryView] hideAutoFillButton];
-    if (WebKit::currentUserInterfaceIdiomIsPad())
+    if (WebKit::currentUserInterfaceIdiomIsPadOrMac())
         [_contentView reloadInputViews];
 }
 
@@ -828,7 +828,7 @@ static WKDragSessionContext *ensureLocalDragSessionContext(id <UIDragSession> se
     [self _updateLongPressAndHighlightLongPressGestures];
 #endif
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
     [self setUpDragAndDropInteractions];
 #endif
 
@@ -1003,7 +1003,7 @@ static WKDragSessionContext *ensureLocalDragSessionContext(id <UIDragSession> se
 
     _layerTreeTransactionIdAtLastInteractionStart = { };
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
     [existingLocalDragSessionContext(_dragDropInteractionState.dragSession()) cleanUpTemporaryDirectories];
     [self teardownDragAndDropInteractions];
 #endif
@@ -1400,7 +1400,7 @@ typedef NS_ENUM(NSInteger, EndEditingReason) {
                 if (_focusRequiresStrongPasswordAssistance)
                     return true;
 
-                if (!WebKit::currentUserInterfaceIdiomIsPad())
+                if (!WebKit::currentUserInterfaceIdiomIsPadOrMac())
                     return true;
             }
 
@@ -1971,7 +1971,7 @@ static NSValue *nsSizeForTapHighlightBorderRadius(WebCore::IntSize borderRadius,
 #if ENABLE(INPUT_TYPE_COLOR)
     case WebKit::InputType::Color:
 #endif
-        return !WebKit::currentUserInterfaceIdiomIsPad();
+        return !WebKit::currentUserInterfaceIdiomIsPadOrMac();
     default:
         return YES;
     }
@@ -2015,7 +2015,7 @@ static NSValue *nsSizeForTapHighlightBorderRadius(WebCore::IntSize borderRadius,
         fontSize:_focusedElementInformation.nodeFontSize
         minimumScale:_focusedElementInformation.minimumScaleFactor
         maximumScale:_focusedElementInformation.maximumScaleFactorIgnoringAlwaysScalable
-        allowScaling:_focusedElementInformation.allowsUserScalingIgnoringAlwaysScalable && !WebKit::currentUserInterfaceIdiomIsPad()
+        allowScaling:_focusedElementInformation.allowsUserScalingIgnoringAlwaysScalable && !WebKit::currentUserInterfaceIdiomIsPadOrMac()
         forceScroll:[self requiresAccessoryView]];
 }
 
@@ -3002,7 +3002,7 @@ static void cancelPotentialTapIfNecessary(WKContentView* contentView)
 #if ENABLE(INPUT_TYPE_COLOR)
     case WebKit::InputType::Color:
 #endif
-        return !WebKit::currentUserInterfaceIdiomIsPad();
+        return !WebKit::currentUserInterfaceIdiomIsPadOrMac();
     }
 }
 
@@ -3116,6 +3116,14 @@ FOR_EACH_PRIVATE_WKCONTENTVIEW_ACTION(FORWARD_ACTION_TO_WKWEBVIEW)
 - (NSString *)selectedText
 {
     return (NSString *)_page->editorState().postLayoutData().wordAtSelection;
+}
+
+- (NSArray<NSTextAlternatives *> *)alternativesForSelectedText
+{
+    auto& dictationContextsForSelection = _page->editorState().postLayoutData().dictationContextsForSelection;
+    return createNSArray(dictationContextsForSelection, [&] (auto& dictationContext) {
+        return _page->platformDictationAlternatives(dictationContext);
+    }).autorelease();
 }
 
 - (void)makeTextWritingDirectionNaturalForWebView:(id)sender
@@ -4477,7 +4485,7 @@ static void selectionChangedWithTouch(WKContentView *view, const WebCore::IntPoi
     [accessoryView setNextEnabled:_focusedElementInformation.hasNextNode];
     [accessoryView setPreviousEnabled:_focusedElementInformation.hasPreviousNode];
 
-    if (WebKit::currentUserInterfaceIdiomIsPad()) {
+    if (WebKit::currentUserInterfaceIdiomIsPadOrMac()) {
         [accessoryView setClearVisible:NO];
         return;
     }
@@ -5849,7 +5857,7 @@ static bool shouldShowKeyboardForElement(const WebKit::FocusedElementInformation
     if (mayContainSelectableText(information.elementType))
         return true;
 
-    return !WebKit::currentUserInterfaceIdiomIsPad();
+    return !WebKit::currentUserInterfaceIdiomIsPadOrMac();
 }
 
 static WebCore::FloatRect rectToRevealWhenZoomingToFocusedElement(const WebKit::FocusedElementInformation& elementInfo, const WebKit::EditorState& editorState)
@@ -7033,7 +7041,7 @@ static BOOL allPasteboardItemOriginsMatchOrigin(UIPasteboard *pasteboard, const 
     if ([uiDelegate respondsToSelector:@selector(_webView:showCustomSheetForElement:)]) {
         ALLOW_DEPRECATED_DECLARATIONS_BEGIN
         if ([uiDelegate _webView:self.webView showCustomSheetForElement:element]) {
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
             BOOL shouldCancelAllTouches = !_dragDropInteractionState.dragSession();
 #else
             BOOL shouldCancelAllTouches = YES;
@@ -7160,7 +7168,7 @@ static BOOL allPasteboardItemOriginsMatchOrigin(UIPasteboard *pasteboard, const 
 
 - (BOOL)_shouldUseLegacySelectPopoverDismissalBehavior
 {
-    if (!WebKit::currentUserInterfaceIdiomIsPad())
+    if (!WebKit::currentUserInterfaceIdiomIsPadOrMac())
         return NO;
 
     if (_focusedElementInformation.elementType != WebKit::InputType::Select)
@@ -8610,36 +8618,52 @@ static Vector<WebCore::IntSize> sizesOfPlaceholderElementsToInsertWhenDroppingIt
 
 #if HAVE(UIKIT_WITH_MOUSE_SUPPORT)
 
+static BOOL applicationIsKnownToIgnoreMouseEvents(const char* &warningVersion)
+{
+    // System apps will always be linked on the current OS, so
+    // check them before the linked-on-or-after.
+
+    // <rdar://problem/59521967> iAd Video does not respond to mouse events, only touch events
+    if (WebCore::IOSApplication::isNews() || WebCore::IOSApplication::isStocks()) {
+        warningVersion = nullptr;
+        return YES;
+    }
+
+    if (!WebKit::linkedOnOrAfter(WebKit::SDKVersion::FirstVersionWithiOSAppsOnMacOS)) {
+        if (WebCore::IOSApplication::isFIFACompanion() // <rdar://problem/67093487>
+            || WebCore::IOSApplication::isNoggin() // <rdar://problem/64830335>
+            || WebCore::IOSApplication::isOKCupid() // <rdar://problem/65698496>
+            || WebCore::IOSApplication::isJWLibrary() // <rdar://problem/68104852>
+            || WebCore::IOSApplication::isPaperIO() // <rdar://problem/68738585>
+            || WebCore::IOSApplication::isCrunchyroll()) { // <rdar://problem/66362029>
+            warningVersion = "14.2";
+            return YES;
+        }
+    }
+
+    if (!WebKit::linkedOnOrAfter(WebKit::SDKVersion::FirstThatSendsNativeMouseEvents)) {
+        if (WebCore::IOSApplication::isPocketCity() // <rdar://problem/62273077>
+            || WebCore::IOSApplication::isEssentialSkeleton() // <rdar://problem/62694519>
+            || WebCore::IOSApplication::isESPNFantasySports() // <rdar://problem/64671543>
+            || WebCore::IOSApplication::isDoubleDown()) { // <rdar://problem/64668138>
+            warningVersion = "13.4";
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
 - (BOOL)shouldUseMouseGestureRecognizer
 {
     static const BOOL shouldUseMouseGestureRecognizer = []() -> BOOL {
-        // System apps will always be linked on the current OS, so
-        // check them before the linked-on-or-after.
+        const char* warningVersion = nullptr;
+        BOOL knownToIgnoreMouseEvents = applicationIsKnownToIgnoreMouseEvents(warningVersion);
 
-        // <rdar://problem/59521967> iAd Video does not respond to mouse events, only touch events
-        if (WebCore::IOSApplication::isNews() || WebCore::IOSApplication::isStocks())
-            return NO;
+        if (knownToIgnoreMouseEvents && warningVersion)
+            os_log_error(OS_LOG_DEFAULT, "WARNING: This application has been observed to ignore mouse events in web content; touch events will be sent until it is built against the iOS %s SDK, but after that, the web content must respect mouse or pointer events in addition to touch events in order to behave correctly when a trackpad or mouse is used.", warningVersion);
 
-        if (WebKit::linkedOnOrAfter(WebKit::SDKVersion::FirstThatSendsNativeMouseEvents))
-            return YES;
-
-        // <rdar://problem/59155220> Some Feedly UI does not respond to mouse events, only touch events
-        if (WebCore::IOSApplication::isFeedly())
-            return NO;
-
-        // <rdar://problem/62273077> "Pocket City" does not respond to mouse events, only touch events
-        if (WebCore::IOSApplication::isPocketCity())
-            return NO;
-
-        // <rdar://problem/62694519> "Essential Skeleton" does not respond to mouse events, only touch events
-        if (WebCore::IOSApplication::isEssentialSkeleton())
-            return NO;
-
-        // <rdar://problem/64671543> "ESPN Fantasy Sports" does not respond to mouse events, only touch events
-        if (WebCore::IOSApplication::isESPNFantasySports())
-            return NO;
-
-        return YES;
+        return !knownToIgnoreMouseEvents;
     }();
 
     switch (_mouseEventPolicy) {

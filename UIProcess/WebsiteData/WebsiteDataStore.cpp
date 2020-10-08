@@ -1560,8 +1560,10 @@ void WebsiteDataStore::getResourceLoadStatisticsDataSummary(CompletionHandler<vo
     RefPtr<CallbackAggregator> callbackAggregator = adoptRef(new CallbackAggregator(WTFMove(completionHandler)));
 
     for (auto& processPool : ensureProcessPools()) {
-        processPool->ensureNetworkProcess(this).getResourceLoadStatisticsDataSummary(m_sessionID, [callbackAggregator, processPool](Vector<WebResourceLoadStatisticsStore::ThirdPartyData>&& data) {
-            callbackAggregator->addResult(WTFMove(data));
+        processPool->sendResourceLoadStatisticsDataImmediately([this, protectedThis = makeRef(*this), processPool, callbackAggregator] {
+            processPool->ensureNetworkProcess(this).getResourceLoadStatisticsDataSummary(m_sessionID, [callbackAggregator, processPool](Vector<WebResourceLoadStatisticsStore::ThirdPartyData>&& data) {
+                callbackAggregator->addResult(WTFMove(data));
+            });
         });
     }
 }
@@ -1936,6 +1938,32 @@ void WebsiteDataStore::setResourceLoadStatisticsToSameSiteStrictCookiesForTestin
             networkProcess->setToSameSiteStrictCookiesForTesting(m_sessionID, WebCore::RegistrableDomain { url }, [callbackAggregator] { });
     }
 }
+
+void WebsiteDataStore::setResourceLoadStatisticsFirstPartyHostCNAMEDomainForTesting(const URL& firstPartyURL, const URL& cnameURL, CompletionHandler<void()>&& completionHandler)
+{
+    if (cnameURL.host() != "testwebkit.org" && cnameURL.host() != "3rdpartytestwebkit.org") {
+        completionHandler();
+        return;
+    }
+
+    auto callbackAggregator = CallbackAggregator::create(WTFMove(completionHandler));
+
+    for (auto& processPool : processPools())
+        processPool->ensureNetworkProcess().setFirstPartyHostCNAMEDomainForTesting(m_sessionID, firstPartyURL.host().toString(), WebCore::RegistrableDomain { cnameURL }, [callbackAggregator] { });
+}
+
+void WebsiteDataStore::setResourceLoadStatisticsThirdPartyCNAMEDomainForTesting(const URL& cnameURL, CompletionHandler<void()>&& completionHandler)
+{
+    if (cnameURL.host() != "testwebkit.org" && cnameURL.host() != "3rdpartytestwebkit.org") {
+        completionHandler();
+        return;
+    }
+
+    auto callbackAggregator = CallbackAggregator::create(WTFMove(completionHandler));
+
+    for (auto& processPool : processPools())
+        processPool->ensureNetworkProcess().setThirdPartyCNAMEDomainForTesting(m_sessionID, WebCore::RegistrableDomain { cnameURL }, [callbackAggregator] { });
+}
 #endif // ENABLE(RESOURCE_LOAD_STATISTICS)
 
 void WebsiteDataStore::setCacheMaxAgeCapForPrevalentResources(Seconds seconds, CompletionHandler<void()>&& completionHandler)
@@ -1969,6 +1997,8 @@ bool WebsiteDataStore::isAssociatedProcessPool(WebProcessPool& processPool) cons
 {
     if (auto* processPoolDataStore = processPool.websiteDataStore())
         return processPoolDataStore == this;
+    if (auto* networkProcessProxy = processPool.networkProcess())
+        return networkProcessProxy->hasSession(m_sessionID);
     return false;
 }
 

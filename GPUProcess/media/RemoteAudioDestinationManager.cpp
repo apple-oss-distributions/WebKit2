@@ -69,6 +69,7 @@ public:
     void start() { m_destination->start(); }
     void stop() { m_destination->stop(); }
     bool isPlaying() { return m_destination->isPlaying(); }
+    unsigned framesPerBuffer() const { return m_destination->framesPerBuffer() ; }
 
 private:
     RemoteAudioDestination(GPUConnectionToWebProcess& connection, RemoteAudioDestinationIdentifier id, const String& inputDeviceId, uint32_t numberOfInputChannels, uint32_t numberOfOutputChannels, float sampleRate)
@@ -78,7 +79,7 @@ private:
     {
     }
 
-    void render(AudioBus* sourceBus, AudioBus* destinationBus, size_t framesToProcess) override
+    void render(AudioBus* sourceBus, AudioBus* destinationBus, size_t framesToProcess, const WebCore::AudioIOPosition& outputPosition) override
     {
         if (m_protectThisDuringGracefulShutdown)
             return;
@@ -94,8 +95,8 @@ private:
 
         // FIXME: Replace this code with a ring buffer. At least this happens in audio thread.
         ASSERT(!isMainThread());
-        callOnMainThread([this, framesToProcess, &buffers, &renderSemaphore] {
-            RemoteAudioBusData busData { framesToProcess, buffers.map([](auto& memory) { return memory.copyRef(); }) };
+        callOnMainThread([this, framesToProcess, outputPosition, &buffers, &renderSemaphore] {
+            RemoteAudioBusData busData { framesToProcess, outputPosition, buffers.map([](auto& memory) { return memory.copyRef(); }) };
             ASSERT(framesToProcess);
             m_connection.connection().sendWithAsyncReply(Messages::RemoteAudioDestinationProxy::RenderBuffer(busData), [&]() {
                 renderSemaphore.signal();
@@ -136,12 +137,13 @@ RemoteAudioDestinationManager::RemoteAudioDestinationManager(GPUConnectionToWebP
 RemoteAudioDestinationManager::~RemoteAudioDestinationManager() = default;
 
 void RemoteAudioDestinationManager::createAudioDestination(const String& inputDeviceId, uint32_t numberOfInputChannels, uint32_t numberOfOutputChannels, float sampleRate,
-    CompletionHandler<void(RemoteAudioDestinationIdentifier)>&& completionHandler)
+    CompletionHandler<void(RemoteAudioDestinationIdentifier, unsigned framesPerBuffer)>&& completionHandler)
 {
     auto newID = RemoteAudioDestinationIdentifier::generateThreadSafe();
-    auto callback = RemoteAudioDestination::create(m_gpuConnectionToWebProcess, newID, inputDeviceId, numberOfInputChannels, numberOfOutputChannels, sampleRate);
-    m_audioDestinations.add(newID, WTFMove(callback));
-    completionHandler(newID);
+    auto destination = RemoteAudioDestination::create(m_gpuConnectionToWebProcess, newID, inputDeviceId, numberOfInputChannels, numberOfOutputChannels, sampleRate);
+    auto framesPerBuffer = destination->framesPerBuffer();
+    m_audioDestinations.add(newID, WTFMove(destination));
+    completionHandler(newID, framesPerBuffer);
 }
 
 void RemoteAudioDestinationManager::deleteAudioDestination(RemoteAudioDestinationIdentifier id, CompletionHandler<void()>&& completionHandler)

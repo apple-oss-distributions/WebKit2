@@ -54,14 +54,16 @@ RemoteAudioDestinationProxy::RemoteAudioDestinationProxy(AudioIOCallback& callba
     , m_sampleRate(sampleRate)
 {
     RemoteAudioDestinationIdentifier destinationID;
+    unsigned framesPerBuffer { 0 };
 
     auto& connection = WebProcess::singleton().ensureGPUProcessConnection();
     connection.connection().sendSync(
         Messages::RemoteAudioDestinationManager::CreateAudioDestination(inputDeviceId, numberOfInputChannels, numberOfOutputChannels, sampleRate),
-        Messages::RemoteAudioDestinationManager::CreateAudioDestination::Reply(destinationID), 0);
+        Messages::RemoteAudioDestinationManager::CreateAudioDestination::Reply(destinationID, framesPerBuffer), 0);
     connection.messageReceiverMap().addMessageReceiver(Messages::RemoteAudioDestinationProxy::messageReceiverName(), destinationID.toUInt64(), *this);
 
     m_destinationID = destinationID;
+    m_framesPerBuffer = framesPerBuffer;
 }
 
 RemoteAudioDestinationProxy::~RemoteAudioDestinationProxy()
@@ -97,7 +99,7 @@ void RemoteAudioDestinationProxy::renderBuffer(const WebKit::RemoteAudioBusData&
     for (unsigned i = 0; i < audioBusData.channelBuffers.size(); ++i)
         audioBus->setChannelMemory(i, (float*)audioBusData.channelBuffers[i]->data(), audioBusData.framesToProcess);
 
-    m_callback.render(0, audioBus.get(), audioBusData.framesToProcess);
+    m_callback.render(0, audioBus.get(), audioBusData.framesToProcess, audioBusData.outputPosition);
 
     completionHandler();
 }
