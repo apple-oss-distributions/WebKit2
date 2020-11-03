@@ -1,3 +1,355 @@
+2020-10-28  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r269094. rdar://problem/70769706
+
+    Use _CFURLConnectionSetFrameworkStubs for SecItemShim instead of DYLD_INTERPOSE on Apple Silicon Macs
+    https://bugs.webkit.org/show_bug.cgi?id=218269
+    <rdar://problem/70491533>
+    
+    Reviewed by Darin Adler.
+    
+    Source/WebKit:
+    
+    r171066 introduced the use of _CFURLConnectionSetFrameworkStubs on iOS for CFNetwork to be able
+    to get and set credentials as the UI process.  This is also needed on Apple Silicon Macs.
+    We should eventually replace it with an even cleaner per-NSURLSession solution, but this is a step
+    in the right direction, and I verified manually that it fixes the radar.
+    
+    Covered by an API test that used to fail on Apple Silicon Macs.
+    
+    * Shared/mac/SecItemShim.cpp:
+    (WebKit::initializeSecItemShim):
+    
+    Tools:
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/Challenge.mm:
+    (TEST):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@269094 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-27  Alex Christensen  <achristensen@webkit.org>
+
+            Use _CFURLConnectionSetFrameworkStubs for SecItemShim instead of DYLD_INTERPOSE on Apple Silicon Macs
+            https://bugs.webkit.org/show_bug.cgi?id=218269
+            <rdar://problem/70491533>
+
+            Reviewed by Darin Adler.
+
+            r171066 introduced the use of _CFURLConnectionSetFrameworkStubs on iOS for CFNetwork to be able
+            to get and set credentials as the UI process.  This is also needed on Apple Silicon Macs.
+            We should eventually replace it with an even cleaner per-NSURLSession solution, but this is a step
+            in the right direction, and I verified manually that it fixes the radar.
+
+            Covered by an API test that used to fail on Apple Silicon Macs.
+
+            * Shared/mac/SecItemShim.cpp:
+            (WebKit::initializeSecItemShim):
+
+2020-10-22  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268377. rdar://problem/70320656
+
+    Unreviewed build fix after r268367.
+    
+    * Configurations/WebKit.xcconfig: Corrected the definition of
+    WK_PDFKIT_LDFLAGS_maccatalyst.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268377 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-12  Andy Estes  <aestes@apple.com>
+
+            Unreviewed build fix after r268367.
+
+            * Configurations/WebKit.xcconfig: Corrected the definition of
+            WK_PDFKIT_LDFLAGS_maccatalyst.
+
+2020-10-22  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268367. rdar://problem/70320656
+
+    [macCatalyst] Enable WKPDFView
+    https://bugs.webkit.org/show_bug.cgi?id=217403
+    <rdar://problem/48217791>
+    
+    Reviewed by Tim Horton.
+    
+    Source/WebKit:
+    
+    * Configurations/WebKit.xcconfig: Linked PDFKit.framework when building for the Catalyst
+    variant on Big Sur or later.
+    
+    Source/WTF:
+    
+    * wtf/PlatformEnableCocoa.h: Enabled WKPDFView when building for the Catalyst variant on
+    Big Sur or later.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268367 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-12  Andy Estes  <aestes@apple.com>
+
+            [macCatalyst] Enable WKPDFView
+            https://bugs.webkit.org/show_bug.cgi?id=217403
+            <rdar://problem/48217791>
+
+            Reviewed by Tim Horton.
+
+            * Configurations/WebKit.xcconfig: Linked PDFKit.framework when building for the Catalyst
+            variant on Big Sur or later.
+
+2020-10-19  Kocsen Chung  <kocsen_chung@apple.com>
+
+        Cherry-pick r268570. rdar://problem/70447631
+
+    v2: WebKit::XPCServiceEventHandler block should call exit() on the main thread
+    <https://webkit.org/b/217773>
+    <rdar://problem/70275659>
+    
+    Reviewed by Geoff Garen.
+    
+    * Shared/EntryPointUtilities/Cocoa/XPCService/XPCServiceMain.mm:
+    (WebKit::XPCServiceEventHandler):
+    - Use NSRunLoop instead of libdispatch to run code on the main
+      thread since libdispatch can randomly pick a new main thread when
+      exit() is called on the original main thread.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268570 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-15  David Kilzer  <ddkilzer@apple.com>
+
+            v2: WebKit::XPCServiceEventHandler block should call exit() on the main thread
+            <https://webkit.org/b/217773>
+            <rdar://problem/70275659>
+
+            Reviewed by Geoff Garen.
+
+            * Shared/EntryPointUtilities/Cocoa/XPCService/XPCServiceMain.mm:
+            (WebKit::XPCServiceEventHandler):
+            - Use NSRunLoop instead of libdispatch to run code on the main
+              thread since libdispatch can randomly pick a new main thread when
+              exit() is called on the original main thread.
+
+2020-10-14  Alan Coon  <alancoon@apple.com>
+
+        Cherry-pick r268376. rdar://problem/70312257
+
+    Cursor window is transparent - but not hidden - when `cursor: none` is specified
+    https://bugs.webkit.org/show_bug.cgi?id=217639
+    <rdar://problem/70006186>
+    
+    Reviewed by Simon Fraser.
+    
+    * Platform/spi/mac/AppKitSPI.h:
+    * UIProcess/mac/PageClientImplMac.mm:
+    (WebKit::PageClientImpl::setCursor):
+    Adopt new AppKit SPI to actually hide the cursor when we set it to the "none" shape.
+    This hiding lives until the next time the app-global cursor shape is changed by any client.]
+    We'll re-set it the next time we set the "none" shape.
+    
+    This is important, because on some platforms, hiding the cursor is a performance improvement
+    over simply making it transparent.
+    
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268376 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-12  Tim Horton  <timothy_horton@apple.com>
+
+            Cursor window is transparent - but not hidden - when `cursor: none` is specified
+            https://bugs.webkit.org/show_bug.cgi?id=217639
+            <rdar://problem/70006186>
+
+            Reviewed by Simon Fraser.
+
+            * Platform/spi/mac/AppKitSPI.h:
+            * UIProcess/mac/PageClientImplMac.mm:
+            (WebKit::PageClientImpl::setCursor):
+            Adopt new AppKit SPI to actually hide the cursor when we set it to the "none" shape.
+            This hiding lives until the next time the app-global cursor shape is changed by any client.]
+            We'll re-set it the next time we set the "none" shape.
+
+            This is important, because on some platforms, hiding the cursor is a performance improvement
+            over simply making it transparent.
+
+2020-10-12  Babak Shafiei  <bshafiei@apple.com>
+
+        Cherry-pick r268330. rdar://problem/70189394
+
+    Strip patch version from TARGET_MAC_OS_X_VERSION_MAJOR when building for macOS Big Sur
+    or later
+    https://bugs.webkit.org/show_bug.cgi?id=217594
+    rdar://70188497
+    
+    Patch by Luming Yin <luming_yin@apple.com> on 2020-10-11
+    Reviewed by Darin Adler.
+    
+    To ensure successful Mac Catalyst WebKit builds, strip the patch version from
+    TARGET_MAC_OS_X_VERSION_MAJOR by using two `base:`s on MACOSX_DEPLOYMENT_TARGET.
+    
+    * Configurations/Base.xcconfig:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268330 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-11  Luming Yin  <luming_yin@apple.com>
+
+            Strip patch version from TARGET_MAC_OS_X_VERSION_MAJOR when building for macOS Big Sur
+            or later
+            https://bugs.webkit.org/show_bug.cgi?id=217594
+            rdar://70188497
+
+            Reviewed by Darin Adler.
+
+            To ensure successful Mac Catalyst WebKit builds, strip the patch version from
+            TARGET_MAC_OS_X_VERSION_MAJOR by using two `base:`s on MACOSX_DEPLOYMENT_TARGET.
+
+            * Configurations/Base.xcconfig:
+
+2020-10-12  Babak Shafiei  <bshafiei@apple.com>
+
+        Cherry-pick r268327. rdar://problem/70189401
+
+    Ignore deployment suffix and identifier when computing major OS version for macOS
+    Big Sur and newer
+    https://bugs.webkit.org/show_bug.cgi?id=217584
+    rdar://70168426
+    
+    Patch by Luming Yin <luming_yin@apple.com> on 2020-10-11
+    Reviewed by Darin Adler.
+    
+    Stop using MACOSX_DEPLOYMENT_TARGET:suffix:identifier to compute major OS versions.
+    Only use the deployment target base for macOS Big Sur and newer. Keep the manual
+    definitions for legacy versions of macOS.
+    
+    * Configurations/Base.xcconfig:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268327 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-11  Luming Yin  <luming_yin@apple.com>
+
+            Ignore deployment suffix and identifier when computing major OS version for macOS
+            Big Sur and newer
+            https://bugs.webkit.org/show_bug.cgi?id=217584
+            rdar://70168426
+
+            Reviewed by Darin Adler.
+
+            Stop using MACOSX_DEPLOYMENT_TARGET:suffix:identifier to compute major OS versions.
+            Only use the deployment target base for macOS Big Sur and newer. Keep the manual
+            definitions for legacy versions of macOS.
+
+            * Configurations/Base.xcconfig:
+
+2020-10-09  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r268003. rdar://problem/70142496
+
+    Make NetscapePlugInStreamLoaderClient a weak pointer on NetscapePlugInStreamLoader
+    <https://webkit.org/b/217237>
+    <rdar://problem/69776714>
+    
+    Reviewed by Alex Christensen.
+    
+    Source/WebCore:
+    
+    Could not write a test since reproducing a crash requires
+    rapidly reloading a URL to a PDF at random points during the
+    previous load.
+    
+    Make NetscapePlugInStreamLoaderClient a WeakPtr on
+    NetscapePlugInStreamLoader, and add nullptr checks for
+    NetscapePlugInStreamLoader.m_client as needed.
+    
+    * loader/NetscapePlugInStreamLoader.cpp:
+    (WebCore::NetscapePlugInStreamLoader::NetscapePlugInStreamLoader):
+    (WebCore::NetscapePlugInStreamLoader::willSendRequest):
+    (WebCore::NetscapePlugInStreamLoader::didReceiveResponse):
+    (WebCore::NetscapePlugInStreamLoader::didReceiveDataOrBuffer):
+    (WebCore::NetscapePlugInStreamLoader::didFinishLoading):
+    (WebCore::NetscapePlugInStreamLoader::didFail):
+    (WebCore::NetscapePlugInStreamLoader::willCancel):
+    * loader/NetscapePlugInStreamLoader.h:
+    
+    Source/WebKit:
+    
+    Making NetscapePlugInStreamLoaderClient inherit from
+    CanMakeWeakPtr<> caused PDFPlugin to fail to compile because one
+    of its parent classes already inherited from CanMakeWeakPtr<>.
+    To fix this, extract a PDFPluginStreamLoaderClient class from
+    PDFPlugin and link the lifetime of PDFPluginStreamLoaderClient
+    to PDFPlugin.
+    
+    After moving the NetscapePlugInStreamLoaderClient virtual
+    methods from PDFPlugin to PDFPluginStreamLoaderClient, add some
+    simple methods to PDFPlugin so that PDFPluginStreamLoaderClient
+    doesn't access the instance variables directly.  Also make use
+    of these new methods in other parts of PDFPlugin.
+    
+    * WebProcess/Plugins/PDF/PDFPlugin.h:
+    (WebKit::PDFPlugin::documentFinishedLoading): Add.
+    (WebKit::PDFPlugin::identifierForLoader): Add.
+    (WebKit::PDFPlugin::removeOutstandingByteRangeRequest): Add.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient): Add class.
+    * WebProcess/Plugins/PDF/PDFPlugin.mm:
+    (WebKit::PDFPlugin::PDFPlugin):
+    (WebKit::PDFPlugin::receivedNonLinearizedPDFSentinel):
+    (WebKit::PDFPlugin::getResourceBytesAtPosition):
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::willSendRequest): Move from PDFPlugin.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveResponse): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveData): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFail): Ditto.
+    (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFinishLoading): Ditto.
+    (WebKit::PDFPlugin::byteRangeRequestForLoader):
+    (WebKit::PDFPlugin::forgetLoader):
+    (WebKit::PDFPlugin::willSendRequest): Move to PDFPluginStreamLoaderClient.
+    (WebKit::PDFPlugin::didReceiveResponse): Ditto.
+    (WebKit::PDFPlugin::didReceiveData): Ditto.
+    (WebKit::PDFPlugin::didFail): Ditto.
+    (WebKit::PDFPlugin::didFinishLoading): Ditto.
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@268003 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2020-10-05  David Kilzer  <ddkilzer@apple.com>
+
+            Make NetscapePlugInStreamLoaderClient a weak pointer on NetscapePlugInStreamLoader
+            <https://webkit.org/b/217237>
+            <rdar://problem/69776714>
+
+            Reviewed by Alex Christensen.
+
+            Making NetscapePlugInStreamLoaderClient inherit from
+            CanMakeWeakPtr<> caused PDFPlugin to fail to compile because one
+            of its parent classes already inherited from CanMakeWeakPtr<>.
+            To fix this, extract a PDFPluginStreamLoaderClient class from
+            PDFPlugin and link the lifetime of PDFPluginStreamLoaderClient
+            to PDFPlugin.
+
+            After moving the NetscapePlugInStreamLoaderClient virtual
+            methods from PDFPlugin to PDFPluginStreamLoaderClient, add some
+            simple methods to PDFPlugin so that PDFPluginStreamLoaderClient
+            doesn't access the instance variables directly.  Also make use
+            of these new methods in other parts of PDFPlugin.
+
+            * WebProcess/Plugins/PDF/PDFPlugin.h:
+            (WebKit::PDFPlugin::documentFinishedLoading): Add.
+            (WebKit::PDFPlugin::identifierForLoader): Add.
+            (WebKit::PDFPlugin::removeOutstandingByteRangeRequest): Add.
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient): Add class.
+            * WebProcess/Plugins/PDF/PDFPlugin.mm:
+            (WebKit::PDFPlugin::PDFPlugin):
+            (WebKit::PDFPlugin::receivedNonLinearizedPDFSentinel):
+            (WebKit::PDFPlugin::getResourceBytesAtPosition):
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::willSendRequest): Move from PDFPlugin.
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveResponse): Ditto.
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didReceiveData): Ditto.
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFail): Ditto.
+            (WebKit::PDFPlugin::PDFPluginStreamLoaderClient::didFinishLoading): Ditto.
+            (WebKit::PDFPlugin::byteRangeRequestForLoader):
+            (WebKit::PDFPlugin::forgetLoader):
+            (WebKit::PDFPlugin::willSendRequest): Move to PDFPluginStreamLoaderClient.
+            (WebKit::PDFPlugin::didReceiveResponse): Ditto.
+            (WebKit::PDFPlugin::didReceiveData): Ditto.
+            (WebKit::PDFPlugin::didFail): Ditto.
+            (WebKit::PDFPlugin::didFinishLoading): Ditto.
+
 2020-10-06  Alan Coon  <alancoon@apple.com>
 
         Cherry-pick r268030. rdar://problem/70010322
