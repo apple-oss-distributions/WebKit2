@@ -35,6 +35,7 @@
 @public
     WKPreferenceObserver *m_observer;
 }
+- (void)findPreferenceChangesAndNotifyForKeys:(NSDictionary<NSString *, id> *)oldValues toValuesForKeys:(NSDictionary<NSString *, id> *)newValues;
 @end
 
 @interface WKPreferenceObserver () {
@@ -45,10 +46,8 @@
 
 @implementation WKUserDefaults
 
-- (void)_notifyObserversOfChangeFromValuesForKeys:(NSDictionary<NSString *, id> *)oldValues toValuesForKeys:(NSDictionary<NSString *, id> *)newValues
+- (void)findPreferenceChangesAndNotifyForKeys:(NSDictionary<NSString *, id> *)oldValues toValuesForKeys:(NSDictionary<NSString *, id> *)newValues
 {
-    [super _notifyObserversOfChangeFromValuesForKeys:oldValues toValuesForKeys:newValues];
-
     if (!m_observer)
         return;
 
@@ -73,13 +72,31 @@
 
         auto globalValue = adoptCF(CFPreferencesCopyValue((__bridge CFStringRef)key, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
         auto domainValue = adoptCF(CFPreferencesCopyValue((__bridge CFStringRef)key, (__bridge CFStringRef)m_suiteName, kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
-        
-        if (globalValue && [newValue isEqual:(__bridge id)globalValue.get()])
+
+        auto preferenceValuesAreEqual = [] (id a, id b) {
+            return a == b || [a isEqual:b];
+        };
+
+        if (preferenceValuesAreEqual((__bridge id)globalValue.get(), newValue))
             [m_observer preferenceDidChange:nil key:key encodedValue:encodedString];
 
-        if (domainValue && [newValue isEqual:(__bridge id)domainValue.get()])
+        if (preferenceValuesAreEqual((__bridge id)domainValue.get(), newValue))
             [m_observer preferenceDidChange:m_suiteName key:key encodedValue:encodedString];
     }
+}
+
+- (void)_notifyObserversOfChangeFromValuesForKeys:(NSDictionary<NSString *, id> *)oldValues toValuesForKeys:(NSDictionary<NSString *, id> *)newValues
+{
+    [super _notifyObserversOfChangeFromValuesForKeys:oldValues toValuesForKeys:newValues];
+
+    if (!isMainThread()) {
+        [self findPreferenceChangesAndNotifyForKeys:oldValues toValuesForKeys:newValues];
+        return;
+    }
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), [self, protectedSelf = retainPtr(self), oldValues = retainPtr(oldValues), newValues = retainPtr(newValues)] {
+        [self findPreferenceChangesAndNotifyForKeys:oldValues.get() toValuesForKeys:newValues.get()];
+    });
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSKeyValueChangeKey, id> *)change context:(void *)context
@@ -118,7 +135,6 @@
 #if PLATFORM(IOS_FAMILY)
         @"com.apple.Accessibility",
         @"com.apple.AdLib",
-        @"com.apple.Preferences",
         @"com.apple.SpeakSelection",
         @"com.apple.UIKit",
         @"com.apple.WebUI",

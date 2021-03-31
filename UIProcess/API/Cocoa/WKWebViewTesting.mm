@@ -27,6 +27,7 @@
 #import "WKWebViewPrivateForTesting.h"
 
 #import "AudioSessionRoutingArbitratorProxy.h"
+#import "PlaybackSessionManagerProxy.h"
 #import "UserMediaProcessManager.h"
 #import "ViewGestureController.h"
 #import "WKWebViewIOS.h"
@@ -165,11 +166,6 @@
     _resolutionForShareSheetImmediateCompletionForTesting = resolved;
 }
 
-- (BOOL)_hasInspectorFrontend
-{
-    return _page && _page->hasInspectorFrontend();
-}
-
 - (void)_processWillSuspendForTesting:(void (^)(void))completionHandler
 {
     if (!_page) {
@@ -226,6 +222,25 @@
 #endif
 }
 
+- (double)_mediaCaptureReportingDelayForTesting
+{
+    return _page->mediaCaptureReportingDelay().value();
+}
+
+- (void)_setMediaCaptureReportingDelayForTesting:(double)captureReportingDelay
+{
+    _page->setMediaCaptureReportingDelay(Seconds(captureReportingDelay));
+}
+
+- (BOOL)_wirelessVideoPlaybackDisabled
+{
+#if ENABLE(VIDEO_PRESENTATION_MODE)
+    if (auto* playbackSessionManager = _page->playbackSessionManager())
+        return playbackSessionManager->wirelessVideoPlaybackDisabled();
+#endif
+    return false;
+}
+
 - (void)_doAfterProcessingAllPendingMouseEvents:(dispatch_block_t)action
 {
     _page->doAfterProcessingAllPendingMouseEvents([action = makeBlockPtr(action)] {
@@ -259,6 +274,56 @@
     }
 #else
     return WKWebViewAudioRoutingArbitrationStatusNone;
+#endif
+}
+
+- (double)_audioRoutingArbitrationUpdateTime
+{
+#if ENABLE(ROUTING_ARBITRATION)
+    return _page->process().audioSessionRoutingArbitrator().arbitrationUpdateTime().secondsSinceEpoch().seconds();
+#else
+    return 0;
+#endif
+}
+
+- (void)_doAfterActivityStateUpdate:(void (^)(void))completionHandler
+{
+    _page->addActivityStateUpdateCompletionHandler(makeBlockPtr(completionHandler));
+}
+
+- (NSNumber *)_suspendMediaPlaybackCounter
+{
+    return @(_page->suspendMediaPlaybackCounter());
+}
+
+- (void)_setPrivateClickMeasurementOverrideTimerForTesting:(BOOL)overrideTimer completionHandler:(void(^)(void))completionHandler
+{
+    _page->setPrivateClickMeasurementOverrideTimerForTesting(overrideTimer, [completionHandler = makeBlockPtr(completionHandler)] {
+        completionHandler();
+    });
+}
+
+- (void)_setPrivateClickMeasurementConversionURLForTesting:(NSURL *)url completionHandler:(void(^)(void))completionHandler
+{
+    _page->setPrivateClickMeasurementConversionURLForTesting(url, [completionHandler = makeBlockPtr(completionHandler)] {
+        completionHandler();
+    });
+}
+
+- (void)_didPresentContactPicker
+{
+    // For subclasses to override.
+}
+
+- (void)_didDismissContactPicker
+{
+    // For subclasses to override.
+}
+
+- (void)_dismissContactPickerWithContacts:(NSArray *)contacts
+{
+#if PLATFORM(IOS_FAMILY)
+    [_contentView _dismissContactPickerWithContacts:contacts];
 #endif
 }
 

@@ -29,6 +29,7 @@
 #if PLATFORM(MAC)
 
 #import "APIHitTestResult.h"
+#import "AppKitSPI.h"
 #import "ColorSpaceData.h"
 #import "DataReference.h"
 #import "DownloadProxy.h"
@@ -52,6 +53,7 @@
 #import "WebColorPickerMac.h"
 #import "WebContextMenuProxyMac.h"
 #import "WebDataListSuggestionsDropdownMac.h"
+#import "WebDateTimePickerMac.h"
 #import "WebEditCommandProxy.h"
 #import "WebPageProxy.h"
 #import "WebPopupMenuProxyMac.h"
@@ -327,6 +329,11 @@ void PageClientImpl::setCursor(const WebCore::Cursor& cursor)
         return;
 
     [platformCursor set];
+
+    if (cursor.type() == WebCore::Cursor::Type::None) {
+        if ([NSCursor respondsToSelector:@selector(hideUntilChanged)])
+            [NSCursor hideUntilChanged];
+    }
 }
 
 void PageClientImpl::setCursorHiddenUntilMouseMoves(bool hiddenUntilMouseMoves)
@@ -347,6 +354,30 @@ void PageClientImpl::registerInsertionUndoGrouping()
 {
     registerInsertionUndoGroupingWithUndoManager([m_view undoManager]);
 }
+
+#if ENABLE(UI_PROCESS_PDF_HUD)
+
+void PageClientImpl::createPDFHUD(PDFPluginIdentifier identifier, const WebCore::IntRect& rect)
+{
+    m_impl->createPDFHUD(identifier, rect);
+}
+
+void PageClientImpl::updatePDFHUDLocation(PDFPluginIdentifier identifier, const WebCore::IntRect& rect)
+{
+    m_impl->updatePDFHUDLocation(identifier, rect);
+}
+
+void PageClientImpl::removePDFHUD(PDFPluginIdentifier identifier)
+{
+    m_impl->removePDFHUD(identifier);
+}
+
+void PageClientImpl::removeAllPDFHUDs()
+{
+    m_impl->removeAllPDFHUDs();
+}
+
+#endif // ENABLE(UI_PROCESS_PDF_HUD)
 
 void PageClientImpl::clearAllEditCommands()
 {
@@ -473,6 +504,13 @@ RefPtr<WebColorPicker> PageClientImpl::createColorPicker(WebPageProxy* page, con
 RefPtr<WebDataListSuggestionsDropdown> PageClientImpl::createDataListSuggestionsDropdown(WebPageProxy& page)
 {
     return WebDataListSuggestionsDropdownMac::create(page, m_view);
+}
+#endif
+
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
+RefPtr<WebDateTimePicker> PageClientImpl::createDateTimePicker(WebPageProxy& page)
+{
+    return WebDateTimePickerMac::create(page, m_view);
 }
 #endif
 
@@ -941,7 +979,7 @@ void PageClientImpl::requestDOMPasteAccess(const WebCore::IntRect& elementRect, 
 #if HAVE(APP_ACCENT_COLORS)
 WebCore::Color PageClientImpl::accentColor()
 {
-    return WebCore::colorFromNSColor([NSApp _accentColor]);
+    return WebCore::colorFromNSColor([NSApp _effectiveAccentColor]);
 }
 #endif
 

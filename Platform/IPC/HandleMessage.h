@@ -26,6 +26,7 @@
 #pragma once
 
 #include "ArgumentCoders.h"
+#include "DataReference.h"
 #include <wtf/CompletionHandler.h>
 #include <wtf/StdLibExtras.h>
 
@@ -94,6 +95,11 @@ void callMemberFunction(Connection& connection, ArgsTuple&& args, C* object, MF 
 template<typename T>
 struct CodingType {
     typedef std::remove_const_t<std::remove_reference_t<T>> Type;
+};
+
+class SharedBufferDataReference;
+template<> struct CodingType<const SharedBufferDataReference&> {
+    using Type = DataReference;
 };
 
 template<typename... Ts>

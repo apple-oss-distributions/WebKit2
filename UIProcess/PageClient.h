@@ -25,14 +25,19 @@
 
 #pragma once
 
+#include "DataReference.h"
 #include "LayerTreeContext.h"
+#include "PDFPluginIdentifier.h"
 #include "SameDocumentNavigationType.h"
 #include "ShareableBitmap.h"
 #include "WebColorPicker.h"
 #include "WebDataListSuggestionsDropdown.h"
+#include "WebDateTimePicker.h"
 #include "WebPopupMenuProxy.h"
 #include <WebCore/ActivityState.h>
 #include <WebCore/AlternativeTextClient.h>
+#include <WebCore/ContactInfo.h>
+#include <WebCore/ContactsRequestData.h>
 #include <WebCore/DragActions.h>
 #include <WebCore/EditorClient.h>
 #include <WebCore/FocusDirection.h>
@@ -50,13 +55,18 @@
 #include "RemoteLayerTreeNode.h"
 #include "WKFoundation.h"
 
+#if PLATFORM(IOS_FAMILY)
+#include <WebCore/InspectorOverlay.h>
+#endif
+
 OBJC_CLASS CALayer;
 OBJC_CLASS NSFileWrapper;
 OBJC_CLASS NSMenu;
 OBJC_CLASS NSSet;
 OBJC_CLASS NSTextAlternatives;
 OBJC_CLASS UIGestureRecognizer;
-OBJC_CLASS WKDrawingView;
+OBJC_CLASS UIScrollEvent;
+OBJC_CLASS UIScrollView;
 OBJC_CLASS _WKRemoteObjectRegistry;
 
 #if USE(APPKIT)
@@ -71,10 +81,6 @@ class Navigation;
 class Object;
 class OpenPanelParameters;
 class SecurityOrigin;
-}
-
-namespace IPC {
-class DataReference;
 }
 
 namespace WebCore {
@@ -97,7 +103,6 @@ enum class TextIndicatorWindowDismissalAnimation : uint8_t;
 enum class DOMPasteAccessResponse : uint8_t;
 
 struct DictionaryPopupInfo;
-struct Highlight;
 struct TextIndicatorData;
 struct ViewportAttributes;
 struct ShareDataWithParsedURL;
@@ -156,6 +161,10 @@ class WebColorPicker;
 
 #if ENABLE(DATALIST_ELEMENT)
 class WebDataListSuggestionsDropdown;
+#endif
+
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
+class WebDateTimePicker;
 #endif
 
 #if ENABLE(FULLSCREEN_API)
@@ -237,10 +246,18 @@ public:
     virtual void didFailProvisionalLoadForMainFrame() { };
     virtual void didCommitLoadForMainFrame(const String& mimeType, bool useCustomContentProvider) = 0;
 
+#if ENABLE(UI_PROCESS_PDF_HUD)
+    virtual void createPDFHUD(PDFPluginIdentifier, const WebCore::IntRect&) = 0;
+    virtual void updatePDFHUDLocation(PDFPluginIdentifier, const WebCore::IntRect&) = 0;
+    virtual void removePDFHUD(PDFPluginIdentifier) = 0;
+    virtual void removeAllPDFHUDs() = 0;
+#endif
+    
     virtual void handleDownloadRequest(DownloadProxy&) = 0;
 
     virtual bool handleRunOpenPanel(WebPageProxy*, WebFrameProxy*, const FrameInfoData&, API::OpenPanelParameters*, WebOpenPanelResultListenerProxy*) { return false; }
     virtual bool showShareSheet(const WebCore::ShareDataWithParsedURL&, WTF::CompletionHandler<void (bool)>&&) { return false; }
+    virtual void showContactPicker(const WebCore::ContactsRequestData&, WTF::CompletionHandler<void(Optional<Vector<WebCore::ContactInfo>>&&)>&& completionHandler) { completionHandler(WTF::nullopt); }
 
     virtual void didChangeContentSize(const WebCore::IntSize&) = 0;
 
@@ -338,6 +355,10 @@ public:
     virtual RefPtr<WebDataListSuggestionsDropdown> createDataListSuggestionsDropdown(WebPageProxy&) = 0;
 #endif
 
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
+    virtual RefPtr<WebDateTimePicker> createDateTimePicker(WebPageProxy&) = 0;
+#endif
+
 #if PLATFORM(COCOA)
     virtual Ref<WebCore::ValidationBubble> createValidationBubble(const String& message, const WebCore::ValidationBubble::Settings&) = 0;
 #endif
@@ -369,6 +390,7 @@ public:
     virtual void removeDictationAlternatives(WebCore::DictationContext) = 0;
     virtual void showDictationAlternativeUI(const WebCore::FloatRect& boundingBoxOfDictatedText, WebCore::DictationContext) = 0;
     virtual Vector<String> dictationAlternatives(WebCore::DictationContext) = 0;
+    virtual NSTextAlternatives *platformDictationAlternatives(WebCore::DictationContext) = 0;
 #endif
 
 #if PLATFORM(MAC)
@@ -433,7 +455,7 @@ public:
     virtual void scrollingNodeScrollDidEndScroll() = 0;
     virtual Vector<String> mimeTypesWithCustomContentProviders() = 0;
 
-    virtual void showInspectorHighlight(const WebCore::Highlight&) = 0;
+    virtual void showInspectorHighlight(const WebCore::InspectorOverlay::Highlight&) = 0;
     virtual void hideInspectorHighlight() = 0;
 
     virtual void showInspectorIndication() = 0;
@@ -443,6 +465,10 @@ public:
     virtual void disableInspectorNodeSearch() = 0;
 
     virtual void handleAutocorrectionContext(const WebAutocorrectionContext&) = 0;
+
+#if HAVE(UISCROLLVIEW_ASYNCHRONOUS_SCROLL_EVENT_HANDLING)
+    virtual void handleAsynchronousCancelableScrollEvent(UIScrollView *, UIScrollEvent *, void (^completion)(BOOL handled)) = 0;
+#endif
 #endif
 
     // Auxiliary Client Creation
@@ -476,7 +502,7 @@ public:
     virtual bool hasSafeBrowsingWarning() const { return false; }
 
     virtual void setMouseEventPolicy(WebCore::MouseEventPolicy) { }
-    
+
 #if PLATFORM(MAC)
     virtual void didPerformImmediateActionHitTest(const WebHitTestResultData&, bool contentPreventsDefault, API::Object*) = 0;
     virtual NSObject *immediateActionAnimationControllerForHitTestResult(RefPtr<API::HitTestResult>, uint64_t, RefPtr<API::Object>) = 0;
@@ -506,7 +532,7 @@ public:
     virtual void requestPasswordForQuickLookDocument(const String& fileName, WTF::Function<void(const String&)>&&) = 0;
 #endif
 
-#if ENABLE(DATA_INTERACTION)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
     virtual void didHandleDragStartRequest(bool started) = 0;
     virtual void didHandleAdditionalDragItemsRequest(bool added) = 0;
     virtual void willReceiveEditDragSnapshot() = 0;
@@ -525,10 +551,6 @@ public:
     virtual NSFileWrapper *allocFileWrapperInstance() const { return nullptr; }
     virtual NSSet *serializableFileWrapperClasses() const { return nullptr; }
 #endif
-#endif
-
-#if HAVE(PENCILKIT)
-    virtual RetainPtr<WKDrawingView> createDrawingView(WebCore::GraphicsLayer::EmbeddedViewID) { return nullptr; }
 #endif
 
 #if PLATFORM(COCOA)

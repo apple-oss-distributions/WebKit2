@@ -37,7 +37,7 @@
 #include <wtf/WeakPtr.h>
 
 namespace IPC {
-class SharedBufferDataReference;
+class SharedBufferCopy;
 }
 
 namespace WebKit {
@@ -59,29 +59,32 @@ private:
     using KeyStatusVector = WebCore::CDMInstanceSession::KeyStatusVector;
     using Message = WebCore::CDMInstanceSession::Message;
     using SessionLoadFailure = WebCore::CDMInstanceSession::SessionLoadFailure;
-    using LicenseCallback = CompletionHandler<void(IPC::SharedBufferDataReference&&, const String& sessionId, bool, bool)>;
+    using LicenseCallback = CompletionHandler<void(IPC::SharedBufferCopy&&, const String& sessionId, bool, bool)>;
     using LicenseUpdateCallback = CompletionHandler<void(bool, Optional<KeyStatusVector>&&, Optional<double>&&, Optional<Message>&&, bool)>;
     using LoadSessionCallback = CompletionHandler<void(Optional<KeyStatusVector>&&, Optional<double>&&, Optional<Message>&&, bool, SessionLoadFailure)>;
     using CloseSessionCallback = CompletionHandler<void()>;
-    using RemoveSessionDataCallback = CompletionHandler<void(KeyStatusVector&&, Optional<IPC::SharedBufferDataReference>&&, bool)>;
+    using RemoveSessionDataCallback = CompletionHandler<void(KeyStatusVector&&, Optional<IPC::SharedBufferCopy>&&, bool)>;
     using StoreRecordCallback = CompletionHandler<void()>;
 
     // Messages
-    void requestLicense(LicenseType, AtomString initDataType, IPC::SharedBufferDataReference&& initData, LicenseCallback&&);
-    void updateLicense(String sessionId, LicenseType, IPC::SharedBufferDataReference&& response, LicenseUpdateCallback&&);
+    void requestLicense(LicenseType, AtomString initDataType, IPC::SharedBufferCopy&& initData, LicenseCallback&&);
+    void updateLicense(String sessionId, LicenseType, IPC::SharedBufferCopy&& response, LicenseUpdateCallback&&);
     void loadSession(LicenseType, String sessionId, String origin, LoadSessionCallback&&);
     void closeSession(const String& sessionId, CloseSessionCallback&&);
     void removeSessionData(const String& sessionId, LicenseType, RemoveSessionDataCallback&&);
     void storeRecordOfKeyUsage(const String& sessionId);
+    void displayIDChanged(PlatformDisplayID);
 
     // CDMInstanceSessionClient
     void updateKeyStatuses(KeyStatusVector&&) final;
     void sendMessage(WebCore::CDMMessageType, Ref<WebCore::SharedBuffer>&& message) final;
     void sessionIdChanged(const String&) final;
+    PlatformDisplayID displayID() final { return m_displayID; }
 
     WeakPtr<RemoteCDMProxy> m_cdm;
     Ref<WebCore::CDMInstanceSession> m_session;
     RemoteCDMInstanceSessionIdentifier m_identifier;
+    PlatformDisplayID m_displayID { 0 };
 };
 
 }

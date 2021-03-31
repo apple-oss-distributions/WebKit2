@@ -22,6 +22,7 @@
 #include "UserMediaPermissionCheckProxy.h"
 #include "UserMediaPermissionRequestProxy.h"
 #include <WebCore/MediaProducer.h>
+#include <WebCore/RealtimeMediaSourceFactory.h>
 #include <WebCore/SecurityOrigin.h>
 #include <wtf/CompletionHandler.h>
 #include <wtf/Deque.h>
@@ -43,7 +44,11 @@ namespace WebKit {
 class WebPageProxy;
 
 class UserMediaPermissionRequestManagerProxy
+#if ENABLE(MEDIA_STREAM)
+    : public WebCore::AudioCaptureFactory::ExtensiveObserver
+#else
     : public CanMakeWeakPtr<UserMediaPermissionRequestManagerProxy>
+#endif
 #if !RELEASE_LOG_DISABLED
     , private LoggerHelper
 #endif
@@ -58,6 +63,8 @@ public:
 #if ENABLE(MEDIA_STREAM)
     static void forEach(const WTF::Function<void(UserMediaPermissionRequestManagerProxy&)>&);
 #endif
+    static bool permittedToCaptureAudio();
+    static bool permittedToCaptureVideo();
 
     void invalidatePendingRequests();
 
@@ -89,6 +96,8 @@ public:
     void setMockCaptureDevicesEnabledOverride(Optional<bool>);
     bool hasPendingCapture() const { return m_hasPendingCapture; }
 
+    void checkUserMediaPermissionForSpeechRecognition(WebCore::FrameIdentifier, const WebCore::SecurityOrigin&, const WebCore::SecurityOrigin&, const WebCore::CaptureDevice&, CompletionHandler<void(bool)>&&);
+
 private:
 #if !RELEASE_LOG_DISABLED
     const Logger& logger() const final;
@@ -112,17 +121,20 @@ private:
 
     bool wasGrantedVideoOrAudioAccess(WebCore::FrameIdentifier, const WebCore::SecurityOrigin& userMediaDocumentOrigin, const WebCore::SecurityOrigin& topLevelDocumentOrigin);
 
-    Vector<WebCore::CaptureDevice> computeFilteredDeviceList(bool revealIdsAndLabels, const String& deviceIDHashSalt);
+    void computeFilteredDeviceList(bool revealIdsAndLabels, CompletionHandler<void(Vector<WebCore::CaptureDevice>&&)>&&);
 
     void processUserMediaPermissionRequest();
     void processUserMediaPermissionInvalidRequest(const String& invalidConstraint);
     void processUserMediaPermissionValidRequest(Vector<WebCore::CaptureDevice>&& audioDevices, Vector<WebCore::CaptureDevice>&& videoDevices, String&& deviceIdentifierHashSalt);
     void startProcessingUserMediaPermissionRequest(Ref<UserMediaPermissionRequestProxy>&&);
+
+    static void requestSystemValidation(const WebPageProxy&, UserMediaPermissionRequestProxy&, CompletionHandler<void(bool)>&&);
 #endif
 
     void watchdogTimerFired();
 
     void processNextUserMediaRequestIfNeeded();
+    void decidePolicyForUserMediaPermissionRequest();
 
     RefPtr<UserMediaPermissionRequestProxy> m_currentUserMediaRequest;
     Deque<Ref<UserMediaPermissionRequestProxy>> m_pendingUserMediaRequests;

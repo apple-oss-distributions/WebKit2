@@ -30,6 +30,7 @@
 #import "SandboxExtension.h"
 #import "WebPageProxy.h"
 #import "WebPreferences.h"
+#import "WebProcessMessages.h"
 #import "WebProcessProxy.h"
 #import <WebCore/Color.h>
 #import <WebCore/Pasteboard.h>
@@ -212,7 +213,8 @@ void WebPasteboardProxy::getPasteboardBufferForType(IPC::Connection& connection,
         return completionHandler({ });
     memcpy(sharedMemoryBuffer->data(), buffer->data(), size);
     SharedMemory::Handle handle;
-    sharedMemoryBuffer->createHandle(handle, SharedMemory::Protection::ReadOnly);
+    if (!sharedMemoryBuffer->createHandle(handle, SharedMemory::Protection::ReadOnly))
+        return completionHandler({ });
     completionHandler(SharedMemory::IPCHandle { WTFMove(handle), size });
 }
 
@@ -268,7 +270,10 @@ void WebPasteboardProxy::setPasteboardURL(IPC::Connection& connection, const Pas
     MESSAGE_CHECK_COMPLETION(!pasteboardName.isEmpty(), completionHandler(0));
 
     if (auto* webProcessProxy = webProcessProxyForConnection(connection)) {
-        if (!webProcessProxy->checkURLReceivedFromWebProcess(pasteboardURL.url.string()))
+        if (!pasteboardURL.url.isValid())
+            return completionHandler(0);
+
+        if (!webProcessProxy->checkURLReceivedFromWebProcess(pasteboardURL.url.string(), CheckBackForwardList::No))
             return completionHandler(0);
 
         auto previousChangeCount = PlatformPasteboard(pasteboardName).changeCount();
@@ -429,7 +434,8 @@ void WebPasteboardProxy::readBufferFromPasteboard(IPC::Connection& connection, s
         return completionHandler({ });
     memcpy(sharedMemoryBuffer->data(), buffer->data(), size);
     SharedMemory::Handle handle;
-    sharedMemoryBuffer->createHandle(handle, SharedMemory::Protection::ReadOnly);
+    if (!sharedMemoryBuffer->createHandle(handle, SharedMemory::Protection::ReadOnly))
+        return completionHandler({ });
     completionHandler(SharedMemory::IPCHandle { WTFMove(handle), size });
 }
 
@@ -450,6 +456,8 @@ void WebPasteboardProxy::writeURLToPasteboard(IPC::Connection& connection, const
     auto previousChangeCount = PlatformPasteboard(pasteboardName).changeCount();
     PlatformPasteboard(pasteboardName).write(url);
     didModifyContentsOfPasteboard(connection, pasteboardName, previousChangeCount, PlatformPasteboard(pasteboardName).changeCount());
+    if (auto process = webProcessProxyForConnection(connection))
+        process->send(Messages::WebProcess::DidWriteToPasteboardAsynchronously(pasteboardName), 0);
 }
 
 void WebPasteboardProxy::writeWebContentToPasteboard(IPC::Connection& connection, const WebCore::PasteboardWebContent& content, const String& pasteboardName)
@@ -459,6 +467,8 @@ void WebPasteboardProxy::writeWebContentToPasteboard(IPC::Connection& connection
     auto previousChangeCount = PlatformPasteboard(pasteboardName).changeCount();
     PlatformPasteboard(pasteboardName).write(content);
     didModifyContentsOfPasteboard(connection, pasteboardName, previousChangeCount, PlatformPasteboard(pasteboardName).changeCount());
+    if (auto process = webProcessProxyForConnection(connection))
+        process->send(Messages::WebProcess::DidWriteToPasteboardAsynchronously(pasteboardName), 0);
 }
 
 void WebPasteboardProxy::writeImageToPasteboard(IPC::Connection& connection, const WebCore::PasteboardImage& pasteboardImage, const String& pasteboardName)
@@ -468,6 +478,8 @@ void WebPasteboardProxy::writeImageToPasteboard(IPC::Connection& connection, con
     auto previousChangeCount = PlatformPasteboard(pasteboardName).changeCount();
     PlatformPasteboard(pasteboardName).write(pasteboardImage);
     didModifyContentsOfPasteboard(connection, pasteboardName, previousChangeCount, PlatformPasteboard(pasteboardName).changeCount());
+    if (auto process = webProcessProxyForConnection(connection))
+        process->send(Messages::WebProcess::DidWriteToPasteboardAsynchronously(pasteboardName), 0);
 }
 
 void WebPasteboardProxy::writeStringToPasteboard(IPC::Connection& connection, const String& pasteboardType, const String& text, const String& pasteboardName)
@@ -478,6 +490,8 @@ void WebPasteboardProxy::writeStringToPasteboard(IPC::Connection& connection, co
     auto previousChangeCount = PlatformPasteboard(pasteboardName).changeCount();
     PlatformPasteboard(pasteboardName).write(pasteboardType, text);
     didModifyContentsOfPasteboard(connection, pasteboardName, previousChangeCount, PlatformPasteboard(pasteboardName).changeCount());
+    if (auto process = webProcessProxyForConnection(connection))
+        process->send(Messages::WebProcess::DidWriteToPasteboardAsynchronously(pasteboardName), 0);
 }
 
 void WebPasteboardProxy::updateSupportedTypeIdentifiers(const Vector<String>& identifiers, const String& pasteboardName)

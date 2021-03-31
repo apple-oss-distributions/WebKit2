@@ -32,13 +32,14 @@
 #include <WebCore/DragData.h>
 #include <WebCore/GRefPtrGtk.h>
 #include <WebCore/GtkUtilities.h>
+#include <WebCore/PasteboardCustomData.h>
 #include <gtk/gtk.h>
 #include <wtf/glib/GUniquePtr.h>
 
 namespace WebKit {
 using namespace WebCore;
 
-enum DropTargetType { Markup, Text, URIList, NetscapeURL, SmartPaste };
+enum DropTargetType { Markup, Text, URIList, NetscapeURL, SmartPaste, Custom };
 
 DropTarget::DropTarget(GtkWidget* webView)
     : m_webView(webView)
@@ -50,29 +51,28 @@ DropTarget::DropTarget(GtkWidget* webView)
     gtk_target_list_add_uri_targets(list.get(), DropTargetType::URIList);
     gtk_target_list_add(list.get(), gdk_atom_intern_static_string("_NETSCAPE_URL"), 0, DropTargetType::NetscapeURL);
     gtk_target_list_add(list.get(), gdk_atom_intern_static_string("application/vnd.webkitgtk.smartpaste"), 0, DropTargetType::SmartPaste);
+    gtk_target_list_add(list.get(), gdk_atom_intern_static_string(PasteboardCustomData::gtkType()), 0, DropTargetType::Custom);
     gtk_drag_dest_set(m_webView, static_cast<GtkDestDefaults>(0), nullptr, 0,
         static_cast<GdkDragAction>(GDK_ACTION_COPY | GDK_ACTION_MOVE | GDK_ACTION_LINK));
     gtk_drag_dest_set_target_list(m_webView, list.get());
 
-    g_signal_connect(m_webView, "drag-motion", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, guint time, gpointer userData) -> gboolean {
+    g_signal_connect_after(m_webView, "drag-motion", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, guint time, gpointer userData) -> gboolean {
         auto& drop = *static_cast<DropTarget*>(userData);
-        if (!drop.m_drop) {
-            drop.m_drop = context;
-            drop.m_position = IntPoint(x, y);
-            drop.accept(time);
+        if (drop.m_drop != context) {
+            drop.accept(context, IntPoint(x, y), time);
         } else if (drop.m_drop == context)
             drop.update({ x, y }, time);
         return TRUE;
     }), this);
 
-    g_signal_connect(m_webView, "drag-leave", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, guint time, gpointer userData) {
+    g_signal_connect_after(m_webView, "drag-leave", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, guint time, gpointer userData) {
         auto& drop = *static_cast<DropTarget*>(userData);
         if (drop.m_drop != context)
             return;
         drop.leave();
     }), this);
 
-    g_signal_connect(m_webView, "drag-drop", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, guint time, gpointer userData) -> gboolean {
+    g_signal_connect_after(m_webView, "drag-drop", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, guint time, gpointer userData) -> gboolean {
         auto& drop = *static_cast<DropTarget*>(userData);
         if (drop.m_drop != context) {
             gtk_drag_finish(context, FALSE, FALSE, time);
@@ -82,7 +82,7 @@ DropTarget::DropTarget(GtkWidget* webView)
         return TRUE;
     }), this);
 
-    g_signal_connect(m_webView, "drag-data-received", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, GtkSelectionData* data, guint info, guint time, gpointer userData) {
+    g_signal_connect_after(m_webView, "drag-data-received", G_CALLBACK(+[](GtkWidget*, GdkDragContext* context, gint x, gint y, GtkSelectionData* data, guint info, guint time, gpointer userData) {
         auto& drop = *static_cast<DropTarget*>(userData);
         if (drop.m_drop != context)
             return;
@@ -95,15 +95,17 @@ DropTarget::~DropTarget()
     g_signal_handlers_disconnect_by_data(m_webView, this);
 }
 
-void DropTarget::accept(unsigned time)
+void DropTarget::accept(GdkDragContext* drop, Optional<WebCore::IntPoint> position, unsigned time)
 {
     if (m_leaveTimer.isActive()) {
         m_leaveTimer.stop();
         leaveTimerFired();
     }
 
+    m_drop = drop;
+    m_position = position;
     m_dataRequestCount = 0;
-    m_selectionData = SelectionData();
+    m_selectionData = WTF::nullopt;
 
     // WebCore needs the selection data to decide, so we need to preload the
     // data of targets we support. Once all data requests are done we start
@@ -114,7 +116,8 @@ void DropTarget::accept(unsigned time)
         "text/html",
         "_NETSCAPE_URL",
         "text/uri-list",
-        "application/vnd.webkitgtk.smartpaste"
+        "application/vnd.webkitgtk.smartpaste",
+        "org.webkitgtk.WebKit.custom-pasteboard-data"
     };
     Vector<GdkAtom, 4> targets;
     for (unsigned i = 0; i < G_N_ELEMENTS(supportedTargets); ++i) {
@@ -128,7 +131,11 @@ void DropTarget::accept(unsigned time)
         }
     }
 
+    if (targets.isEmpty())
+        return;
+
     m_dataRequestCount = targets.size();
+    m_selectionData = SelectionData();
     for (auto* atom : targets)
         gtk_drag_get_data(m_webView, m_drop.get(), atom, time);
 }
@@ -200,6 +207,13 @@ void DropTarget::dataReceived(IntPoint&& position, GtkSelectionData* data, unsig
     case DropTargetType::SmartPaste:
         m_selectionData->setCanSmartReplace(true);
         break;
+    case DropTargetType::Custom: {
+        int length;
+        const auto* customData = gtk_selection_data_get_data_with_length(data, &length);
+        if (length)
+            m_selectionData->setCustomData(SharedBuffer::create(customData, static_cast<size_t>(length)));
+        break;
+    }
     }
 
     if (--m_dataRequestCount)
@@ -216,11 +230,8 @@ void DropTarget::didPerformAction()
     auto* page = webkitWebViewBaseGetPage(WEBKIT_WEB_VIEW_BASE(m_webView));
     ASSERT(page);
 
-    auto operation = page->currentDragOperation();
-    if (operation == m_operation)
-        return;
+    m_operation = page->currentDragOperation();
 
-    m_operation = operation;
     gdk_drag_status(m_drop.get(), dragOperationToSingleGdkDragAction(m_operation), GDK_CURRENT_TIME);
 }
 
@@ -229,7 +240,8 @@ void DropTarget::leaveTimerFired()
     auto* page = webkitWebViewBaseGetPage(WEBKIT_WEB_VIEW_BASE(m_webView));
     ASSERT(page);
 
-    DragData dragData(&m_selectionData.value(), *m_position, convertWidgetPointToScreenPoint(m_webView, *m_position), { });
+    SelectionData emptyData;
+    DragData dragData(m_selectionData ? &m_selectionData.value() : &emptyData, *m_position, convertWidgetPointToScreenPoint(m_webView, *m_position), { });
     page->dragExited(dragData);
     page->resetCurrentDragInformation();
 
@@ -247,16 +259,20 @@ void DropTarget::leave()
 
 void DropTarget::drop(IntPoint&& position, unsigned time)
 {
+    // If we don't have data at this point, allow the leave timer to fire, ending the drop operation.
+    if (!m_selectionData)
+        return;
+
     if (m_leaveTimer.isActive())
         m_leaveTimer.stop();
 
     auto* page = webkitWebViewBaseGetPage(WEBKIT_WEB_VIEW_BASE(m_webView));
     ASSERT(page);
 
-    uint32_t flags = 0;
+    OptionSet<DragApplicationFlags> flags;
     if (gdk_drag_context_get_selected_action(m_drop.get()) == GDK_ACTION_COPY)
-        flags |= DragApplicationIsCopyKeyDown;
-    DragData dragData(&m_selectionData.value(), position, convertWidgetPointToScreenPoint(m_webView, position), gdkDragActionToDragOperation(gdk_drag_context_get_actions(m_drop.get())), static_cast<DragApplicationFlags>(flags));
+        flags.add(DragApplicationFlags::IsCopyKeyDown);
+    DragData dragData(&m_selectionData.value(), position, convertWidgetPointToScreenPoint(m_webView, position), gdkDragActionToDragOperation(gdk_drag_context_get_actions(m_drop.get())), flags);
     page->performDragOperation(dragData, { }, { }, { });
     gtk_drag_finish(m_drop.get(), TRUE, FALSE, time);
 

@@ -4,7 +4,6 @@ set(WebKit_OUTPUT_NAME webkit2gtk-${WEBKITGTK_API_VERSION})
 set(WebProcess_OUTPUT_NAME WebKitWebProcess)
 set(NetworkProcess_OUTPUT_NAME WebKitNetworkProcess)
 set(GPUProcess_OUTPUT_NAME WebKitGPUProcess)
-set(PluginProcess_OUTPUT_NAME WebKitPluginProcess)
 
 file(MAKE_DIRECTORY ${DERIVED_SOURCES_WEBKIT2GTK_API_DIR})
 file(MAKE_DIRECTORY ${FORWARDING_HEADERS_WEBKIT2GTK_DIR})
@@ -67,8 +66,10 @@ endif ()
 
 if (USE_GTK4)
     set(GTK_API_VERSION 4)
+    set(GTK_PKGCONFIG_PACKAGE gtk4)
 else ()
     set(GTK_API_VERSION 3)
+    set(GTK_PKGCONFIG_PACKAGE gtk+-3.0)
 endif ()
 
 set(WebKit2GTK_INSTALLED_HEADERS
@@ -404,7 +405,6 @@ list(APPEND WebKit_INCLUDE_DIRECTORIES
     "${WEBKIT_DIR}/Shared/API/glib"
     "${WEBKIT_DIR}/Shared/CoordinatedGraphics"
     "${WEBKIT_DIR}/Shared/CoordinatedGraphics/threadedcompositor"
-    "${WEBKIT_DIR}/Shared/Plugins/unix"
     "${WEBKIT_DIR}/Shared/glib"
     "${WEBKIT_DIR}/Shared/gtk"
     "${WEBKIT_DIR}/Shared/linux"
@@ -417,7 +417,6 @@ list(APPEND WebKit_INCLUDE_DIRECTORIES
     "${WEBKIT_DIR}/UIProcess/CoordinatedGraphics"
     "${WEBKIT_DIR}/UIProcess/Inspector/glib"
     "${WEBKIT_DIR}/UIProcess/Inspector/gtk"
-    "${WEBKIT_DIR}/UIProcess/Plugins/gtk"
     "${WEBKIT_DIR}/UIProcess/geoclue"
     "${WEBKIT_DIR}/UIProcess/glib"
     "${WEBKIT_DIR}/UIProcess/gstreamer"
@@ -429,8 +428,6 @@ list(APPEND WebKit_INCLUDE_DIRECTORIES
     "${WEBKIT_DIR}/WebProcess/InjectedBundle/API/gtk"
     "${WEBKIT_DIR}/WebProcess/InjectedBundle/API/gtk/DOM"
     "${WEBKIT_DIR}/WebProcess/Inspector/gtk"
-    "${WEBKIT_DIR}/WebProcess/Plugins/Netscape/unix"
-    "${WEBKIT_DIR}/WebProcess/Plugins/Netscape/x11"
     "${WEBKIT_DIR}/WebProcess/gtk"
     "${WEBKIT_DIR}/WebProcess/soup"
     "${WEBKIT_DIR}/WebProcess/WebCoreSupport/gtk"
@@ -441,6 +438,7 @@ list(APPEND WebKit_INCLUDE_DIRECTORIES
 )
 
 list(APPEND WebKit_SYSTEM_INCLUDE_DIRECTORIES
+    ${ATK_INCLUDE_DIRS}
     ${ENCHANT_INCLUDE_DIRS}
     ${GIO_UNIX_INCLUDE_DIRS}
     ${GLIB_INCLUDE_DIRS}
@@ -592,11 +590,6 @@ if (ENABLE_WAYLAND_TARGET)
     )
 endif ()
 
-# GTK3 PluginProcess
-list(APPEND PluginProcess_SOURCES
-    PluginProcess/EntryPoint/unix/PluginProcessMain.cpp
-)
-
 # Commands for building the built-in injected bundle.
 add_library(webkit2gtkinjectedbundle MODULE "${WEBKIT_DIR}/WebProcess/InjectedBundle/API/glib/WebKitInjectedBundleMain.cpp")
 ADD_WEBKIT_PREFIX_HEADER(webkit2gtkinjectedbundle)
@@ -659,7 +652,7 @@ if (ENABLE_INTROSPECTION)
             --namespace=WebKit2
             --nsversion=${WEBKITGTK_API_VERSION}
             --include=GObject-2.0
-            --include=Gtk-3.0
+            --include=Gtk-${GTK_API_VERSION}.0
             --include=Soup-2.4
             --include-uninstalled=${CMAKE_BINARY_DIR}/JavaScriptCore-${WEBKITGTK_API_VERSION}.gir
             --library=webkit2gtk-${WEBKITGTK_API_VERSION}
@@ -668,7 +661,7 @@ if (ENABLE_INTROSPECTION)
             ${INTROSPECTION_ADDITIONAL_LINKER_FLAGS}
             --no-libtool
             --pkg=gobject-2.0
-            --pkg=gtk+-3.0
+            --pkg=${GTK_PKGCONFIG_PACKAGE}
             --pkg=libsoup-2.4
             --pkg-export=webkit2gtk-${WEBKITGTK_API_VERSION}
             --output=${CMAKE_BINARY_DIR}/WebKit2-${WEBKITGTK_API_VERSION}.gir
@@ -705,7 +698,7 @@ if (ENABLE_INTROSPECTION)
             --namespace=WebKit2WebExtension
             --nsversion=${WEBKITGTK_API_VERSION}
             --include=GObject-2.0
-            --include=Gtk-3.0
+            --include=Gtk-${GTK_API_VERSION}.0
             --include=Soup-2.4
             --include-uninstalled=${CMAKE_BINARY_DIR}/JavaScriptCore-${WEBKITGTK_API_VERSION}.gir
             --library=webkit2gtk-${WEBKITGTK_API_VERSION}
@@ -715,7 +708,7 @@ if (ENABLE_INTROSPECTION)
             ${INTROSPECTION_ADDITIONAL_LINKER_FLAGS}
             --no-libtool
             --pkg=gobject-2.0
-            --pkg=gtk+-3.0
+            --pkg=${GTK_PKGCONFIG_PACKAGE}
             --pkg=libsoup-2.4
             --pkg-export=webkit2gtk-web-extension-${WEBKITGTK_API_VERSION}
             --output=${CMAKE_BINARY_DIR}/WebKit2WebExtension-${WEBKITGTK_API_VERSION}.gir

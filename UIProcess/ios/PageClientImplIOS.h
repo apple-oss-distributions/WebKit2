@@ -29,6 +29,7 @@
 
 #import "PageClientImplCocoa.h"
 #import "WebFullScreenManagerProxy.h"
+#import <WebCore/InspectorOverlay.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/WeakObjCPtr.h>
 
@@ -124,6 +125,10 @@ private:
     RefPtr<WebDataListSuggestionsDropdown> createDataListSuggestionsDropdown(WebPageProxy&) final;
 #endif
 
+#if ENABLE(DATE_AND_TIME_INPUT_TYPES)
+    RefPtr<WebDateTimePicker> createDateTimePicker(WebPageProxy&) final;
+#endif
+
     void setTextIndicator(Ref<WebCore::TextIndicator>, WebCore::TextIndicatorWindowLifetime) override;
     void clearTextIndicator(WebCore::TextIndicatorWindowDismissalAnimation) override;
     void setTextIndicatorAnimationProgress(float) override;
@@ -172,6 +177,7 @@ private:
 
     bool handleRunOpenPanel(WebPageProxy*, WebFrameProxy*, const FrameInfoData&, API::OpenPanelParameters*, WebOpenPanelResultListenerProxy*) override;
     bool showShareSheet(const WebCore::ShareDataWithParsedURL&, WTF::CompletionHandler<void(bool)>&&) override;
+    void showContactPicker(const WebCore::ContactsRequestData&, WTF::CompletionHandler<void(Optional<Vector<WebCore::ContactInfo>>&&)>&&) override;
     
     void disableDoubleTapGesturesDuringTapIfNecessary(uint64_t requestID) override;
     void handleSmartMagnificationInformationForPotentialTap(uint64_t requestID, const WebCore::FloatRect& renderRect, bool fitEntireRect, double viewportMinimumScale, double viewportMaximumScale, bool nodeIsRootLevel) override;
@@ -179,7 +185,7 @@ private:
     double minimumZoomScale() const override;
     WebCore::FloatRect documentRect() const override;
 
-    void showInspectorHighlight(const WebCore::Highlight&) override;
+    void showInspectorHighlight(const WebCore::InspectorOverlay::Highlight&) override;
     void hideInspectorHighlight() override;
 
     void showInspectorIndication() override;
@@ -242,7 +248,7 @@ private:
 
     void requestDOMPasteAccess(const WebCore::IntRect& elementRect, const String&, CompletionHandler<void(WebCore::DOMPasteAccessResponse)>&&) final;
 
-#if ENABLE(DATA_INTERACTION)
+#if ENABLE(DRAG_SUPPORT)
     void didPerformDragOperation(bool handled) override;
     void didHandleDragStartRequest(bool started) override;
     void didHandleAdditionalDragItemsRequest(bool added) override;
@@ -256,10 +262,6 @@ private:
 
     void setMouseEventPolicy(WebCore::MouseEventPolicy) final;
 
-#if HAVE(PENCILKIT)
-    RetainPtr<WKDrawingView> createDrawingView(WebCore::GraphicsLayer::EmbeddedViewID) override;
-#endif
-
 #if ENABLE(ATTACHMENT_ELEMENT)
     void writePromisedAttachmentToPasteboard(WebCore::PromisedAttachmentInfo&&) final;
 #endif
@@ -268,6 +270,10 @@ private:
     WTF::Optional<unsigned> activeTouchIdentifierForGestureRecognizer(UIGestureRecognizer*) override;
 
     void showDictationAlternativeUI(const WebCore::FloatRect&, WebCore::DictationContext) final;
+
+#if HAVE(UISCROLLVIEW_ASYNCHRONOUS_SCROLL_EVENT_HANDLING)
+    void handleAsynchronousCancelableScrollEvent(UIScrollView *, UIScrollEvent *, void (^completion)(BOOL handled)) final;
+#endif
 
     WeakObjCPtr<WKContentView> m_contentView;
     RetainPtr<WKEditorUndoTarget> m_undoTarget;

@@ -62,6 +62,7 @@
 #import "WKErrorInternal.h"
 #import "WKFullScreenWindowController.h"
 #import "WKImmediateActionController.h"
+#import "WKPDFHUDView.h"
 #import "WKPrintingView.h"
 #import "WKSafeBrowsingWarning.h"
 #import "WKShareSheet.h"
@@ -414,6 +415,25 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 
 @implementation WKFlippedView
 
+- (instancetype)initWithFrame:(NSRect)frame
+{
+    if (self = [super initWithFrame:frame])
+        [self _commonInitialize];
+    return self;
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder
+{
+    if (self = [super initWithCoder:coder])
+        [self _commonInitialize];
+    return self;
+}
+
+- (void)_commonInitialize
+{
+    [self setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+}
+
 - (BOOL)isFlipped
 {
     return YES;
@@ -503,7 +523,7 @@ static void* keyValueObservingContext = &keyValueObservingContext;
 
 @implementation WKTextListTouchBarViewController
 
-@synthesize currentListType=_currentListType;
+@synthesize currentListType = _currentListType;
 
 static const CGFloat listControlSegmentWidth = 67;
 #if ENABLE(WEB_PLAYBACK_CONTROLS_MANAGER) && ENABLE(FULLSCREEN_API)
@@ -617,10 +637,10 @@ static const NSUInteger orderedListSegment = 2;
 
 @implementation WKTextTouchBarItemController
 
-@synthesize textIsBold=_textIsBold;
-@synthesize textIsItalic=_textIsItalic;
-@synthesize textIsUnderlined=_textIsUnderlined;
-@synthesize currentTextAlignment=_currentTextAlignment;
+@synthesize textIsBold = _textIsBold;
+@synthesize textIsItalic = _textIsItalic;
+@synthesize textIsUnderlined = _textIsUnderlined;
+@synthesize currentTextAlignment = _currentTextAlignment;
 
 - (instancetype)initWithWebViewImpl:(WebKit::WebViewImpl*)webViewImpl
 {
@@ -1377,11 +1397,21 @@ WebViewImpl::WebViewImpl(NSView <WebViewImplDelegate> *view, WKWebView *outerWeb
 
     [view addTrackingArea:m_primaryTrackingArea.get()];
 
-    // Create an NSView that will host our layer tree.
-    m_layerHostingView = adoptNS([[WKFlippedView alloc] initWithFrame:[m_view bounds]]);
-    [m_layerHostingView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+    for (NSView *subview in view.subviews) {
+        if ([subview isKindOfClass:WKFlippedView.class]) {
+            // A layer hosting view may have already been created and added to the view hierarchy
+            // in the process of initializing the WKWebView from an NSCoder.
+            m_layerHostingView = (WKFlippedView *)subview;
+            [m_layerHostingView setFrame:[m_view bounds]];
+            break;
+        }
+    }
 
-    [view addSubview:m_layerHostingView.get() positioned:NSWindowBelow relativeTo:nil];
+    if (!m_layerHostingView) {
+        // Create an NSView that will host our layer tree.
+        m_layerHostingView = adoptNS([[WKFlippedView alloc] initWithFrame:[m_view bounds]]);
+        [view addSubview:m_layerHostingView.get() positioned:NSWindowBelow relativeTo:nil];
+    }
 
     // Create a root layer that will back the NSView.
     RetainPtr<CALayer> layer = adoptNS([[CALayer alloc] init]);
@@ -1618,7 +1648,7 @@ void WebViewImpl::takeFocus(WebCore::FocusDirection direction)
 {
     NSView *webView = m_view.getAutoreleased();
 
-    if (direction == WebCore::FocusDirectionForward) {
+    if (direction == WebCore::FocusDirection::Forward) {
         // Since we're trying to move focus out of m_webView, and because
         // m_webView may contain subviews within it, we ask it for the next key
         // view of the last view in its key view loop. This makes m_webView
@@ -1688,6 +1718,45 @@ void WebViewImpl::viewDidEndLiveResize()
 
     [m_layoutStrategy didEndLiveResize];
 }
+
+#if ENABLE(UI_PROCESS_PDF_HUD)
+
+void WebViewImpl::createPDFHUD(PDFPluginIdentifier identifier, const WebCore::IntRect& rect)
+{
+    removePDFHUD(identifier);
+    auto hud = adoptNS([[WKPDFHUDView alloc] initWithFrame:rect pluginIdentifier:identifier page:m_page.get()]);
+    [m_view addSubview:hud.get()];
+    _pdfHUDViews.add(identifier, WTFMove(hud));
+}
+
+void WebViewImpl::updatePDFHUDLocation(PDFPluginIdentifier identifier, const WebCore::IntRect& rect)
+{
+    if (auto hud = _pdfHUDViews.get(identifier))
+        [hud setFrame:rect];
+}
+
+void WebViewImpl::removePDFHUD(PDFPluginIdentifier identifier)
+{
+    if (auto hud = _pdfHUDViews.take(identifier))
+        [hud removeFromSuperview];
+}
+
+void WebViewImpl::removeAllPDFHUDs()
+{
+    for (auto& hud : _pdfHUDViews.values())
+        [hud removeFromSuperview];
+    _pdfHUDViews.clear();
+}
+
+NSSet *WebViewImpl::pdfHUDs()
+{
+    NSMutableSet<NSView *> *set = [NSMutableSet setWithCapacity:_pdfHUDViews.size()];
+    for (auto& hud : _pdfHUDViews.values())
+        [set addObject:hud.get()];
+    return set;
+}
+
+#endif // ENABLE(UI_PROCESS_PDF_HUD)
 
 void WebViewImpl::renewGState()
 {
@@ -2120,12 +2189,16 @@ void WebViewImpl::windowDidChangeBackingProperties(CGFloat oldBackingScaleFactor
         return;
 
     m_page->setIntrinsicDeviceScaleFactor(newBackingScaleFactor);
+#if ENABLE(UI_PROCESS_PDF_HUD)
+    for (auto& hud : _pdfHUDViews.values())
+        [hud setDeviceScaleFactor:newBackingScaleFactor];
+#endif
 }
 
 void WebViewImpl::windowDidChangeScreen()
 {
     NSWindow *window = m_targetWindowForMovePreparation ? m_targetWindowForMovePreparation.get() : [m_view window];
-    PlatformDisplayID displayID = WebCore::displayID(window.screen);
+    auto displayID = WebCore::displayID(window.screen);
     auto framesPerSecond = m_page->process().processPool().nominalFramesPerSecondForDisplay(displayID);
     m_page->windowScreenDidChange(displayID, framesPerSecond);
 }
@@ -2878,9 +2951,7 @@ void WebViewImpl::updateFontManagerIfNeeded()
     if (!fontPanelIsVisible && !m_page->editorState().isContentRichlyEditable)
         return;
 
-    m_page->fontAtSelection([](const FontInfo& fontInfo, double fontSize, bool selectionHasMultipleFonts, CallbackBase::Error error) {
-        if (error != CallbackBase::Error::None)
-            return;
+    m_page->fontAtSelection([](const FontInfo& fontInfo, double fontSize, bool selectionHasMultipleFonts) {
 
         BEGIN_BLOCK_OBJC_EXCEPTIONS
 
@@ -2906,12 +2977,7 @@ void WebViewImpl::typingAttributesWithCompletionHandler(void(^completion)(NSDict
         return;
     }
 
-    m_page->requestFontAttributesAtSelectionStart([completion = makeBlockPtr(completion)] (const WebCore::FontAttributes& attributes, CallbackBase::Error error) {
-        if (error != CallbackBase::Error::None) {
-            completion(nil);
-            return;
-        }
-
+    m_page->requestFontAttributesAtSelectionStart([completion = makeBlockPtr(completion)] (const WebCore::FontAttributes& attributes) {
         auto attributesAsDictionary = attributes.createDictionary();
         completion(attributesAsDictionary.get());
     });
@@ -2997,9 +3063,10 @@ bool WebViewImpl::validateUserInterfaceItem(id <NSValidatedUserInterfaceItem> it
     }
 
     if (action == @selector(toggleAutomaticSpellingCorrection:)) {
-        bool checked = TextChecker::state().isAutomaticSpellingCorrectionEnabled;
-        [menuItem(item) setState:checked ? NSControlStateValueOn : NSControlStateValueOff];
-        return m_page->editorState().isContentEditable;
+        auto& editorState = m_page->editorState();
+        bool enable = editorState.isContentEditable && (editorState.isMissingPostLayoutData || editorState.postLayoutData().canEnableAutomaticSpellingCorrection);
+        menuItem(item).state = TextChecker::state().isAutomaticSpellingCorrectionEnabled && enable ? NSControlStateValueOn : NSControlStateValueOff;
+        return enable;
     }
 
     if (action == @selector(orderFrontSubstitutionsPanel:)) {
@@ -3061,13 +3128,8 @@ bool WebViewImpl::validateUserInterfaceItem(id <NSValidatedUserInterfaceItem> it
         // If we are not already awaiting validation for this command, start the asynchronous validation process.
         // FIXME: Theoretically, there is a race here; when we get the answer it might be old, from a previous time
         // we asked for the same command; there is no guarantee the answer is still valid.
-        auto weakThis = makeWeakPtr(*this);
-        m_page->validateCommand(commandName, [weakThis](const String& commandName, bool isEnabled, int32_t state, WebKit::CallbackBase::Error error) {
+        m_page->validateCommand(commandName, [weakThis = makeWeakPtr(*this), commandName](bool isEnabled, int32_t state) {
             if (!weakThis)
-                return;
-
-            // If the process exits before the command can be validated, we'll be called back with an error.
-            if (error != WebKit::CallbackBase::Error::None)
                 return;
 
             weakThis->setUserInterfaceItemState(commandName, isEnabled, state);
@@ -3352,7 +3414,7 @@ void WebViewImpl::handleRequestedCandidates(NSInteger sequenceNumber, NSArray<NS
 
 #if HAVE(TOUCH_BAR)
     NSRange selectedRange = NSMakeRange(postLayoutData.candidateRequestStartPosition, postLayoutData.selectedTextLength);
-    WebCore::IntRect offsetSelectionRect = postLayoutData.focusedElementRect;
+    WebCore::IntRect offsetSelectionRect = postLayoutData.selectionBoundingRect;
     offsetSelectionRect.move(0, offsetSelectionRect.height());
 
     [candidateListTouchBarItem() setCandidates:candidates forSelectedRange:selectedRange inString:postLayoutData.paragraphContextForCandidateRequest rect:offsetSelectionRect view:m_view.getAutoreleased() completionHandler:nil];
@@ -3658,21 +3720,23 @@ id WebViewImpl::accessibilityAttributeValue(NSString *attribute, id parameter)
     if ([attribute isEqualToString:NSAccessibilityChildrenAttribute]) {
 
         id child = nil;
-        if (m_remoteAccessibilityChild)
+        if (m_safeBrowsingWarning)
+            child = m_safeBrowsingWarning.get();
+        else if (m_remoteAccessibilityChild)
             child = m_remoteAccessibilityChild.get();
 
-            if (!child)
-                return nil;
+        if (!child)
+            return nil;
         return @[child];
     }
     if ([attribute isEqualToString:NSAccessibilityRoleAttribute])
         return NSAccessibilityGroupRole;
     if ([attribute isEqualToString:NSAccessibilityRoleDescriptionAttribute])
         return NSAccessibilityRoleDescription(NSAccessibilityGroupRole, nil);
-        if ([attribute isEqualToString:NSAccessibilityParentAttribute])
-            return NSAccessibilityUnignoredAncestor([m_view superview]);
-            if ([attribute isEqualToString:NSAccessibilityEnabledAttribute])
-                return @YES;
+    if ([attribute isEqualToString:NSAccessibilityParentAttribute])
+        return NSAccessibilityUnignoredAncestor([m_view superview]);
+    if ([attribute isEqualToString:NSAccessibilityEnabledAttribute])
+        return @YES;
 
     if ([attribute isEqualToString:@"AXConvertRelativeFrame"]) {
         if ([parameter isKindOfClass:[NSValue class]]) {
@@ -3934,13 +3998,13 @@ static OptionSet<WebCore::DragApplicationFlags> applicationFlagsForDrag(NSView *
     ASSERT(hasProcessPrivilege(ProcessPrivilege::CanCommunicateWithWindowServer));
     OptionSet<WebCore::DragApplicationFlags> flags;
     if ([NSApp modalWindow])
-        flags.add(WebCore::DragApplicationIsModal);
+        flags.add(WebCore::DragApplicationFlags::IsModal);
     if (view.window.attachedSheet)
-        flags.add(WebCore::DragApplicationHasAttachedSheet);
+        flags.add(WebCore::DragApplicationFlags::HasAttachedSheet);
     if (draggingInfo.draggingSource == view)
-        flags.add(WebCore::DragApplicationIsSource);
+        flags.add(WebCore::DragApplicationFlags::IsSource);
     if ([NSApp currentEvent].modifierFlags & NSEventModifierFlagOption)
-        flags.add(WebCore::DragApplicationIsCopyKeyDown);
+        flags.add(WebCore::DragApplicationFlags::IsCopyKeyDown);
     return flags;
 
 }
@@ -4281,7 +4345,9 @@ void WebViewImpl::setPromisedDataForImage(WebCore::Image* image, NSString *filen
 
     if (archiveBuffer) {
         auto nsData = archiveBuffer->createNSData();
+ALLOW_DEPRECATED_DECLARATIONS_BEGIN
         [pasteboard setData:nsData.get() forType:(__bridge NSString *)kUTTypeWebArchive];
+ALLOW_DEPRECATED_DECLARATIONS_END
         [pasteboard setData:nsData.get() forType:PasteboardTypes::WebArchivePboardType];
     }
 
@@ -4958,27 +5024,17 @@ void WebViewImpl::hasMarkedTextWithCompletionHandler(void(^completionHandler)(BO
     });
 }
 
-void WebViewImpl::attributedSubstringForProposedRange(NSRange proposedRange, void(^completionHandlerPtr)(NSAttributedString *attrString, NSRange actualRange))
+void WebViewImpl::attributedSubstringForProposedRange(NSRange proposedRange, void(^completionHandler)(NSAttributedString *attrString, NSRange actualRange))
 {
-    auto completionHandler = adoptNS([completionHandlerPtr copy]);
-
     LOG(TextInput, "attributedSubstringFromRange:(%u, %u)", proposedRange.location, proposedRange.length);
-    m_page->attributedSubstringForCharacterRangeAsync(proposedRange, [completionHandler](const WebCore::AttributedString& string, const EditingRange& actualRange, WebKit::CallbackBase::Error error) {
-        void (^completionHandlerBlock)(NSAttributedString *, NSRange) = (void (^)(NSAttributedString *, NSRange))completionHandler.get();
-        if (error != WebKit::CallbackBase::Error::None) {
-            LOG(TextInput, "    ...attributedSubstringFromRange failed.");
-            completionHandlerBlock(0, NSMakeRange(NSNotFound, 0));
-            return;
-        }
+    m_page->attributedSubstringForCharacterRangeAsync(proposedRange, [completionHandler = makeBlockPtr(completionHandler)](const WebCore::AttributedString& string, const EditingRange& actualRange) {
         LOG(TextInput, "    -> attributedSubstringFromRange returned %@", string.string.get());
-        completionHandlerBlock(string.string.get(), actualRange);
+        completionHandler(string.string.get(), actualRange);
     });
 }
 
-void WebViewImpl::firstRectForCharacterRange(NSRange range, void(^completionHandlerPtr)(NSRect firstRect, NSRange actualRange))
+void WebViewImpl::firstRectForCharacterRange(NSRange range, void(^completionHandler)(NSRect firstRect, NSRange actualRange))
 {
-    auto completionHandler = adoptNS([completionHandlerPtr copy]);
-
     LOG(TextInput, "firstRectForCharacterRange:(%u, %u)", range.location, range.length);
 
     // Just to match NSTextView's behavior. Regression tests cannot detect this;
@@ -4989,22 +5045,14 @@ void WebViewImpl::firstRectForCharacterRange(NSRange range, void(^completionHand
 
     if (range.location == NSNotFound) {
         LOG(TextInput, "    -> NSZeroRect");
-        completionHandlerPtr(NSZeroRect, range);
+        completionHandler(NSZeroRect, range);
         return;
     }
 
-    auto weakThis = makeWeakPtr(*this);
-    m_page->firstRectForCharacterRangeAsync(range, [weakThis, completionHandler](const WebCore::IntRect& rect, const EditingRange& actualRange, WebKit::CallbackBase::Error error) {
-        auto completionHandlerBlock = (void (^)(NSRect, NSRange))completionHandler.get();
+    m_page->firstRectForCharacterRangeAsync(range, [weakThis = makeWeakPtr(*this), completionHandler = makeBlockPtr(completionHandler)](const WebCore::IntRect& rect, const EditingRange& actualRange) {
         if (!weakThis) {
             LOG(TextInput, "    ...firstRectForCharacterRange failed (WebViewImpl was destroyed).");
-            completionHandlerBlock(NSZeroRect, NSMakeRange(NSNotFound, 0));
-            return;
-        }
-
-        if (error != WebKit::CallbackBase::Error::None) {
-            LOG(TextInput, "    ...firstRectForCharacterRange failed.");
-            completionHandlerBlock(NSZeroRect, NSMakeRange(NSNotFound, 0));
+            completionHandler(NSZeroRect, NSMakeRange(NSNotFound, 0));
             return;
         }
 
@@ -5012,7 +5060,7 @@ void WebViewImpl::firstRectForCharacterRange(NSRange range, void(^completionHand
         resultRect = [[weakThis->m_view window] convertRectToScreen:resultRect];
 
         LOG(TextInput, "    -> firstRectForCharacterRange returned (%f, %f, %f, %f)", resultRect.origin.x, resultRect.origin.y, resultRect.size.width, resultRect.size.height);
-        completionHandlerBlock(resultRect, actualRange);
+        completionHandler(resultRect, actualRange);
     });
 }
 
@@ -5362,6 +5410,11 @@ void WebViewImpl::mouseMoved(NSEvent *event)
     if (m_ignoresNonWheelEvents)
         return;
 
+#if ENABLE(UI_PROCESS_PDF_HUD)
+    for (auto& hud : _pdfHUDViews.values())
+        [hud mouseMoved:event];
+#endif
+
     // When a view is first responder, it gets mouse moved events even when the mouse is outside its visible rect.
     if (m_view.getAutoreleased() == [m_view window].firstResponder && !NSPointInRect([m_view convertPoint:[event locationInWindow] fromView:nil], [m_view visibleRect]))
         return;
@@ -5410,6 +5463,11 @@ void WebViewImpl::mouseDown(NSEvent *event)
     if (m_ignoresNonWheelEvents)
         return;
 
+#if ENABLE(UI_PROCESS_PDF_HUD)
+    for (auto& hud : _pdfHUDViews.values())
+        [hud mouseDown:event];
+#endif
+
     setLastMouseDownEvent(event);
     setIgnoresMouseDraggedEvents(false);
 
@@ -5420,6 +5478,11 @@ void WebViewImpl::mouseUp(NSEvent *event)
 {
     if (m_ignoresNonWheelEvents)
         return;
+
+#if ENABLE(UI_PROCESS_PDF_HUD)
+    for (auto& hud : _pdfHUDViews.values())
+        [hud mouseUp:event];
+#endif
 
     setLastMouseDownEvent(nil);
     mouseUpInternal(event);

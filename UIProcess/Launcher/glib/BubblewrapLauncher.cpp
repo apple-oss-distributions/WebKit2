@@ -40,11 +40,13 @@
 #define BASE_DIRECTORY "wpe"
 #endif
 
-#if __has_include(<sys/memfd.h>)
+#include <sys/mman.h>
 
-#include <sys/memfd.h>
+#ifndef MFD_ALLOW_SEALING
 
-#else
+#if HAVE(LINUX_MEMFD_H)
+
+#include <linux/memfd.h>
 
 // These defines were added in glibc 2.27, the same release that added memfd_create.
 // But the kernel added all of this in Linux 3.17. So it's totally safe for us to
@@ -59,13 +61,13 @@
 #define F_SEAL_GROW   0x0004
 #define F_SEAL_WRITE  0x0008
 
-#define MFD_ALLOW_SEALING 2U
-
 static int memfd_create(const char* name, unsigned flags)
 {
     return syscall(__NR_memfd_create, name, flags);
 }
-#endif
+#endif // #if HAVE(LINUX_MEMFD_H)
+
+#endif // #ifndef MFD_ALLOW_SEALING
 
 namespace WebKit {
 using namespace WebCore;
@@ -598,7 +600,16 @@ static int setupSeccomp()
     //    in common/flatpak-run.c
     //  https://git.gnome.org/browse/linux-user-chroot
     //    in src/setup-seccomp.c
+
+#if defined(__s390__) || defined(__s390x__) || defined(__CRIS__)
+    // Architectures with CONFIG_CLONE_BACKWARDS2: the child stack
+    // and flags arguments are reversed so the flags come second.
+    struct scmp_arg_cmp cloneArg = SCMP_A1(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER);
+#else
+    // Normally the flags come first.
     struct scmp_arg_cmp cloneArg = SCMP_A0(SCMP_CMP_MASKED_EQ, CLONE_NEWUSER, CLONE_NEWUSER);
+#endif
+
     struct scmp_arg_cmp ttyArg = SCMP_A1(SCMP_CMP_MASKED_EQ, 0xFFFFFFFFu, TIOCSTI);
     struct {
         int scall;
@@ -708,13 +719,6 @@ static int createFlatpakInfo()
 GRefPtr<GSubprocess> bubblewrapSpawn(GSubprocessLauncher* launcher, const ProcessLauncher::LaunchOptions& launchOptions, char** argv, GError **error)
 {
     ASSERT(launcher);
-
-#if ENABLE(NETSCAPE_PLUGIN_API)
-    // It is impossible to know what access arbitrary plugins need and since it is for legacy
-    // reasons lets just leave it unsandboxed.
-    if (launchOptions.processType == ProcessLauncher::ProcessType::Plugin)
-        return adoptGRef(g_subprocess_launcher_spawnv(launcher, argv, error));
-#endif
 
     // For now we are just considering the network process trusted as it
     // requires a lot of access but doesn't execute arbitrary code like

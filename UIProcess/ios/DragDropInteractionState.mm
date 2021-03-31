@@ -26,7 +26,7 @@
 #import "config.h"
 #import "DragDropInteractionState.h"
 
-#if ENABLE(DRAG_SUPPORT) && PLATFORM(IOS_FAMILY)
+#if PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)
 
 #import "Logging.h"
 #import <WebCore/DragItem.h>
@@ -86,11 +86,11 @@ static RetainPtr<UIImage> uiImageForImage(Image* image)
     if (!image)
         return nullptr;
 
-    auto cgImage = image->nativeImage();
-    if (!cgImage)
+    auto nativeImage = image->nativeImage();
+    if (!nativeImage)
         return nullptr;
 
-    return adoptNS([[UIImage alloc] initWithCGImage:cgImage.get()]);
+    return adoptNS([[UIImage alloc] initWithCGImage:nativeImage->platformImage().get()]);
 }
 
 static bool shouldUseDragImageToCreatePreviewForDragSource(const DragSourceState& source)
@@ -417,4 +417,4 @@ void DragDropInteractionState::updatePreviewsForActiveDragSources()
 
 } // namespace WebKit
 
-#endif // ENABLE(DRAG_SUPPORT) && PLATFORM(IOS_FAMILY)
+#endif // PLATFORM(IOS_FAMILY) && ENABLE(DRAG_SUPPORT)

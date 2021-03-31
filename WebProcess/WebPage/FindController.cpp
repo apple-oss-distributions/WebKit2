@@ -204,7 +204,7 @@ void FindController::updateFindUIAfterPageScroll(bool found, const String& strin
             Vector<IntRect> matchRects;
             if (auto range = m_webPage->corePage()->selection().firstRange()) {
                 matchRects = RenderObject::absoluteTextRects(*range);
-                m_findMatches.append(createLiveRange(*range));
+                m_findMatches.append(*range);
             }
             m_webPage->send(Messages::WebPageProxy::DidFindString(string, matchRects, matchCount, m_foundStringMatchIndex, didWrap == DidWrap::Yes));
         }
@@ -305,7 +305,7 @@ void FindController::getImageForFindMatch(uint32_t matchIndex)
 {
     if (matchIndex >= m_findMatches.size())
         return;
-    Frame* frame = m_findMatches[matchIndex].start.container->document().frame();
+    Frame* frame = m_findMatches[matchIndex].start.document().frame();
     if (!frame)
         return;
 
@@ -336,7 +336,7 @@ void FindController::selectFindMatch(uint32_t matchIndex)
 {
     if (matchIndex >= m_findMatches.size())
         return;
-    Frame* frame = m_findMatches[matchIndex].start.container->document().frame();
+    Frame* frame = m_findMatches[matchIndex].start.document().frame();
     if (!frame)
         return;
     frame->selection().setSelection(m_findMatches[matchIndex]);
