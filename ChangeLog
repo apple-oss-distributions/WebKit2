@@ -1,6 +1,6 @@
-2021-03-31  Russell Epstein  <repstein@apple.com>
+2021-03-31  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r275316. rdar://problem/76077169
+        Cherry-pick r275316. rdar://problem/76078629
 
     REGRESSION: The NetworkProcess fails to relaunch after it crashes
     https://bugs.webkit.org/show_bug.cgi?id=224022
@@ -45,56 +45,52 @@
             * UIProcess/Network/NetworkProcessProxy.cpp:
             (WebKit::NetworkProcessProxy::networkProcessCrashed):
 
-2021-03-24  Ruben Turcios  <rubent_22@apple.com>
+2021-03-23  Russell Epstein  <repstein@apple.com>
 
-        Apply patch. rdar://problem/75744524
+        Cherry-pick r274129. rdar://problem/75744624
 
-    Aply patch. rdar://75744524
-
-    2021-03-24  Per Arne Vollan  <pvollan@apple.com>
-
-            [iOS] Read access to passwd is required
-            https://bugs.webkit.org/show_bug.cgi?id=223641
-            <rdar://75616105>
-
-            Reviewed by Brent Fulgham.
-
-            The WebContent sandbox on iOS should allow reading the passwd file.
-
-            * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
-
-2021-03-24  Ruben Turcios  <rubent_22@apple.com>
-
-        Cherry-pick r274766. rdar://problem/75762455
-
-    Add an early return in UserMediaPermissionRequestManagerProxy::computeFilteredDeviceList
-    https://bugs.webkit.org/show_bug.cgi?id=223571
+    Regression(r273875): Potential over-release in WKRemoteObjectCoder's decodeObjCObject()
+    https://bugs.webkit.org/show_bug.cgi?id=222954
+    <rdar://75163359>
     
-    Reviewed by Eric Carlson.
+    Reviewed by Darin Adler.
     
-    Update code to early return as soon as possible.
+    r273875 added an adoptNS() for the result of `[allocation initWithCoder:decoder]`. This would be
+    fine in general, except that we call awakeAfterUsingCoder on the result right after. As per the
+    awakeAfterUsingCoder documentation [1], it may return the receiver or a new object. When it
+    returns a new object, it takes care of releasing the receiver. This is an issue for us here since
+    we were holding the receiver in a smart pointer.
     
-    * UIProcess/UserMediaPermissionRequestManagerProxy.cpp:
-    (WebKit::UserMediaPermissionRequestManagerProxy::computeFilteredDeviceList):
+    [1] https://developer.apple.com/documentation/objectivec/nsobject/1417074-awakeafterusingcoder
+    
+    * Shared/API/Cocoa/WKRemoteObjectCoder.mm:
+    (decodeObjCObject):
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274766 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274129 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2021-03-22  Youenn Fablet  <youenn@apple.com>
+    2021-03-08  Chris Dumez  <cdumez@apple.com>
 
-            Add an early return in UserMediaPermissionRequestManagerProxy::computeFilteredDeviceList
-            https://bugs.webkit.org/show_bug.cgi?id=223571
+            Regression(r273875): Potential over-release in WKRemoteObjectCoder's decodeObjCObject()
+            https://bugs.webkit.org/show_bug.cgi?id=222954
+            <rdar://75163359>
 
-            Reviewed by Eric Carlson.
+            Reviewed by Darin Adler.
 
-            Update code to early return as soon as possible.
+            r273875 added an adoptNS() for the result of `[allocation initWithCoder:decoder]`. This would be
+            fine in general, except that we call awakeAfterUsingCoder on the result right after. As per the
+            awakeAfterUsingCoder documentation [1], it may return the receiver or a new object. When it
+            returns a new object, it takes care of releasing the receiver. This is an issue for us here since
+            we were holding the receiver in a smart pointer.
 
-            * UIProcess/UserMediaPermissionRequestManagerProxy.cpp:
-            (WebKit::UserMediaPermissionRequestManagerProxy::computeFilteredDeviceList):
+            [1] https://developer.apple.com/documentation/objectivec/nsobject/1417074-awakeafterusingcoder
+
+            * Shared/API/Cocoa/WKRemoteObjectCoder.mm:
+            (decodeObjCObject):
 
 2021-03-22  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r274790. rdar://problem/75712637
+        Cherry-pick r274790. rdar://problem/75712649
 
     Allow additional fcntl
     https://bugs.webkit.org/show_bug.cgi?id=223590
@@ -124,9 +120,119 @@
             * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
             * WebProcess/com.apple.WebProcess.sb.in:
 
+2021-03-19  Russell Epstein  <repstein@apple.com>
+
+        Cherry-pick r273875. rdar://problem/75635901
+
+    WKRemoteObjectCoder should be able to handle NSErrors from TLS failures
+    https://bugs.webkit.org/show_bug.cgi?id=222401
+    Source/WebKit:
+    
+    <rdar://problem/72103865>
+    
+    Patch by Alex Christensen <achristensen@webkit.org> on 2021-03-03
+    Reviewed by Chris Dumez.
+    
+    NSErrors from TLS failures contain values like a SecTrustRef or a SecCertificateRef,
+    which are not ObjC objects, and they don't like it when you call encodeWithCoder: on them.
+    Until r273141 it would crash when we do, but even after that we just decode a nil NSError.
+    Add a special case like we did in encodeNSError to successfully encode and decode these errors.
+    
+    * Shared/API/Cocoa/WKRemoteObjectCoder.mm:
+    (decodeObjCObject):
+    (transformCertificatesToData):
+    (transformTrustToData):
+    (encodeError):
+    (transformDataToCertificates):
+    (transformDataToTrust):
+    (decodeError):
+    (encodeObject):
+    (decodeObject):
+    
+    Tools:
+    
+    Patch by Alex Christensen <achristensen@webkit.org> on 2021-03-03
+    Reviewed by Chris Dumez.
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/RemoteObjectRegistry.h:
+    * TestWebKitAPI/Tests/WebKitCocoa/RemoteObjectRegistry.mm:
+    (TEST):
+    * TestWebKitAPI/Tests/WebKitCocoa/RemoteObjectRegistryPlugIn.mm:
+    (-[RemoteObjectRegistryPlugIn sendError:completionHandler:]):
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@273875 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2021-03-03  Alex Christensen  <achristensen@webkit.org>
+
+            WKRemoteObjectCoder should be able to handle NSErrors from TLS failures
+            https://bugs.webkit.org/show_bug.cgi?id=222401
+            <rdar://problem/72103865>
+
+            Reviewed by Chris Dumez.
+
+            NSErrors from TLS failures contain values like a SecTrustRef or a SecCertificateRef,
+            which are not ObjC objects, and they don't like it when you call encodeWithCoder: on them.
+            Until r273141 it would crash when we do, but even after that we just decode a nil NSError.
+            Add a special case like we did in encodeNSError to successfully encode and decode these errors.
+
+            * Shared/API/Cocoa/WKRemoteObjectCoder.mm:
+            (decodeObjCObject):
+            (transformCertificatesToData):
+            (transformTrustToData):
+            (encodeError):
+            (transformDataToCertificates):
+            (transformDataToTrust):
+            (decodeError):
+            (encodeObject):
+            (decodeObject):
+
+2021-03-19  Russell Epstein  <repstein@apple.com>
+
+        Apply patch. rdar://problem/75625529
+
+    2021-03-19  Per Arne Vollan  <pvollan@apple.com>
+
+            [macOS] Reduce telemetry backtrace in sandbox
+            https://bugs.webkit.org/show_bug.cgi?id=223515
+            <rdar://problem/75620362>
+
+            Reviewed by Brent Fulgham.
+
+            Reduce telemetry backtrace in the WebContent sandbox on macOS.
+
+            * WebProcess/com.apple.WebProcess.sb.in:
+
 2021-03-16  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r274462. rdar://problem/75485320
+        Cherry-pick r274504. rdar://problem/75482851
+
+    The WebContent process crashes when launching Safari
+    https://bugs.webkit.org/show_bug.cgi?id=223264
+    <rdar://75482851>
+    
+    Reviewed by Brent Fulgham.
+    
+    The WebContent process crashes when launching Safari on older OSes, because of unavailable sandbox features.
+    
+    * WebProcess/com.apple.WebProcess.sb.in:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274504 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2021-03-16  Per Arne Vollan  <pvollan@apple.com>
+
+            The WebContent process crashes when launching Safari
+            https://bugs.webkit.org/show_bug.cgi?id=223264
+            <rdar://75482851>
+
+            Reviewed by Brent Fulgham.
+
+            The WebContent process crashes when launching Safari on older OSes, because of unavailable sandbox features.
+
+            * WebProcess/com.apple.WebProcess.sb.in:
+
+2021-03-16  Ruben Turcios  <rubent_22@apple.com>
+
+        Cherry-pick r274462. rdar://problem/75485338
 
     Unreviewed, revert r272629 as it caused regressions in some apps
     https://bugs.webkit.org/show_bug.cgi?id=223232
@@ -192,9 +298,9 @@
             (WebKit::TiledCoreAnimationDrawingArea::updateRendering):
             * WebProcess/WebPage/mac/WebPageMac.mm:
 
-2021-03-15  Russell Epstein  <repstein@apple.com>
+2021-03-15  Ruben Turcios  <rubent_22@apple.com>
 
-        Cherry-pick r274439. rdar://problem/75450660
+        Cherry-pick r274439. rdar://problem/75450672
 
     Enforce subcommand filtering
     https://bugs.webkit.org/show_bug.cgi?id=223192
@@ -206,8 +312,6 @@
     
     * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
     * WebProcess/com.apple.WebProcess.sb.in:
-    
-    
     
     git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274439 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
@@ -224,41 +328,9 @@
             * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
             * WebProcess/com.apple.WebProcess.sb.in:
 
-2021-03-15  Russell Epstein  <repstein@apple.com>
+2021-03-10  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r274295. rdar://problem/75450660
-
-    [macOS] Add additional telemetry to WebContent sandbox
-    https://bugs.webkit.org/show_bug.cgi?id=223080
-    
-    Reviewed by Brent Fulgham.
-    
-    Add additional telemetry to WebContent sandbox on macOS.
-    
-    * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
-    * WebProcess/com.apple.WebProcess.sb.in:
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274295 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2021-03-11  Per Arne Vollan  <pvollan@apple.com>
-
-            [macOS] Add additional telemetry to WebContent sandbox
-            https://bugs.webkit.org/show_bug.cgi?id=223080
-
-            Reviewed by Brent Fulgham.
-
-            Add additional telemetry to WebContent sandbox on macOS.
-
-            * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
-            * WebProcess/com.apple.WebProcess.sb.in:
-
-2021-03-10  Ruben Turcios  <rubent_22@apple.com>
-
-        Revert r271193. rdar://problem/75273221
-
-2021-03-10  Ruben Turcios  <rubent_22@apple.com>
-
-        Cherry-pick r274231. rdar://problem/75279800
+        Cherry-pick r274231. rdar://problem/75290553
 
     [iOS] Add additional telemetry to WebContent sandbox 
     https://bugs.webkit.org/show_bug.cgi?id=223035
@@ -286,9 +358,37 @@
 
             * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
 
+2021-03-11  Ruben Turcios  <rubent_22@apple.com>
+
+        Cherry-pick r274295. rdar://problem/75290553
+
+    [macOS] Add additional telemetry to WebContent sandbox
+    https://bugs.webkit.org/show_bug.cgi?id=223080
+    
+    Reviewed by Brent Fulgham.
+    
+    Add additional telemetry to WebContent sandbox on macOS.
+    
+    * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
+    * WebProcess/com.apple.WebProcess.sb.in:
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274295 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+
+    2021-03-11  Per Arne Vollan  <pvollan@apple.com>
+
+            [macOS] Add additional telemetry to WebContent sandbox
+            https://bugs.webkit.org/show_bug.cgi?id=223080
+
+            Reviewed by Brent Fulgham.
+
+            Add additional telemetry to WebContent sandbox on macOS.
+
+            * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
+            * WebProcess/com.apple.WebProcess.sb.in:
+
 2021-03-08  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r273997. rdar://problem/75180327
+        Cherry-pick r273997. rdar://problem/75180339
 
     Regression(r268097): WKWebView.URL is nil in the processDidTerminate delegate
     https://bugs.webkit.org/show_bug.cgi?id=222809
@@ -339,38 +439,72 @@
             * UIProcess/WebProcessProxy.cpp:
             (WebKit::WebProcessProxy::processDidTerminateOrFailedToLaunch):
 
-2021-03-08  Russell Epstein  <repstein@apple.com>
+2021-03-02  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r274051. rdar://problem/75178467
+        Cherry-pick r273695. rdar://problem/74940739
 
-    [WebAuthn] Expand WebAuthn Process's sandbox profile on iOS
-    https://bugs.webkit.org/show_bug.cgi?id=222858
-    <rdar://problem/74772012>
+    Crash under WebProcessPool::pageBeginUsingWebsiteDataStore()
+    https://bugs.webkit.org/show_bug.cgi?id=222574
+    <rdar://68340471>
     
-    Reviewed by Brent Fulgham.
+    Reviewed by Geoffrey Garen.
     
-    Allows WebAuthn process to use AAA again.
+    Source/WebKit:
     
-    * Resources/SandboxProfiles/ios/com.apple.WebKit.WebAuthn.sb:
+    The issue was that when WebProcessProxy::requestTermination() was called (e.g. process is killed by WebKit
+    for using too much memory), we would fail to remove the process from the WebProcessCache. Because the
+    terminated would stay in the cache (even though WebProcessProxy::shutDown() was called), we could potentially
+    try and use it later on for a navigation to the same domain. This would lead to crashes because
+    WebProcessProxy::shutDown() has already been called.
+    
+    Note that we were previously correctly removing the process from the cache in case of a proper crash, inside
+    WebProcessProxy::processDidTerminateOrFailedToLaunch(). I have moved the logic to remove from the cache
+    from processDidTerminateOrFailedToLaunch() to shutDown() to avoid similar issues in the future.
+    
+    * UIProcess/API/Cocoa/WKProcessPool.mm:
+    (-[WKProcessPool _requestWebProcessTermination:]):
+    * UIProcess/API/Cocoa/WKProcessPoolPrivate.h:
+    * UIProcess/WebProcessProxy.cpp:
+    (WebKit::WebProcessProxy::shutDown):
+    (WebKit::WebProcessProxy::processDidTerminateOrFailedToLaunch):
+    
+    Tools:
+    
+    Add API test coverage.
+    
+    * TestWebKitAPI/Tests/WebKitCocoa/ProcessSwapOnNavigation.mm:
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@274051 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@273695 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2021-03-06  Jiewen Tan  <jiewen_tan@apple.com>
+    2021-03-01  Chris Dumez  <cdumez@apple.com>
 
-            [WebAuthn] Expand WebAuthn Process's sandbox profile on iOS
-            https://bugs.webkit.org/show_bug.cgi?id=222858
-            <rdar://problem/74772012>
+            Crash under WebProcessPool::pageBeginUsingWebsiteDataStore()
+            https://bugs.webkit.org/show_bug.cgi?id=222574
+            <rdar://68340471>
 
-            Reviewed by Brent Fulgham.
+            Reviewed by Geoffrey Garen.
 
-            Allows WebAuthn process to use AAA again.
+            The issue was that when WebProcessProxy::requestTermination() was called (e.g. process is killed by WebKit
+            for using too much memory), we would fail to remove the process from the WebProcessCache. Because the
+            terminated would stay in the cache (even though WebProcessProxy::shutDown() was called), we could potentially
+            try and use it later on for a navigation to the same domain. This would lead to crashes because
+            WebProcessProxy::shutDown() has already been called.
 
-            * Resources/SandboxProfiles/ios/com.apple.WebKit.WebAuthn.sb:
+            Note that we were previously correctly removing the process from the cache in case of a proper crash, inside
+            WebProcessProxy::processDidTerminateOrFailedToLaunch(). I have moved the logic to remove from the cache
+            from processDidTerminateOrFailedToLaunch() to shutDown() to avoid similar issues in the future.
+
+            * UIProcess/API/Cocoa/WKProcessPool.mm:
+            (-[WKProcessPool _requestWebProcessTermination:]):
+            * UIProcess/API/Cocoa/WKProcessPoolPrivate.h:
+            * UIProcess/WebProcessProxy.cpp:
+            (WebKit::WebProcessProxy::shutDown):
+            (WebKit::WebProcessProxy::processDidTerminateOrFailedToLaunch):
 
 2021-03-01  Alan Coon  <alancoon@apple.com>
 
-        Cherry-pick r273564. rdar://problem/74886738
+        Cherry-pick r273564. rdar://problem/74886917
 
     [Cocoa] Register VP9 decoders when PlatformMediaSessionManager is created
     https://bugs.webkit.org/show_bug.cgi?id=222473
@@ -433,9 +567,9 @@
             (WebKit::WebProcess::enableVP9SWDecoder): Deleted.
             * WebProcess/WebProcess.h:
 
-2021-03-01  Alan Coon  <alancoon@apple.com>
+2021-03-01  Kocsen Chung  <kocsen_chung@apple.com>
 
-        Cherry-pick r273590. rdar://problem/74881366
+        Cherry-pick r273590. rdar://problem/74881385
 
     Non-cookie website data not deleted after 7 days of browser use without user interaction
     https://bugs.webkit.org/show_bug.cgi?id=222248
