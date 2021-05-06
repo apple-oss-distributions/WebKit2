@@ -1,64 +1,6 @@
-2021-05-17  Russell Epstein  <repstein@apple.com>
-
-        Apply patch. rdar://problem/78125245
-
-    2021-05-17  Per Arne Vollan  <pvollan@apple.com>
-
-            [iOS] Read access to passwd is required
-            https://bugs.webkit.org/show_bug.cgi?id=223641
-            <rdar://75616105>
-
-            Reviewed by Brent Fulgham.
-
-            The WebContent sandbox on iOS should allow reading the passwd file.
-
-            * Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb:
-
 2021-05-06  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r277114. rdar://problem/77623232
-
-    Fix crash when WebsiteDataStore is destroyed with outstanding getNetworkProcessConnection request
-    https://bugs.webkit.org/show_bug.cgi?id=225478
-    <rdar://77576148>
-    
-    Reviewed by Chris Dumez.
-    
-    In WebsiteDataStore::getNetworkProcessConnection if we don't get a connection the first time, we terminate the network process
-    and try again.  This greatly increases our success rate.  However, if we are cancelling the reply because of the destruction
-    of the WebsiteDataStore, we will end up doing bad things with partially destroyed objects, which ends up crashing.
-    In order to prevent this, use RunLoop::main.dispatch to retry on the next runloop iteration so that we will never be inside the
-    stack of WebsiteDataStore::~WebsiteDataStore when retrying.  In that case, we will find that weakThis is null and send an empty
-    reply.
-    
-    * UIProcess/WebsiteData/WebsiteDataStore.cpp:
-    (WebKit::WebsiteDataStore::getNetworkProcessConnection):
-    
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@277114 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2021-05-06  Alex Christensen  <achristensen@webkit.org>
-
-            Fix crash when WebsiteDataStore is destroyed with outstanding getNetworkProcessConnection request
-            https://bugs.webkit.org/show_bug.cgi?id=225478
-            <rdar://77576148>
-
-            Reviewed by Chris Dumez.
-
-            In WebsiteDataStore::getNetworkProcessConnection if we don't get a connection the first time, we terminate the network process
-            and try again.  This greatly increases our success rate.  However, if we are cancelling the reply because of the destruction
-            of the WebsiteDataStore, we will end up doing bad things with partially destroyed objects, which ends up crashing.
-            In order to prevent this, use RunLoop::main.dispatch to retry on the next runloop iteration so that we will never be inside the
-            stack of WebsiteDataStore::~WebsiteDataStore when retrying.  In that case, we will find that weakThis is null and send an empty
-            reply.
-
-            * UIProcess/WebsiteData/WebsiteDataStore.cpp:
-            (WebKit::WebsiteDataStore::getNetworkProcessConnection):
-
-2021-05-06  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r276671. rdar://problem/77620826
+        Cherry-pick r276671. rdar://problem/77620890
 
     HashTableConstIterator's consistency assertion fails while closing m_webIDBServers in NetworkProcess::didClose since r275846
     https://bugs.webkit.org/show_bug.cgi?id=225089
@@ -91,171 +33,79 @@
             * NetworkProcess/NetworkProcess.cpp:
             (WebKit::NetworkProcess::didClose):
 
-2021-05-06  Russell Epstein  <repstein@apple.com>
-
-        Apply patch. rdar://problem/77619719
-
-    2021-05-06  Chris Dumez  <cdumez@apple.com>
-
-            Crash under IPC::Connection::dispatchMessageToWorkQueueReceiver()
-            <rdar://77576143>
-
-            Reviewed by Alex Christensen.
-
-            When r274565 was merged to the safari-611-branch branch, its `ASSERT(connection.m_incomingMessagesMutex.isHeld())`
-            did not hold there. Unlike trunk, the call-site (Connection::processIncomingMessage(std::unique_ptr<Decoder>)) does
-            not hold the m_incomingMessagesMutex lock on the safari-611-branch branch. This leads to crashes due to lack of
-            synchronization when accessing / modifying the m_incomingMessages Dequeue on the main thread and IPC thread in
-            parallel. To address the issue on the safari-611-branch branch, we now grab the m_incomingMessagesMutex lock before
-            modifying the m_incomingMessages Dequeue in Connection::SyncMessageState::processIncomingMessage().
-
-            No new tests, existing tests were crashing in debug already.
-
-            * Platform/IPC/Connection.cpp:
-            (IPC::Connection::SyncMessageState::processIncomingMessage):
-
 2021-05-03  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r276852. rdar://problem/77468295
+        Cherry-pick r276514. rdar://problem/77473523
 
-    prefers-reduced-motion is not reactive on iOS
-    https://bugs.webkit.org/show_bug.cgi?id=222381
-    <rdar://75933915>
+    Web Inspector: [Cocoa] WKInspectorResourceURLSchemeHandler needs to serialize cleanup actions
+    https://bugs.webkit.org/show_bug.cgi?id=224986
+    <rdar://76768454>
     
-    Reviewed by Brent Fulgham.
+    Reviewed by Devin Rousso.
     
-    With CFPrefs direct mode, there is a race between the notification that an accessibility preference has been changed
-    by the user, and the the in-memory Accessibility preference cache in the WebContent process. We resolve this by using
-    new SPI to clear the cached Accessibility settings when we are notified of an accessibility change so they always
-    reflect the user's most recent setting.
+    * UIProcess/Inspector/mac/WKInspectorResourceURLSchemeHandler.mm:
+    (-[WKInspectorResourceURLSchemeHandler webView:startURLSchemeTask:]):
+    Do cleanup on the main queue so that it can be serialized with reads.
     
-    * Platform/spi/Cocoa/AccessibilitySupportSPI.h:
-    * WebProcess/cocoa/WebProcessCocoa.mm:
-    (WebKit::setPreferenceValue):
+    (-[WKInspectorResourceURLSchemeHandler webView:stopURLSchemeTask:]):
+    Ensure that all removals from the map are processed before doing a lookup.
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@276852 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@276514 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2021-04-30  Per Arne Vollan  <pvollan@apple.com>
+    2021-04-23  BJ Burg  <bburg@apple.com>
 
-            prefers-reduced-motion is not reactive on iOS
-            https://bugs.webkit.org/show_bug.cgi?id=222381
-            <rdar://75933915>
+            Web Inspector: [Cocoa] WKInspectorResourceURLSchemeHandler needs to serialize cleanup actions
+            https://bugs.webkit.org/show_bug.cgi?id=224986
+            <rdar://76768454>
 
-            Reviewed by Brent Fulgham.
+            Reviewed by Devin Rousso.
 
-            With CFPrefs direct mode, there is a race between the notification that an accessibility preference has been changed
-            by the user, and the the in-memory Accessibility preference cache in the WebContent process. We resolve this by using
-            new SPI to clear the cached Accessibility settings when we are notified of an accessibility change so they always
-            reflect the user's most recent setting.
+            * UIProcess/Inspector/mac/WKInspectorResourceURLSchemeHandler.mm:
+            (-[WKInspectorResourceURLSchemeHandler webView:startURLSchemeTask:]):
+            Do cleanup on the main queue so that it can be serialized with reads.
 
-            * Platform/spi/Cocoa/AccessibilitySupportSPI.h:
-            * WebProcess/cocoa/WebProcessCocoa.mm:
-            (WebKit::setPreferenceValue):
+            (-[WKInspectorResourceURLSchemeHandler webView:stopURLSchemeTask:]):
+            Ensure that all removals from the map are processed before doing a lookup.
 
 2021-04-29  Russell Epstein  <repstein@apple.com>
 
-        Cherry-pick r276742. rdar://problem/77326513
+        Cherry-pick r276618. rdar://problem/77326484
 
-    [iOS] Web content process occasionally crashes under VisibleSelection::adjustPositionForEnd
-    https://bugs.webkit.org/show_bug.cgi?id=225072
-    rdar://77159489
+    Handle warning-level memory notifications more aggressively
+    https://bugs.webkit.org/show_bug.cgi?id=225008
     
-    Reviewed by Darin Adler.
+    Reviewed by Chris Dumez.
     
-    Source/WebCore:
+    We've found that in some workloads, the critical-level memory pressure handler releases
+    significantly more memory than the warning-level memory pressure handler. On Macs, it is
+    likely that the memory pressure coincides with swapping. So when we get even a warning-level
+    notification from the OS, we should err on the side of releasing more memory to help relieve
+    the swapping state. To do this, treat warning level notifications the same as critical level
+    notifications on Mac if the WebProcess is in the background.
     
-    Remove a helper method that was added in r276688, which we no longer need.
-    
-    * dom/Position.h:
-    (WebCore::Position::isInTreeScope const): Deleted.
-    
-    Source/WebKit:
-    
-    The fix for this crash that I landed in r276688 was based on a misunderstanding that accessing `treeScope()`
-    would trigger a null pointer deref if `isInTreeScope()` is `false`. This is not the case, since the `treeScope`
-    of a `Node` is a separate notion from whether that `Node` is connected to said tree scope.
-    
-    Since this crash is really due to dereferencing a null container node in the case where `selectionStart` or
-    `selectionEnd` are null, a better fix is to just check the nullity of the container node.
-    
-    * WebProcess/WebPage/ios/WebPageIOS.mm:
-    (WebKit::rangeForPointInRootViewCoordinates):
+    * WebProcess/WebProcess.cpp:
+    (WebKit::WebProcess::initializeWebProcess):
     
     
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@276742 268f45cc-cd09-0410-ab3c-d52691b4dbfc
+    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@276618 268f45cc-cd09-0410-ab3c-d52691b4dbfc
 
-    2021-04-28  Wenson Hsieh  <wenson_hsieh@apple.com>
+    2021-04-26  Ben Nham  <nham@apple.com>
 
-            [iOS] Web content process occasionally crashes under VisibleSelection::adjustPositionForEnd
-            https://bugs.webkit.org/show_bug.cgi?id=225072
-            rdar://77159489
+            Handle warning-level memory notifications more aggressively
+            https://bugs.webkit.org/show_bug.cgi?id=225008
 
-            Reviewed by Darin Adler.
+            Reviewed by Chris Dumez.
 
-            The fix for this crash that I landed in r276688 was based on a misunderstanding that accessing `treeScope()`
-            would trigger a null pointer deref if `isInTreeScope()` is `false`. This is not the case, since the `treeScope`
-            of a `Node` is a separate notion from whether that `Node` is connected to said tree scope.
+            We've found that in some workloads, the critical-level memory pressure handler releases
+            significantly more memory than the warning-level memory pressure handler. On Macs, it is
+            likely that the memory pressure coincides with swapping. So when we get even a warning-level
+            notification from the OS, we should err on the side of releasing more memory to help relieve
+            the swapping state. To do this, treat warning level notifications the same as critical level
+            notifications on Mac if the WebProcess is in the background.
 
-            Since this crash is really due to dereferencing a null container node in the case where `selectionStart` or
-            `selectionEnd` are null, a better fix is to just check the nullity of the container node.
-
-            * WebProcess/WebPage/ios/WebPageIOS.mm:
-            (WebKit::rangeForPointInRootViewCoordinates):
-
-2021-04-29  Russell Epstein  <repstein@apple.com>
-
-        Cherry-pick r276688. rdar://problem/77326513
-
-    [iOS] Web content process occasionally crashes under VisibleSelection::adjustPositionForEnd
-    https://bugs.webkit.org/show_bug.cgi?id=225072
-    rdar://77159489
-    
-    Reviewed by Darin Adler.
-    
-    Source/WebCore:
-    
-    Add a helper method to check whether or not the given `Position` is in a tree scope. See WebKit/ChangeLog for
-    more details.
-    
-    Test: editing/selection/ios/clear-selection-while-moving-selection-handles.html
-    
-    * dom/Position.h:
-    (WebCore::Position::isInTreeScope const):
-    
-    Source/WebKit:
-    
-    Make `rangeForPointInRootViewCoordinates` robust in the case where the original selection may have become
-    orphaned or null, by checking that the `targetNode` and existing `selectionStart` or `selectionEnd` are in a
-    tree scope before accessing `treeScope()`.
-    
-    * WebProcess/WebPage/ios/WebPageIOS.mm:
-    (WebKit::rangeForPointInRootViewCoordinates):
-    
-    LayoutTests:
-    
-    Add a layout test that programmatically clears the selection in the middle of changing it by moving selection
-    handles.
-    
-    * editing/selection/ios/clear-selection-while-moving-selection-handles-expected.txt: Added.
-    * editing/selection/ios/clear-selection-while-moving-selection-handles.html: Added.
-    
-    
-    git-svn-id: https://svn.webkit.org/repository/webkit/trunk@276688 268f45cc-cd09-0410-ab3c-d52691b4dbfc
-
-    2021-04-27  Wenson Hsieh  <wenson_hsieh@apple.com>
-
-            [iOS] Web content process occasionally crashes under VisibleSelection::adjustPositionForEnd
-            https://bugs.webkit.org/show_bug.cgi?id=225072
-            rdar://77159489
-
-            Reviewed by Darin Adler.
-
-            Make `rangeForPointInRootViewCoordinates` robust in the case where the original selection may have become
-            orphaned or null, by checking that the `targetNode` and existing `selectionStart` or `selectionEnd` are in a
-            tree scope before accessing `treeScope()`.
-
-            * WebProcess/WebPage/ios/WebPageIOS.mm:
-            (WebKit::rangeForPointInRootViewCoordinates):
+            * WebProcess/WebProcess.cpp:
+            (WebKit::WebProcess::initializeWebProcess):
 
 2021-04-23  Russell Epstein  <repstein@apple.com>
 

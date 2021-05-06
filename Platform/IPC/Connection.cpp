@@ -147,7 +147,7 @@ bool Connection::SyncMessageState::processIncomingMessage(Connection& connection
     {
         auto locker = holdLock(m_mutex);
         shouldDispatch = m_didScheduleDispatchMessagesWorkSet.add(&connection).isNewEntry;
-        auto incomingMessagesLocker = holdLock(connection.m_incomingMessagesMutex);
+        ASSERT(connection.m_incomingMessagesMutex.isHeld());
         if (message->shouldMaintainOrderingWithAsyncMessages()) {
             // This sync message should maintain ordering with async messages so we need to process the pending async messages first.
             while (!connection.m_incomingMessages.isEmpty())

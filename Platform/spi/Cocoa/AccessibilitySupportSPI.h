@@ -45,8 +45,6 @@ extern CFStringRef kAXSFullKeyboardAccessEnabledNotification;
 extern Boolean _AXSFullKeyboardAccessEnabled();
 #endif
 
-extern CFStringRef kAXSAccessibilityPreferenceDomain;
-
 WTF_EXTERN_C_END
 
 #endif
